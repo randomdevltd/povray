@@ -2119,6 +2119,32 @@ class VolumeEmitter final : public Emitter
         double Reach(const Vector3d& from) const override { return BoxReach(from, low, size); }
 
         bool HasVolumeEmission() const override { return volumeEmission; }
+        MathColour VolumeEmissionAlong(const Vector3d& from, const Vector3d& direction, double reach,
+            double extinction, double draw, TraceThreadData* td) const override
+        {
+            vector<std::pair<double, double>> pieces;
+            const double length = Chord(from, direction, reach, td, pieces);
+            if (!(length > 0.0)) return MathColour();
+            double integral = 0.0;
+            for (const auto& piece : pieces)
+                integral += std::exp(-extinction * piece.first) * -std::expm1(-extinction * (piece.second - piece.first)) / extinction;
+            double at = draw * integral;
+            for (const auto& piece : pieces)
+            {
+                const double start = std::exp(-extinction * piece.first);
+                const double span = -std::expm1(-extinction * (piece.second - piece.first));
+                const double weight = start * span / extinction;
+                if (at < weight)
+                {
+                    const double fraction = std::min(std::nextafter(1.0, 0.0), at * extinction / start);
+                    const double distance = piece.first - std::log1p(-fraction) / extinction;
+                    const Vector3d outgoing = -direction;
+                    return EmissionAt(from + direction * distance, td, &outgoing) * integral;
+                }
+                at -= weight;
+            }
+            return MathColour();
+        }
 
         MathColour EmissionAt(const Vector3d& p, TraceThreadData *td, const Vector3d *outgoing = nullptr) const
         {

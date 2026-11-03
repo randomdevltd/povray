@@ -58,6 +58,7 @@
 #include "core/coretypes.h"
 #include "core/bounding/bsptree.h"
 #include "core/lighting/subsurface.h"
+#include "core/lighting/subsurfaceinternal.h"
 #include "core/material/texture.h"
 #include "core/math/randomsequence.h"
 #include "core/render/ray.h"
@@ -246,7 +247,7 @@ class Trace
             void Build(const std::vector<SurfaceBounceNode>& nodes, const std::vector<MathColour>& irradiance, std::size_t trials);
         };
         /// Readies this trace to work on surface bounce nodes for the subsurface light leaving them, diffused through `field`.
-        void BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field);
+        void BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field, const std::vector<LightSource*>& sources = {}, bool internalOnly = false);
         /// The light entering a node through its surface from the light arriving at it, and the relative index it leaves through.
         MathColour SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
             PreparedSetId preparedSetId, double& eta);
@@ -1205,6 +1206,8 @@ class Trace
         };
         SubsurfaceThin ssltThin;
         const SurfaceSubsurfaceField* ssltBridge = nullptr;
+        std::vector<const LightSource*> ssltBridgeSources;
+        bool ssltBridgeInternalOnly = false;
         std::size_t ssltBridgeNode = 0;
         double ssltBridgeLength = HUGE_VAL;
         std::vector<PreciseMathColour> ssltBridgeEntry; ///< entry factors of the bridge's patches, for the finish and skin below
@@ -1349,11 +1352,11 @@ class Trace
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
                                               const PreciseMathColour& weightOut, const Vector3d& bend_point, double ftOut, double cos_out_prime,
-                                              SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key, bool bumps);
+                                              SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key, bool bumps, bool internalSources);
         void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                  const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo,
                                                  const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
-                                                 TraceTicket& ticket, std::uint64_t key, bool bumps);
+                                                 TraceTicket& ticket, std::uint64_t key, bool bumps, bool internalSources);
         void ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket,
                                        std::uint64_t key);
         MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket,
@@ -1422,6 +1425,14 @@ class Trace
         bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
+        SubsurfaceInternalBoundary SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
+            ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket);
+        bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
+            double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket);
+        bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
+        MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
+            const PreciseMathColour& absorption, const PreciseMathColour& scattering,
+            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,

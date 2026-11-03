@@ -2487,3 +2487,14 @@ where it is not known ahead. Times have one decimal. A phase reports `0/<total>`
 every 60 seconds while it stays flat; the phase is still running. `<step>` is terse free text, cut to fit:
 
     Preparation: bounce 18432/61440 4.0s; o2/2 t3/7 surface
+
+
+## Embedded volume sources in subsurface solids
+
+The homogeneous internal source solver solves the isotropic source-only radiative transport equation backwards from an exit. Its absorption and scattering coefficients are the method 2 profile coefficients, converted from inverse millimetres to inverse world units. A sampled free flight has density `sigma_t exp(-sigma_t s)`, and a collision multiplies throughput by `sigma_s / sigma_t`. A next-event source sample adds `j(y) exp(-sigma_t r) / (4 pi r² p(y))`; the emitter's connection weight already includes `j / (r² p)`. It receives no boundary cosine or extra inverse-square factor.
+
+Initial and specularly reflected ray segments integrate source emission over the emitter's exact geometric chords. The chord proposal follows Beer attenuation, giving constant estimates for a uniform source on a fixed segment. Collision next-event estimates own the immediately following straight source segment, so the random continuation omits that segment's source emission; after reflection, segment gathering resumes. This partition prevents duplicate source energy. Boundary transport uses exact dielectric Fresnel reflection and camera radiance leaves with `Ft / eta²`. Roulette after sixteen events survives with `min(0.95, throughput)` and divides by that probability; the strict upper bound terminates even conservative trapped paths without truncating their energy.
+
+A source sample reaching a subsurface boundary without leaving the same material belongs to this internal solver and is withheld from the boundary illumination estimator. Samples crossing a material exit belong to the existing boundary transport. Preparation supplies only the active bounce order's physical sources. Internal radiance is evaluated at each prepared node, separately from the boundary diffusion field's spatial interpolation. Cosine-weighted exit hemisphere sampling estimates its flux; the existing diffuse Fresnel angular field exports that flux, which approximates ballistic angular detail. Source density may be heterogeneous, but varying scattering coefficients and layered materials remain unsupported and raise an error when internal light contributes. Other overlapping absorbing/scattering media are not part of this homogeneous material solve.
+
+`tests/source/subsurface_internal.cpp` checks Beer attenuation, source/continuation ownership, normal Fresnel and total internal reflection, world-unit scaling and the infinite uniform-source identity `L = j / sigma_a`. `tests/render/subsurface_internal_source.sh` checks that a buried finite source contributes and scales linearly with its power.
