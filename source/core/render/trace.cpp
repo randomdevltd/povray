@@ -6552,9 +6552,10 @@ bool Trace::SubsurfaceEntryTaps(const Intersection& hit, const Vector3d& outward
                 const double distance = fabs(tap.Depth - reach);
                 if (!(distance < nearest))
                     continue;
-                Vector3d geometric;
-                tap.Object->Normal(geometric, &tap, threadData);
-                if (!(dot(geometric, outward) > EPSILON))
+                const double probe = max(1.0e-6, max(4.0 * tap.Object->SurfaceTolerance(), 1.0e-4 * side));
+                const ObjectPtr whole = SubsurfaceObject(hit);
+                if (whole->Inside(tap.IPoint + outward * probe, threadData) ||
+                    !whole->Inside(tap.IPoint - outward * probe, threadData))
                     continue;
                 nearest = distance;
                 normal = outward;
