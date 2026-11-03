@@ -208,7 +208,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   light_source {<0.3,0.35,0.15> rgb <1,0.55,0.28>*0.45*Exposure*Fill}
   Specimen(A,T)
   box {<-0.052,-0.055,0.025>,<0.052,0.07,0.03> pigment {rgb <0.03,0.045,0.06>}}
-  box {<0.037,-0.043,-0.012>,<0.049,0.041,0.01> pigment {rgb 0.8}}
+  box {<-0.008,-0.043,-0.0005>,<0.008,0.041,0.0005> rotate y*35 translate <0.047,0,-0.01> pigment {rgb 0.8}}
   global_lights off
   translate <PX,PY,0>
  }

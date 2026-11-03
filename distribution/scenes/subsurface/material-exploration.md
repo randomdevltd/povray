@@ -20,7 +20,7 @@ In the combined sheet, treatment 3 shows embedded sources at the 1.7 times trans
 
 `Exposure` uniformly scales the illumination and emission inputs; it defaults to 1. The flame source has 12 lumens before exposure and the membrane lamp 0.3 lumens. Keep exposure and treatment fixed when comparing bounce or renderer changes. The raw output can clip bright flame-adjacent wax; use linear high-dynamic-range output for energy measurements.
 
-`InternalSource=1` disables the legacy subsurface emission pigment and places a patterned, transparent volume emitter inside the hand palm, panel or parchment instead. Its source is 0.02 lumens before exposure. A white strip beside each object tests exported light. This mode is intended for matched renderer comparisons: a visible pattern produced by legacy subsurface emission does not establish internal-source transport.
+`InternalSource=1` disables the legacy subsurface emission pigment and places a patterned, transparent volume emitter inside the hand palm, panel or parchment instead. Its source is 0.02 lumens before exposure. A white strip beside each object faces both the material and camera to test exported light. This mode is intended for matched renderer comparisons: a visible pattern produced by legacy subsurface emission does not establish internal-source transport.
 
 For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` override the combined treatment. `Fill=0` removes the two external studio lights. `SourceModeOverride` selects one source mode directly, and `SkinPattern=1` adds a cellular skin pigment over homogeneous flesh. Keep these controls fixed across renderer comparisons.
 
