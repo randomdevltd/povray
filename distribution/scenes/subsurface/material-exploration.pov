@@ -118,7 +118,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
 #macro HandBoundary(Inset)
  merge {
   sphere {0,1 scale <0.025-Inset,0.028-Inset,0.009-Inset> translate y*-0.006}
-  cone {<0,-0.026,0>,0.016-Inset,<0,-0.05,0>,0.007-Inset}
+  cone {<0,-0.026,0>,0.015-Inset,<0,-0.05,0>,0.011-Inset}
   #for(J,0,3) sphere_sweep {linear_spline 2 <(J-1.5)*0.012,0.008,0>,0.0055-Inset, <(J-1.5)*0.015,0.044+0.009*sin(J*pi/3),0>,0.0045-Inset} #end
   sphere_sweep {linear_spline 2 <-0.019,-0.012,0>,0.007-Inset, <-0.038,0.009,0>,0.005-Inset}
  }

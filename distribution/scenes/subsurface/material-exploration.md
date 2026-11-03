@@ -20,7 +20,7 @@ In the combined sheet, treatment 3 shows embedded sources at the 1.7 times trans
 
 `Exposure` uniformly scales the illumination and emission inputs; it defaults to 1. The flame source has 12 lumens before exposure and the membrane lamp 0.3 lumens. Keep exposure and treatment fixed when comparing bounce or renderer changes. The raw output can clip bright flame-adjacent wax; use linear high-dynamic-range output for energy measurements.
 
-`InternalSource=1` disables the legacy subsurface emission pigment and places a patterned, transparent volume emitter inside the hand palm, panel or parchment instead. Its source is 0.02 lumens before exposure. A white strip beside each object faces both the material and camera to test exported light. This mode is intended for matched renderer comparisons: a visible pattern produced by legacy subsurface emission does not establish internal-source transport.
+`InternalSource=1` disables the legacy subsurface emission pigment and places a patterned, transparent volume emitter inside the hand and fingers, panel or parchment instead. Its source is 0.02 lumens before exposure. A white strip beside each object faces both the material and camera to test exported light. This mode is intended for matched renderer comparisons: a visible pattern produced by legacy subsurface emission does not establish internal-source transport.
 
 For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` override the combined treatment. `Fill=0` removes the two external studio lights. `SourceModeOverride` selects one source mode directly, and `SkinPattern=1` adds a cellular skin pigment over homogeneous flesh. Keep these controls fixed across renderer comparisons.
 
@@ -33,3 +33,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 `SubsurfaceSamples`, `InternalSamples` and `EmitterSamples` expose the global surface, internal-walk and emitter budgets. Defaults are 12, 2 and 16 for quick shape proofs; `InternalSamples=32` or higher reduces physical internal-source noise. Use Radiance output (`+FH`) to retain bright flame and wax values without changing source power; the gallery can tone-map HDR previews.
 
 `PanelHalfDepth` sets the real material thickness on either side of its buried source, defaulting to 0.006 metres. Shallower covers, such as 0.002 metres, expose finer circuit detail with shorter optical depth. Keep geometry fixed when comparing sampling quality or renderer changes.
+
+`CameraZoom` enlarges an isolated object without changing physical dimensions. The physical hand source follows a boundary inset by 0.7 mm and occupies a 0.4 mm central slice through the palm and fingers. Its blue vein density remains separate from homogeneous flesh scattering.
