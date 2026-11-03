@@ -7,6 +7,7 @@
 #ifndef (SubsurfaceSamples) #declare SubsurfaceSamples=12; #end
 #ifndef (InternalSamples) #declare InternalSamples=2; #end
 #ifndef (EmitterSamples) #declare EmitterSamples=16; #end
+#ifndef (VeinPattern) #declare VeinPattern=0; #end
 #ifndef (VeinScale) #declare VeinScale=0.005; #end
 #ifndef (VeinLayer) #declare VeinLayer=0; #end
 #ifndef (CameraZoom) #declare CameraZoom=1; #end
@@ -51,6 +52,16 @@
 #declare RuneMask=function(X,Y) {max(0,1-min(min(abs(RuneX(X)-0.005),abs(RuneX(X)+0.005)),min(abs(RuneY(Y)),abs(RuneY(Y)-RuneX(X))))/0.0007)};
 #declare CircuitX=function(X) {mod(X+0.0285,0.019)-0.0095};
 #declare CircuitMask=function(X,Y) {max(0,1-min(abs(CircuitX(X)),abs(Y-0.0056))/0.0006)};
+#declare SegmentT=function(X,Y,AX,AY,BX,BY) {min(1,max(0,((X-AX)*(BX-AX)+(Y-AY)*(BY-AY))/(pow(BX-AX,2)+pow(BY-AY,2))))};
+#declare SegmentDistance=function(X,Y,AX,AY,BX,BY) {sqrt(pow(X-AX-(BX-AX)*SegmentT(X,Y,AX,AY,BX,BY),2)+pow(Y-AY-(BY-AY)*SegmentT(X,Y,AX,AY,BX,BY),2))};
+#declare VascularField=function(X,Y) {max(0,1-min(
+ SegmentDistance(X,Y,0,-0.045,0,0.002),
+ SegmentDistance(X,Y,0,0.002,-0.018,0.008),SegmentDistance(X,Y,-0.018,0.008,-0.0225,0.044),
+ SegmentDistance(X,Y,0,0.002,-0.006,0.008),SegmentDistance(X,Y,-0.006,0.008,-0.0075,0.052),
+ SegmentDistance(X,Y,0,0.002,0.006,0.008),SegmentDistance(X,Y,0.006,0.008,0.0075,0.052),
+ SegmentDistance(X,Y,0,0.002,0.018,0.008),SegmentDistance(X,Y,0.018,0.008,0.0225,0.044),
+ SegmentDistance(X,Y,0,-0.012,-0.019,-0.012),SegmentDistance(X,Y,-0.019,-0.012,-0.038,0.009)
+ )/0.0015)};
 #declare Runes=union {
  #for(R,0,3)
   text {ttf "timrom.ttf" "FXH" 1,0 scale <0.015,0.015,0.012> translate <-0.025,R*0.018-0.033,-0.006>}
@@ -186,7 +197,9 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   pigment {rgbt 1}
    interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
     density {
-     #if(A=0) function {VeinField(x,y,z).gray} colour_map {[0 rgb 0] [1 rgb 1]}
+     #if(A=0)
+      #if(VeinPattern) function {VascularField(x,y)} #else function {VeinField(x,y,z).gray} #end
+      colour_map {[0 rgb 0] [1 rgb 1]}
      #elseif(A=6) function {CircuitMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]}
      #else function {RuneMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]} #end
     }

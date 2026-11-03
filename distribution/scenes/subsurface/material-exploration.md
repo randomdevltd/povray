@@ -39,3 +39,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 The transparent embedded emitter has `ior off`: it supplies light within the host material without adding a separate air cavity or optical interface.
 
 `VeinLayer=1` puts the hand emission inside a vascular layer bounded by the 0.7 mm and 1.5 mm inset hand surfaces, instead of the central slice. `VeinScale=0.015` spaces the physical blue veins farther apart than the default 5 mm pattern so their diffusion remains distinct. These controls change real source placement and pattern scale, not material attenuation.
+
+`VeinPattern=1` replaces the turbulent marble source density with a branched vascular network following the palm and fingers. The source remains bounded by the selected real interior layer and uses the same total luminous flux.
