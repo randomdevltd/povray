@@ -348,7 +348,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
     intersection {HandBoundary(0.0007) box {<-0.06,-0.06,-0.0002>,<0.06,0.07,0.0002>}
    #end
   #else
-   box {<-(A=7?0.032:0.025),-0.036,-0.0002>,<(A=7?0.032:0.025),0.036,0.0002>
+   box {<-(A=7?0.032:0.025),-(A=7?0.036:0.034),-0.0002>,<(A=7?0.032:0.025),(A=7?0.036:0.035),0.0002>
   #end
   pigment {rgbt 1}
    interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
