@@ -22,7 +22,10 @@
 #ifndef (SheetBounce) #declare SheetBounce=0; #end
 #ifndef (WaxLength) #declare WaxLength=0.083; #end
 #ifndef (WaxRadius) #declare WaxRadius=0.0105; #end
-#ifndef (CandleLumens) #declare CandleLumens=12; #end
+#ifndef (CandleLumens) #declare CandleLumens=0.025; #end
+#ifndef (LampLumens) #declare LampLumens=0.015; #end
+#ifndef (InternalLumens) #declare InternalLumens=0.00125; #end
+#ifndef (HandLumens) #declare HandLumens=0.000625; #end
 #ifndef (WaxBounce) #declare WaxBounce=0; #end
 #ifndef (WaxBouncePasses) #declare WaxBouncePasses=1; #end
 #ifndef (SourceOn) #declare SourceOn=1; #end
@@ -250,7 +253,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #end
   cylinder {<0,0.034,0>,<0,0.047,0>,0.0007 pigment {rgb 0.025}}
   sphere {0,1 scale <0.004,0.013,0.004> translate y*0.058 pigment {rgbt 1}
-   interior {media {mix add method 4 resolution 0.001 emission <7,2.5,0.4>*Exposure density {spherical}}
+   interior {media {mix add method 4 resolution 0.001 emission <3,1.07143,0.17143>*Exposure density {spherical}}
     #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
@@ -271,8 +274,8 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    torus {0.017,0.0015 translate y*-0.046 texture {Hardware}}
   #end
   sphere {0,0.004 pigment {rgbt 1}
-   interior {ior off media {mix add method 4 emission <1,0.45,0.13>*100*Exposure}
-    #if(SourceOn) light {emission brightness (0.3*Exposure) lumens samples EmitterSamples} #end
+   interior {ior off media {mix add method 4 emission <1,0.45,0.13>*Exposure}
+    #if(SourceOn) light {emission brightness (LampLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
   #break
@@ -341,6 +344,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #end
  #if (InternalSource & SourceMode=1 & (A=0 | A=6 | A=7))
   #local Glow=(A=7?<1.8,0.32,0.04>:<0.05,0.4,1.7>);
+  #local Glow=Glow/max(Glow.x,Glow.y,Glow.z);
   #if (A=0)
    #if (VeinLayer)
     difference {HandBoundary(0.0007) HandBoundary(0.0015)
@@ -351,7 +355,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    box {<-(A=7?0.032:0.025),-(A=7?0.036:0.034),-0.0002>,<(A=7?0.032:0.025),(A=7?0.036:0.035),0.0002>
   #end
   pigment {rgbt 1}
-   interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
+   interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure
     density {
      #if(A=0)
       #if(VeinPattern) function {VascularField(x,y)} #else function {VeinField(x,y,z).gray} #end
@@ -360,7 +364,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
      #else function {RuneMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]} #end
     }
    }
-   light {emission brightness 0.02*Exposure lumens samples EmitterSamples}
+   light {emission brightness (A=0?HandLumens:InternalLumens)*Exposure lumens samples EmitterSamples}
    }
   }
  #end
