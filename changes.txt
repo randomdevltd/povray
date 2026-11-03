@@ -119,6 +119,11 @@ Changed Behaviour
     Progressive photon maps now use format version 4 to retain each
     source's self share; older saved maps must be regenerated.
 
+  - Surface and interior light blocks now default to 64 samples rather
+    than 16, at every scene version. Explicit samples remain unchanged.
+    The lantern-cloud example adds tower-facing lanterns, blue lightning
+    of unchanged luminance, and a Bounce switch for paired comparisons.
+
   - A light block's `samples` N is the light's detail for every receiver,
     and a receiver scales it by its `light_samples` M (default 1). Surfaces
     draw round(N x M) points per hit. Varying prepared method 4 media draw

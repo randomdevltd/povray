@@ -160,7 +160,7 @@ struct MediaLight final
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
-    int samples = 16;               ///< emitter draws per receiver point
+    int samples = 64;               ///< emitter draws per receiver point
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;

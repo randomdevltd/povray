@@ -22,8 +22,11 @@ Generated C sources are committed; renderer builds do not run the generator.
 
 ## Independent volume lights
 
+Surface and interior light blocks default to 64 samples at every scene version;
+an explicit `samples` value overrides this.
+
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
-attenuation { power 2 scale 1 } samples 16 } }`. By default the source depends on its object's geometry
+attenuation { power 2 scale 1 } samples 64 } }`. By default the source depends on its object's geometry
 and its own pigment, independently of media coefficients and density. A unitless pigment uses
 the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; `nits` normalize the
 pigment as they do the emission below, so its mean boundary radiance is `L`; this normalizes
@@ -71,7 +74,7 @@ volume. No new word is reserved: `light`, `nits` and `lumens` remain contextual.
 
 ```
 box { <-1,2,-1>, <1,2.1,1>
-  light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 16 }
+  light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 64 }
 }
 ```
 
@@ -201,7 +204,7 @@ the cutoff only):
 // 800 lumens spread over the panel, whatever its size
 box { <-0.6, 1, -0.05>, <0.6, 2, 0.05>
   pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0 }
-  light { brightness 800 lumens samples 16 }
+  light { brightness 800 lumens samples 64 }
 }
 
 // lantern: 400 lumens, falling as 1/d^1.5 so it reaches further, with a stricter cutoff

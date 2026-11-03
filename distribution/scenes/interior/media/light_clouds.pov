@@ -4,13 +4,15 @@
 // The lanterns fall off physically, as 1/d^2, so the cone of light out of each open bottom stands out from the light through the paper.
 #version 4.0;
 // Units: lanterns 400 lm each, bolt 20 and flash 5 times their colour, a radiance in nits where the colour is white; the clouds keep their authored physical scattering of 0.3 per unit.
-#ifndef (Samples) #declare Samples = 16; #end
+#ifndef (Samples) #declare Samples = 64; #end
 #ifndef (Storm) #declare Storm = 1; #end
 #ifndef (LanternLumens) #declare LanternLumens = 400; #end
+#ifndef (Bounce) #declare Bounce = 1; #end
 #ifndef (BounceBrightness) #declare BounceBrightness = 6; #end
 #ifndef (SelfBounce) #declare SelfBounce = 0.05; #end
-// BounceBrightness scales the cloud bounce (6); SelfBounce keeps a small fraction on its own media (0.05).
+// Bounce=0 removes cloud bounce for comparison; BounceBrightness scales the cloud bounce (6); SelfBounce keeps a small fraction on its own media (0.05).
 #declare R = seed(1907);
+#declare EdgeR = seed(3401);
 
 global_settings { assumed_gamma 1 max_trace_level 6 }
 camera { location <-2, 19, -24> look_at <3, 25, 25> angle 74 right x * image_width / image_height }
@@ -38,7 +40,11 @@ plane {
         scattering { 5, rgb 0.3 eccentricity 0.35 }
         density { function { max(0, min(1, Body(x, y, z) * 3.5 - 0.45 + 0.9 * (Puffs(x / Scale, y / Scale, z / Scale) - 0.5))) } }
       }
-      light { brightness BounceBrightness samples Samples bounce { passes 2 self SelfBounce } }
+      light {
+        samples Samples
+        #if (Bounce) brightness BounceBrightness bounce { passes 2 self SelfBounce }
+        #else pigment { rgb 0 } brightness 0 #end
+      }
     }
   }
 #end
@@ -53,8 +59,11 @@ Cloud(<-27, 12, -2>, <3, 33, 24>, 2.6, Cumulus)
 #if (Storm) Cloud(<0, 10, 18>, <36, 50, 54>, 3.4, Tower) #end
 Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
 
-#declare Lift = array[5] { <-6.5, 16.5, -4>, <-9, 19.5, 3>, <-12.5, 22, 9.5>, <-16, 25, 14>, <-2.5, 14, 6> };
-#macro Lantern(P, Tilt)
+#declare Lift = array[9] {
+  <-6.5, 16.5, -4>, <-9, 19.5, 3>, <-12.5, 22, 9.5>, <-16, 25, 14>, <-2.5, 14, 6>,
+  <-1, 16, 14>, <0, 17, 17>, <1.5, 18, 20>, <2.5, 15.5, 19>
+};
+#macro Lantern(P, Tilt, Stream)
   union {
     difference {
       cone { 0, 0.3, y * 0.85, 0.4 }
@@ -66,7 +75,7 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
     #for (K, 0, 3) cylinder { <0.3 * sin(radians(K * 90)), 0, 0.3 * cos(radians(K * 90))>, y * 0.1, 0.004 } #end
     cylinder { y * 0.07, y * 0.1, 0.035 pigment { rgb 0.1 } }
     texture { pigment { rgb 0.15 } }
-    rotate y * rand(R) * 360 rotate <Tilt, 0, Tilt * 0.6>
+    rotate y * rand(Stream) * 360 rotate <Tilt, 0, Tilt * 0.6>
     translate P
   }
   sphere {
@@ -82,9 +91,16 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
     scale <0.05, 0.11, 0.05> translate y * 0.2 rotate <Tilt, 0, Tilt * 0.6> translate P
   }
 #end
-#for (K, 0, 4) Lantern(Lift[K], rand(R) * 16 - 8) #end
+#for (K, 0, dimension_size(Lift, 1) - 1)
+  #if (K < 5) Lantern(Lift[K], rand(R) * 16 - 8, R)
+  #else Lantern(Lift[K], rand(EdgeR) * 16 - 8, EdgeR) #end
+#end
 
 #if (Storm)
+  #declare LightningHue = <0.015, 0.008, 1>;
+  #declare LumaWeights = <0.297, 0.589, 0.114>;
+  #declare BoltColour = LightningHue * vdot(<0.72, 0.82, 1>, LumaWeights) / vdot(LightningHue, LumaWeights);
+  #declare FlashColour = LightningHue * vdot(<0.8, 0.7, 1>, LumaWeights) / vdot(LightningHue, LumaWeights);
   #declare Fork = array[64];
   #declare ForkN = 0;
   #macro Jag(A, B, Steps, Rad0, Rad1, Amp)
@@ -107,17 +123,17 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
       Jag(A, A + <rand(R) - 0.5, -0.5 - rand(R) * 0.5, rand(R) - 0.5> * 8, 5, 0.12, 0.07, 1.6)
     #end
     pigment { rgbt 1 }
-    interior { media { mix add emission rgb <0.72, 0.82, 1> * 5 } light { pigment { rgb <0.72, 0.82, 1> } brightness 20 samples Samples } }
+    interior { media { mix add emission rgb BoltColour * 5 } light { pigment { rgb BoltColour } brightness 20 samples Samples } }
   }
   sphere {
     0, 1 pigment { rgbt 1 }
     interior {
       media {
         mix add method 4 resolution 0.25
-        emission rgb <0.8, 0.7, 1> * 0.35
+        emission rgb FlashColour * 0.35
         density { spherical turbulence 0.3 color_map { [0 rgb 0] [1 rgb 1] } }
       }
-      light { pigment { rgb <0.8, 0.7, 1> } brightness 5 samples Samples }
+      light { pigment { rgb FlashColour } brightness 5 samples Samples }
     }
     scale 4.5 translate <22, 38, 40>
   }
