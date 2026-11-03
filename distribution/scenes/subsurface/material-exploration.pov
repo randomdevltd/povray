@@ -7,6 +7,7 @@
 #ifndef (SubsurfaceSamples) #declare SubsurfaceSamples=12; #end
 #ifndef (InternalSamples) #declare InternalSamples=2; #end
 #ifndef (EmitterSamples) #declare EmitterSamples=16; #end
+#ifndef (PanelHalfDepth) #declare PanelHalfDepth=0.006; #end
 #ifndef (PanelRound) #declare PanelRound=1; #end
 #ifndef (EmissionExport) #declare EmissionExport=0; #end
 #ifndef (Export) #declare Export=0; #end
@@ -155,9 +156,9 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #break
  #case(6)
   #if (PanelRound)
-   superellipsoid {<0.18,0.18> scale <0.037,0.045,0.006> Flesh(A,T)}
+   superellipsoid {<0.18,0.18> scale <0.037,0.045,PanelHalfDepth> Flesh(A,T)}
   #else
-   box {<-0.037,-0.045,-0.006>,<0.037,0.045,0.006> Flesh(A,T)}
+   box {<-0.037,-0.045,-PanelHalfDepth>,<0.037,0.045,PanelHalfDepth> Flesh(A,T)}
   #end
   #for(J,-1,1) cylinder {<J*0.019,-0.028,-0.007>,<J*0.019,-0.028,-0.009>,0.005 pigment {rgb <0.08,0.11,0.15>} finish {specular 0.6}} #end
   #break
