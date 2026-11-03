@@ -7220,9 +7220,19 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
         if (!IsSameSSLTObject(hit.Object, object)) return false;
         hit.Object->Normal(outward, &hit, threadData);
         outward.normalize();
-        if (dot(outward, direction) < 0.0) outward.invert();
-        return !ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, direction,
-            InterfaceTolerance(hit.IPoint, material), extent), material, ticket.preparedSetId);
+        double probe = std::max(hit.Object->SurfaceTolerance(), extent * 1.0e-8);
+        for (int attempt = 0; attempt < 8; ++attempt, probe *= 4.0)
+        {
+            const bool plus = ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, outward, probe, extent), material, ticket.preparedSetId);
+            const bool minus = ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, -outward, probe, extent), material, ticket.preparedSetId);
+            if (plus && minus) return false;
+            if (plus != minus)
+            {
+                if (plus) outward.invert();
+                return dot(outward, direction) > 0.0;
+            }
+        }
+        return false;
     };
     return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, find, exits);
 }
@@ -7628,6 +7638,8 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
             double lightsourcedepth;
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, out.IPoint, lightcolour, true);
+            if (SubsurfaceInternalConnection(lightsource, out.IPoint, lightsourceray.Direction, lightsourcedepth,
+                out.Object, SubsurfaceObject(out), ticket)) continue;
             if (lightcolour.IsNearZero(EPSILON))
                 continue;
             if (k == 0)
