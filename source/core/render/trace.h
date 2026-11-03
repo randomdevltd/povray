@@ -1350,7 +1350,7 @@ class Trace
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
                                                const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole,
-                                               double tolerance, const char* uses = nullptr);
+                                               double tolerance, const char* uses = nullptr, double lightSamples = 1.0);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
         std::string DescribeSubsurfaceObject(ConstObjectPtr object);
         bool SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared);
