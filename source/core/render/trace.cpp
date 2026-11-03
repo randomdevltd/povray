@@ -7297,7 +7297,7 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
         if (!std::isfinite(sigmaA + sigmaS)) continue;
         for (int sample = 0; sample < samples; ++sample)
         {
-            const auto pathKey = DeriveKey(key, kDrawSubsurface, channel * samples + sample);
+            const auto pathKey = DeriveKey(key, kDrawSubsurface, sample);
             std::uint64_t dimension = 0;
             auto draw = [&]() { return Draw(pathKey, kDrawSubsurface, dimension++); };
             auto source = [&](const Vector3d& point, const Vector3d& direction, double reach, double extinction)
