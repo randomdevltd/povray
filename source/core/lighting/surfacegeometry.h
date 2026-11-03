@@ -179,14 +179,15 @@ private:
     {
         std::vector<Intersection> roots;
         CollectRoots(ray, thread, minDepth, maxDepth, roots, skip);
-        if (facing)
+        if (facing || skip > 0.0)
             roots.erase(std::remove_if(roots.begin(), roots.end(), [&](Intersection& root)
             {
                 Vector3d normal;
                 if (!OrientedNormal(thread, root, normal)) return true;
                 const DBL cosine = dot(normal, ray.Direction);
                 // A grazing root is solved less exactly, so the receiver's own point is skipped within skip / cos^2.
-                return !(cosine < 0.0) || (skip > 0.0 && (root.Depth - minDepth) * cosine * cosine <= skip);
+                const DBL own = std::max(skip, root.Object->SurfaceTolerance());
+                return (facing && !(cosine < 0.0)) || (skip > 0.0 && (root.Depth - minDepth) * cosine * cosine <= own);
             }), roots.end());
         if (roots.empty()) return false;
         sample.rootCount = roots.size();

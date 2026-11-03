@@ -63,6 +63,13 @@ int main()
             (implicit(middle) < 0.0 ? low : high) = middle;
         }
         assert(std::abs(boundary.distance - 0.5 * (low + high)) < 1e-9);
+        Ray ordinary(ticket, point + direction * 0.001, direction);
+        Intersection ordinaryHit;
+        assert(Find_Intersection(&ordinaryHit, &body, ordinary, &thread));
+        assert(std::abs(ordinaryHit.Depth + 0.001 - 0.5 * (low + high)) < 1e-9);
+        const double residual = std::pow(implicit(ordinaryHit.Depth + 0.001) + 1.0, 0.18 / 2.0) - 1.0;
+        const double radialError = (ordinaryHit.IPoint - ordinaryHit.IPoint / (1.0 + residual)).length();
+        assert(radialError <= body.SurfaceTolerance());
         assert(outer.GetRootQuery() == &previous);
         CSGIntersection difference(true);
         auto* rounded = static_cast<Superellipsoid*>(body.Copy());
