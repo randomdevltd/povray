@@ -39,6 +39,7 @@ v3.7.1 release proper.
 
 Changed Behaviour
 
+- Surface and volume light samples and finish light_samples now control method 2 subsurface irradiance sampling.
 - Add independent interior refraction { function { DeltaN } detail D },
   or refraction off, in classic SDL and .pov4 at every scene version.
   Blocks require one or more raw signed scalar functions; their sum adds to
