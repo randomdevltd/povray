@@ -52,10 +52,15 @@
 #declare VeinField=function {pigment {Veins}};
 #declare RuneX=function(X) {mod(X+0.036,0.018)-0.009};
 #declare RuneY=function(Y) {mod(Y+0.036,0.018)-0.009};
-#declare RuneMask=function(X,Y) {max(0,1-min(min(abs(RuneX(X)-0.005),abs(RuneX(X)+0.005)),min(abs(RuneY(Y)),abs(RuneY(Y)-RuneX(X))))/0.0007)};
 #declare CircuitX=function(X) {mod(X+0.0285,0.019)-0.0095};
 #declare SegmentT=function(X,Y,AX,AY,BX,BY) {min(1,max(0,((X-AX)*(BX-AX)+(Y-AY)*(BY-AY))/(pow(BX-AX,2)+pow(BY-AY,2))))};
 #declare SegmentDistance=function(X,Y,AX,AY,BX,BY) {sqrt(pow(X-AX-(BX-AX)*SegmentT(X,Y,AX,AY,BX,BY),2)+pow(Y-AY-(BY-AY)*SegmentT(X,Y,AX,AY,BX,BY),2))};
+#declare RuneMask=function(X,Y) {max(0,1-min(
+ SegmentDistance(RuneX(X),RuneY(Y),-0.0045,-0.006,-0.0045,0.006),
+ SegmentDistance(RuneX(X),RuneY(Y),-0.0045,0.006,0.0045,0.003),
+ SegmentDistance(RuneX(X),RuneY(Y),-0.0045,0,0.003,0),
+ SegmentDistance(RuneX(X),RuneY(Y),-0.0045,-0.006,0.0045,-0.003)
+ )/0.00055)};
 #declare CircuitMask=function(X,Y) {max(0,1-min(
  abs(CircuitX(X)),abs(Y-0.0056),
  SegmentDistance(X,Y,-0.019,0.018,-0.009,0.028),
@@ -146,7 +151,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
      function {max(CircuitMask(x,y),max(0,1-abs(abs(x)-0.031)/0.0006),max(0,(f_noise3d(x*900,y*900,z*900)-0.76)*8))}
      colour_map {[0 rgb <0.065,0.14,0.13>] [0.08 rgb <0.065,0.14,0.13>] [0.15 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]}
     #elseif(A=7)
-     function {max(RuneMask(x,y),select(abs(RuneY(y))-0.006,0,1),max(0,1-abs(abs(x)-0.028)/0.0004))}
+     function {max(RuneMask(x,y),select(abs(RuneY(y))-0.006,0,1),select(abs(x)-0.030,0,1))}
      colour_map {[0 rgb <0.12,0.045,0.018>] [0.12 rgb <0.12,0.045,0.018>] [0.2 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]}
     #else
      crackle metric 2 turbulence 0.15
@@ -343,7 +348,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
     intersection {HandBoundary(0.0007) box {<-0.06,-0.06,-0.0002>,<0.06,0.07,0.0002>}
    #end
   #else
-   box {<-0.025,-0.034,-0.0002>,<0.025,0.035,0.0002>
+   box {<-(A=7?0.032:0.025),-0.036,-0.0002>,<(A=7?0.032:0.025),0.036,0.0002>
   #end
   pigment {rgbt 1}
    interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
