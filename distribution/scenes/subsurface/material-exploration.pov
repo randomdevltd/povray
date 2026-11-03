@@ -220,7 +220,11 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
     torus {0.012,0.0022 rotate x*90 scale <1,1.65,1> translate <0.003,0.005,-0.003>}
     box {<-0.04,-0.04,-0.02>,<-0.003,0.04,0.02>}
    }
-   sphere_sweep {cubic_spline 5 <0.015,-0.020,-0.003>,0.002, <0.011,-0.009,-0.004>,0.002, <0.005,0.010,-0.003>,0.002, <-0.002,0.020,-0.003>,0.0017, <-0.010,0.028,0>,0.0015}
+   sphere {<0.011,-0.009,-0.004>,0.002}
+   cone {<0.011,-0.009,-0.004>,0.002,<0.005,0.010,-0.003>,0.002}
+   sphere {<0.005,0.010,-0.003>,0.002}
+   cone {<0.005,0.010,-0.003>,0.002,<-0.002,0.020,-0.003>,0.0017}
+   sphere {<-0.002,0.020,-0.003>,0.0017}
    Flesh(A,T)
   } #break
  #case(2)
@@ -228,11 +232,14 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #if(Detail)
    #for(J,0,8)
     #local Theta=J*137.5; #local Length=0.007+0.019*abs(sin(J*7));
-    sphere_sweep {cubic_spline 4
-     <WaxRadius*sin(Theta*pi/180),0.045,WaxRadius*cos(Theta*pi/180)>,0.0018,
-     <WaxRadius*sin(Theta*pi/180),0.037,WaxRadius*cos(Theta*pi/180)>,0.0018,
-     <WaxRadius*sin(Theta*pi/180),0.037-Length,WaxRadius*cos(Theta*pi/180)>,0.0014,
-     <WaxRadius*sin(Theta*pi/180),0.033-Length,WaxRadius*cos(Theta*pi/180)>,0.0008 Flesh(A,T)}
+    merge {
+     #local P=<WaxRadius*sin(Theta*pi/180),0.037,WaxRadius*cos(Theta*pi/180)>;
+     #local Q=P-y*Length;
+     sphere {P,0.0018}
+     cone {P,0.0018,Q,0.0014}
+     sphere {Q,0.0014}
+     Flesh(A,T)
+    }
    #end
    torus {WaxRadius+0.004,0.0012 translate y*(0.038-WaxLength) texture {Hardware}}
   #end
