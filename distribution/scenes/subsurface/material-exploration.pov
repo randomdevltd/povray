@@ -158,7 +158,11 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #break
  #case(3)
   difference {sphere {0,1 scale <0.033,0.046,0.020>} sphere {0,1 scale <0.031,0.044,0.018>} box {<-0.05,-0.06,-0.04>,<0.05,-0.035,0.04>} Flesh(A,T)}
-  sphere {0,0.004 pigment {rgb 1} finish {emission Exposure} interior {#if(SourceOn) light {pigment {rgb <1,0.45,0.13>} brightness (0.3*Exposure) lumens samples EmitterSamples} #end}}
+  sphere {0,0.004 pigment {rgbt 1}
+   interior {ior off media {mix add method 4 resolution 0.001 emission <1,0.45,0.13>*100*Exposure}
+    #if(SourceOn) light {emission brightness (0.3*Exposure) lumens samples EmitterSamples} #end
+   }
+  }
   #break
  #case(4)
   difference {sphere {0,1 scale <0.036,0.043,0.028>} box {<-0.05,-0.05,-0.05>,<0.05,0.05,-0.006>} Flesh(A,T)}
