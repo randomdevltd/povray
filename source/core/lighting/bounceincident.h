@@ -135,16 +135,23 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
 }
 
 
-// Draws per light at each volume bounce node, as a multiple of the bouncing light's samples.
-const unsigned int kVolumeDrawsPerSample = 2;
+// Draws per light at each volume bounce node per sqrt(samples) x light_samples of the bouncing light; 32 at samples 16.
+const double kVolumeDrawsPerRootSample = 8.0;
 
-/// Where a volume bounce node gathers: its lights, the bouncing light's samples, and the containers its medium fills
+/// Draws per light at a volume bounce node for a bouncing light of `samples` N in media of `light_samples` M: sqrt(N) x M,
+/// the rule the camera march spaces its volume-light draws by.
+inline unsigned int VolumeGatherDraws(int samples, double lightSamples)
+{
+    return unsigned(std::max(1L, std::lround(kVolumeDrawsPerRootSample * std::sqrt(double(std::max(1, samples))) * lightSamples)));
+}
+
+/// Where a volume bounce node gathers: its lights, its draws per light, and the containers its medium fills
 /// (draw points outside them receive nothing).
 struct VolumeGather final
 {
     std::vector<const LightSource*> lights;
     std::vector<MathColour> scales;            ///< each light's multiplier, none for all 1
-    unsigned int samples = 1;
+    unsigned int draws = 1;
     std::vector<ConstObjectPtr> receivers;
 };
 
@@ -215,7 +222,7 @@ inline VolumeIncident GatherVolumeIncident(Trace& trace, const Vector3d& centre,
     {
         const LightSource* light = gather.lights[index];
         const MathColour scale = gather.scales.empty() ? MathColour(1.0) : gather.scales[index];
-        const unsigned int count = gather.samples * kVolumeDrawsPerSample;
+        const unsigned int count = gather.draws;
         const std::uint64_t lightKey = DeriveKey(key, kDrawAreaLight,
                                                  std::uint64_t(light->index) | (light->lightGroupLight ? (std::uint64_t(1) << 63) : 0));
         const PhotonSobol sequence(lightKey), spread(DeriveKey(lightKey, kDrawPosition, 0)),

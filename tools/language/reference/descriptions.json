@@ -2680,7 +2680,7 @@
   },
   "self": {
    "rank": 49,
-   "code": "light { samples 16 bounce { passes 1 self off } }",
+   "code": "light { samples 64 bounce { passes 1 self off } }",
    "from": "doc/html/r3_12.html"
   },
   "shadowless": {

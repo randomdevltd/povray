@@ -162,6 +162,16 @@ inline bool Receives(ConstObjectPtr owner, const LightSource* light)
     return std::find(owner->LLights.begin(), owner->LLights.end(), light) != owner->LLights.end();
 }
 
+/// Draws per light at a bounced volume's nodes: its light's samples and its scattering media's largest light_samples.
+inline unsigned int BounceGatherDraws(ConstObjectPtr owner)
+{
+    DBL multiplier = 0.0;
+    for (const auto& medium : owner->interior->media)
+        if (medium.use_scattering)
+            multiplier = std::max(multiplier, medium.Light_Samples);
+    return VolumeGatherDraws(owner->interior->light->samples, multiplier > 0.0 ? multiplier : 1.0);
+}
+
 inline void CollectObjects(ConstObjectPtr object, std::vector<ConstObjectPtr>& objects,
                            std::unordered_set<ConstObjectPtr>& seen)
 {
@@ -540,7 +550,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             std::shared_ptr<const PreparedSourceDomain> domain;
             Sources sources;
-            unsigned int samples;
+            unsigned int draws;
             std::vector<PreparedBouncePhase> phases;
             std::vector<std::shared_ptr<const PreparedDirectionalSourceField>> fields;
             std::shared_ptr<const PreparedSourceDistribution> proposal;
@@ -655,18 +665,18 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 continue;
             }
             const Sources sources = VolumeSources(target, order, previous, previousOriginal);
-            const unsigned int samples = std::max(1, owner->interior->light->samples);
+            const unsigned int draws = BounceGatherDraws(owner);
             auto group = std::find_if(groups.begin(), groups.end(),
                                       [&](const SharedGroup& candidate)
                                       {
                                           return candidate.domain == target.domain &&
-                                                 candidate.samples == samples && candidate.sources == sources;
+                                                 candidate.draws == draws && candidate.sources == sources;
                                       });
             if (group != groups.end())
                 AdvancePreparation(td->preparationProgress, target.domain->NodeCount() + target.domain->CellCount());
             if (group == groups.end())
             {
-                SharedGroup prepared{target.domain, sources, samples, {}, {}, nullptr};
+                SharedGroup prepared{target.domain, sources, draws, {}, {}, nullptr};
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain)
                         for (const auto& phase : candidate.phases)
@@ -684,7 +694,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 VolumeGather gather;
                 gather.lights.assign(sources.lights.begin(), sources.lights.end());
                 gather.scales = sources.scales;
-                gather.samples = samples;
+                gather.draws = draws;
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain)
                         gather.receivers.push_back(candidate.light->emitterContainer);
@@ -712,8 +722,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain &&
                         order <= candidate.passes &&
-                        unsigned(std::max(1, candidate.light->emitterContainer->interior->light->samples)) ==
-                            samples &&
+                        BounceGatherDraws(candidate.light->emitterContainer) == draws &&
                         VolumeSources(candidate, order, previous, previousOriginal) == sources)
                         contributing.push_back(&candidate);
                 std::vector<DBL> proposalMasses(target.domain->CellCount());

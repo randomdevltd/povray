@@ -3556,7 +3556,8 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
             DBL receiver = 0.0;
             for (size_t index : selected)
                 receiver = std::max(receiver, domains[cells[index].domain].lightSamples);
-            int count = light.emitter ? std::max(1, int(std::lround(light.Area_Size1 * receiver))) : 1;
+            // A volume light's samples N take sqrt(N) x light_samples pairs, as the prepared steps space theirs.
+            int count = light.emitter ? std::max(1, int(std::lround(sqrt(DBL(std::max(1, light.Area_Size1))) * receiver))) : 1;
             if (!light.emitter)
                 for (size_t index : selected)
                     count = std::max(count, domains[cells[index].domain].ordinarySamples);
@@ -5613,8 +5614,8 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 const LightSource *apart = lights[i].light->selfContainer ? lights[i].light : nullptr;
                 if (apart)
                     scatter(nullptr);
-                // Prepared steps take one draw per light, stratified along the ray; others take the light's samples.
-                const int count = preparedSampling ? 1 : max(1, lights[i].light->Area_Size1);
+                // Prepared steps take one draw per light, stratified along the ray; others take sqrt(samples).
+                const int count = preparedSampling ? 1 : max(1, int(std::lround(sqrt(DBL(max(1, lights[i].light->Area_Size1))))));
                 threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;
                 if (Scattering.IsZero())
                     threadData->Stats()[Media_Zero_Scatter_Emitter_Draws] += count;
