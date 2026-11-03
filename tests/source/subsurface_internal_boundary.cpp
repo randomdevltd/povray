@@ -1,5 +1,7 @@
 #include "core/lighting/subsurfaceinternalboundary.h"
 #include "core/shape/superellipsoid.h"
+#include "core/shape/sphere.h"
+#include "core/shape/csg.h"
 #include "core/material/noise.h"
 #include "core/math/matrix.h"
 #include "core/scene/scenedata.h"
@@ -61,6 +63,31 @@ int main()
             (implicit(middle) < 0.0 ? low : high) = middle;
         }
         assert(std::abs(boundary.distance - 0.5 * (low + high)) < 1e-9);
+        assert(outer.GetRootQuery() == &previous);
+        CSGIntersection difference(true);
+        auto* rounded = static_cast<Superellipsoid*>(body.Copy());
+        auto* cavity = new Sphere;
+        cavity->Center = point + direction * 0.001;
+        cavity->Radius = 0.0003;
+        cavity->Type |= IS_CHILD_OBJECT;
+        Set_Flag(cavity, INVERTED_FLAG);
+        cavity->Compute_BBox();
+        difference.children = {rounded, cavity};
+        difference.Compute_BBox();
+        auto findDifference = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& condition)
+        { return Find_Intersection(&hit, &difference, ray, condition, &thread); };
+        auto leaveDifference = [&](Intersection& hit, Vector3d& normal)
+        {
+            hit.Object->Normal(normal, &hit, &thread);
+            normal.normalize();
+            if (difference.Inside(hit.IPoint + normal * 1e-9, &thread)) normal.invert();
+            return dot(normal, direction) > 0.0;
+        };
+        const auto cut = FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, findDifference, leaveDifference);
+        assert(std::abs(cut.distance - 0.0007) < 1e-10);
+        const auto afterCut = FindSubsurfaceInternalBoundary(point + direction * 0.0015, direction, ticket, 0.0002,
+            findDifference, leaveDifference);
+        assert(std::abs(afterCut.distance - boundary.distance + 0.0015) < 1e-9);
         assert(outer.GetRootQuery() == &previous);
         bool caught = false;
         try
