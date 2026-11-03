@@ -1,5 +1,7 @@
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
+
+- Carry finite volume light emission through homogeneous method 2 subsurface solids, with direct source sampling, internal Fresnel reflection and flux-conserving diffuse bounce export. Existing emission syntax remains available.
 ------------------------------------------------------------------------------
 Notes:
 
