@@ -178,7 +178,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    box {<-0.025,-0.034,-0.0002>,<0.025,0.035,0.0002>
   #end
   pigment {rgbt 1}
-   interior {media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
+   interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
     density {
      #if(A=0) function {VeinField(x,y,z).gray} colour_map {[0 rgb 0] [1 rgb 1]}
      #elseif(A=6) function {CircuitMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]}
