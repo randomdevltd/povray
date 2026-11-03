@@ -1660,7 +1660,10 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             {
                 const int method = current->Finish->SubsurfaceMethod ? current->Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
                 if (method != kSubsurfaceMethodPointCloud)
+                {
+                    if (ssltBridgeInternalOnly) continue;
                     throw POV_EXCEPTION_STRING("Surface subsurface bounce requires subsurface method 2.");
+                }
                 layers.Add(current, pigment.colour(), transmitted * opacity);
             }
             transmitted *= pigment.TransmittedColour();
