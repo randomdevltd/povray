@@ -8,9 +8,10 @@
 #ifndef (Storm) #declare Storm = 1; #end
 #ifndef (LanternLumens) #declare LanternLumens = 400; #end
 #ifndef (Bounce) #declare Bounce = 1; #end
-#ifndef (BounceBrightness) #declare BounceBrightness = 6; #end
-#ifndef (SelfBounce) #declare SelfBounce = 0.05; #end
-// Bounce=0 removes cloud bounce for comparison; BounceBrightness scales the cloud bounce (6); SelfBounce keeps a small fraction on its own media (0.05).
+#ifndef (BounceBrightness) #declare BounceBrightness = 48; #end
+#ifndef (StormBounceBrightness) #declare StormBounceBrightness = 0.1; #end
+#ifndef (SelfBounce) #declare SelfBounce = 0.00625; #end
+// Bounce=0 disables re-emission; cumulus gain 48 and storm gain 0.1 favour warm outward spill, with self share 0.00625.
 #declare R = seed(1907);
 #declare EdgeR = seed(3401);
 
@@ -30,7 +31,7 @@ plane {
 
 #declare Puffs = function { pattern { bozo turbulence 0.6 octaves 6 lambda 2.3 omega 0.55 } }
 #declare Lobe = function(X, Y, Z, Rx, Ry, Rz) { max(0, 1 - sqrt(X * X / (Rx * Rx) + Y * Y / (Ry * Ry) + Z * Z / (Rz * Rz))) }
-#macro Cloud(Low, High, Scale, Body)
+#macro Cloud(Low, High, Scale, Body, Gain)
   box {
     Low, High
     pigment { rgbt 1 }
@@ -42,7 +43,7 @@ plane {
       }
       light {
         samples Samples
-        #if (Bounce) brightness BounceBrightness bounce { passes 2 self SelfBounce }
+        #if (Bounce & Gain > 0) brightness Gain bounce { passes 2 self SelfBounce }
         #else pigment { rgb 0 } brightness 0 #end
       }
     }
@@ -55,13 +56,13 @@ plane {
   max(Lobe(x - 18, y - 24, z - 36, 14, 11, 14), Lobe(x - 15, y - 38, z - 34, 10, 9, 10), Lobe(x - 24, y - 16, z - 38, 11, 5, 12), Lobe(x - 9, y - 30, z - 40, 8, 7, 8))
 }
 #declare Deck = function { Lobe(x * 0.18, y - 14, z - 85, 16, 4.5, 14) }
-Cloud(<-27, 12, -2>, <3, 33, 24>, 2.6, Cumulus)
-#if (Storm) Cloud(<0, 10, 18>, <36, 50, 54>, 3.4, Tower) #end
-Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
+Cloud(<-27, 12, -2>, <3, 33, 24>, 2.6, Cumulus, BounceBrightness)
+#if (Storm) Cloud(<0, 10, 18>, <36, 50, 54>, 3.4, Tower, StormBounceBrightness) #end
+Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck, 0)
 
 #declare Lift = array[9] {
   <-6.5, 16.5, -4>, <-9, 19.5, 3>, <-12.5, 22, 9.5>, <-16, 25, 14>, <-2.5, 14, 6>,
-  <-1, 16, 14>, <0, 17, 17>, <1.5, 18, 20>, <2.5, 15.5, 19>
+  <-1, 16, 14>, <0, 17, 17>, <0, 18, 16>, <0.3, 16.2, 16>
 };
 #macro Lantern(P, Tilt, Stream)
   union {

@@ -123,6 +123,10 @@ Changed Behaviour
     than 16, at every scene version. Explicit samples remain unchanged.
     The lantern-cloud example adds tower-facing lanterns, blue lightning
     of unchanged luminance, and a Bounce switch for paired comparisons.
+    Cumulus bounce gain 48 with self share 0.00625 favours warm outward
+    spill; the storm uses a weak reciprocal gain of 0.1 and the distant
+    deck remains a receiving medium rather than an additional bounce
+    source.
 
   - A light block's `samples` N is the light's detail for every receiver,
     and a receiver scales it by its `light_samples` M (default 1). Surfaces
