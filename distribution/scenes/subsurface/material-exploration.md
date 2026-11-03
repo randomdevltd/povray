@@ -31,3 +31,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 `PanelRound=0` replaces the rounded panel with a closed box as a boundary-tracing diagnostic. Both versions enclose the same physical source. Keep this setting identical in comparisons; the box does not validate curved-boundary behaviour.
 
 `SubsurfaceSamples`, `InternalSamples` and `EmitterSamples` expose the global surface, internal-walk and emitter budgets. Defaults are 12, 2 and 16 for quick shape proofs; `InternalSamples=32` or higher reduces physical internal-source noise. Use Radiance output (`+FH`) to retain bright flame and wax values without changing source power; the gallery can tone-map HDR previews.
+
+`PanelHalfDepth` sets the real material thickness on either side of its buried source, defaulting to 0.006 metres. Shallower covers, such as 0.002 metres, expose finer circuit detail with shorter optical depth. Keep geometry fixed when comparing sampling quality or renderer changes.
