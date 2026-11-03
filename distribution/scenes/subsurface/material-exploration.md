@@ -2,7 +2,7 @@
 
 `material-exploration.pov` uses metres, with `mm_per_unit 1000` for subsurface distances. The eight objects are a blue-veined hand, skin ear, wax candle, lamp membrane, fruit cross-section, ribbed leaf, alien control panel and rune scroll.
 
-The default view contains all eight objects. `Declare=Artifact=N` selects one object, numbered 0–7. `Declare=Sheet=1` places eight rows against five treatments. Use a portrait image for the sheet, such as `+W800 +H1200 +PR +WT2`.
+The 864 selectors and eight-by-five sheet are an exploration scaffold, not a final curated showcase. Legacy subsurface emission remains the default reference path while its physical replacement is being verified. The default view contains all eight objects. `Declare=Artifact=N` selects one object, numbered 0–7. `Declare=Sheet=1` places eight rows against five treatments. Use a portrait image for the sheet, such as `+W800 +H1200 +PR +WT2`.
 
 | Treatment | Transport | Pattern sampling | Source | Surface |
 | --- | --- | --- | --- | --- |
@@ -14,7 +14,7 @@ The default view contains all eight objects. `Declare=Artifact=N` selects one ob
 
 The transport distances are illustrative material parameters, not measured coefficients. The five treatments are combined visual examples, rather than isolated numerical comparisons. The emissive hand, circuits and runes use subsurface emission pigments. The lamp and flame use interior volume lights. Skin normals remain separate from the geometric boundary.
 
-`Declare=Case=N` selects one of 864 configurations. For an object index A, source mode S, transport strength L, sampling mode V, bounce B and normal mode N, the index is `A + 8*(S + 3*L + 9*V + 27*B + 54*N)`. A is 0–7; S, L and V are 0–2; B and N are 0–1. Source modes select external illumination, embedded emission and outward surface emission. Sampling modes select surface sampling or volume sampling at 0.6 and 1.2 mm. All selections remain individually renderable.
+`Declare=Case=N` selects one of 864 configurations. For an object index A, source mode S, transport strength L, sampling mode V, bounce B and normal mode N, the index is `A + 8*(S + 3*L + 9*V + 27*B + 54*N)`. A is 0–7; S, L and V are 0–2; B and N are 0–1. Source modes select external illumination, embedded emission and outward surface emission. Sampling modes select surface sampling or volume sampling at 0.6 and 1.2 mm. All selections remain individually renderable through the default reference path; the full combination matrix has not been validated with the physical internal-source solver.
 
 In the combined sheet, treatment 3 shows embedded sources at the 1.7 times transport scale. `SheetBounce=1` additionally enables explicit candle bounce. Isolated treatment 3 enables candle bounce by default, and indexed cases retain bounce comparisons for every object. `WaxBounce=1` enables an explicit bounce light on wax, and `WaxBouncePasses` selects its passes. `SourceOn=0` disables the flame and lamp's volume lights while retaining their visible shapes. These controls permit the same candle to be compared with and without secondary illumination. They do not change the wax's absorption or scattering distances. `WaxLength` defaults to 0.083 metres and `WaxRadius` to 0.0105 metres. `WaxLength=0.160` reproduces a 160 mm taper while retaining the same flame position and source power. Wax has RGB transport distances of 8, 5 and 3 mm before the selected treatment scale. A candle need not illuminate its full height: the bottom can remain dark when physically absorbed light does not reach it.
 
@@ -41,3 +41,23 @@ The transparent embedded emitter has `ior off`: it supplies light within the hos
 `VeinLayer=1` puts the hand emission inside a vascular layer bounded by the 0.7 mm and 1.5 mm inset hand surfaces, instead of the central slice. `VeinScale=0.015` spaces the physical blue veins farther apart than the default 5 mm pattern so their diffusion remains distinct. These controls change real source placement and pattern scale, not material attenuation.
 
 `VeinPattern=1` replaces the turbulent marble source density with a branched vascular network following the palm and fingers. The source remains bounded by the selected real interior layer and uses the same total luminous flux.
+
+## Physical source limits
+
+`InternalSource=1` uses homogeneous flesh coefficients. Arbitrary source density and a patterned outer skin are supported. Spatially varying flesh absorption or scattering is not supported by the current internal radiative-transfer solver and reports a diagnostic; the reference-path selectors do not establish support for that combination. The physical mode therefore disables the reference flesh lookup beneath the surface while retaining the independent source pattern.
+
+The validation so far covers selected hand, panel, parchment, candle and skin examples, along with separate engine regressions. It does not establish every source, pigment, bounce and normal combination in the 864-case matrix. Legacy emission remains available for comparisons and is not removed by these examples.
+
+## Selected proof controls
+
+Run these from the scene directory with a renderer supporting the physical internal-source and surface-export features. `+FH` retains linear high-dynamic-range values; use the same display exposure for comparisons.
+
+```sh
+povray +Imaterial-exploration.pov +W400 +H230 +PR +WT2 +FH Declare=Artifact=0 Declare=InternalSource=1 Declare=Fill=0.15 Declare=Export=0 Declare=EmissionExport=1 Declare=InternalSamples=32 Declare=CameraZoom=1.5 Declare=VeinLayer=1 Declare=VeinPattern=1
+povray +Imaterial-exploration.pov +W400 +H230 +PR +WT2 +FH Declare=Artifact=7 Declare=InternalSource=1 Declare=Fill=0 Declare=Export=0 Declare=EmissionExport=1 Declare=InternalSamples=32 Declare=CameraZoom=1.5
+povray +Imaterial-exploration.pov +W400 +H230 +PR +WT2 +FH Declare=Artifact=2 Declare=WaxLength=0.160 Declare=TransportScale=1 Declare=WaxBounce=0 Declare=Treatment=2 Declare=Fill=0 Declare=InternalSamples=32
+```
+
+For the candle bounce pair, change only `WaxBounce` to 1. For the optical-depth comparison, retain `WaxBounce=0` and change only `TransportScale` from 1 to 4. The latter uses illustrative RGB transport distances of 32, 20 and 12 mm; it is a different material, not a change to source power or attenuation outside the material.
+
+`skin-closeup.pov` provides an independent normal detail view. Its defaults are a grazing key, cool fill, `Strength=0.35` and visible highlights. Use `Highlights=0` to isolate the subsurface response and `Flat=1` for the same geometry without perturbed normals.
