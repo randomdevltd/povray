@@ -4,6 +4,8 @@
 #ifndef (Artifact) #declare Artifact=-1; #end
 #ifndef (Case) #declare Case=-1; #end
 #ifndef (Sheet) #declare Sheet=0; #end
+#ifndef (Export) #declare Export=0; #end
+#ifndef (SurfaceSource) #declare SurfaceSource=0; #end
 #ifndef (SheetBounce) #declare SheetBounce=0; #end
 #ifndef (WaxLength) #declare WaxLength=0.083; #end
 #ifndef (WaxRadius) #declare WaxRadius=0.0105; #end
@@ -97,8 +99,8 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   }
  }
  interior {ior 1.4}
- #if (CurrentBounce & (A=2 | Case>=0)) light {samples 16 bounce {passes WaxBouncePasses}} #end
- #if (SourceMode=2) light {pigment {Veins} brightness Exposure*0.05 lumens samples 16} #end
+ #if (Export | (CurrentBounce & (A=2 | Case>=0))) light {samples 16 bounce {passes WaxBouncePasses}} #end
+ #if (SourceMode=2 | SurfaceSource) light {pigment {Veins} brightness Exposure*0.05 lumens samples 16} #end
 #end
 #macro Specimen(A,T)
  #switch(A)
