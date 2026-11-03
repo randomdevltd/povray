@@ -1652,10 +1652,11 @@ void View::GetStatistics(POVMS_Object& renderStats)
         if (viewData.subsurfaceCache)
         {
             SubsurfaceCloudStatistics cloud = viewData.subsurfaceCache->Statistics();
-            messages.Info("Method 2 point cloud at spacing %g: %.1f MB against the cap, peak %.1f MB with rows being cast; %.0f cells, %.0f "
+            const char *held = (viewData.sceneData->subsurfaceMemory >= 1.0) ? "against the cap" : "held";
+            messages.Info("Method 2 point cloud at spacing %g: %.1f MB %s, peak %.1f MB with rows being cast; %.0f cells, %.0f "
                           "points built, %.0f read; cells and points whose step the pixel set %.0f, %.0f, the diffusion %.0f, %.0f, the "
                           "object's size %.0f, %.0f, the finest floor %.0f, %.0f.",
-                          cloud.spacing, cloud.chargedBytes / 1048576.0, cloud.peakBytes / 1048576.0, cloud.cells, cloud.points, cloud.read,
+                          cloud.spacing, cloud.chargedBytes / 1048576.0, held, cloud.peakBytes / 1048576.0, cloud.cells, cloud.points, cloud.read,
                           cloud.termCells[kStepPixel], cloud.termPoints[kStepPixel], cloud.termCells[kStepDiffusion],
                           cloud.termPoints[kStepDiffusion], cloud.termCells[kStepObject], cloud.termPoints[kStepObject],
                           cloud.termCells[kStepFinest], cloud.termPoints[kStepFinest]);

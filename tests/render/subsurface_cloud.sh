@@ -1,6 +1,7 @@
 #!/bin/sh
 # subsurface_cloud.sh <povray> <srcdir>: a plane, a light group's part, a thin wall and a smooth mesh (by its face's area) are served
-# by the point cloud, a cloud past its memory cap stops the render, the cloud and image do not depend on threads, a panorama is served.
+# by the point cloud, a cloud past a cap the scene sets stops the render and an uncapped render never speaks of one, the cloud and
+# image do not depend on threads, a panorama is served.
 set -e
 trap 'rm -f sscloud_*' EXIT
 POVRAY=$1; SRCDIR=$2
@@ -20,6 +21,7 @@ held() { sed -n 's/.*Method2pointcloudatspacing[0-9.]*:\([0-9.]*\)MBagainsttheca
 case=$SRCDIR/tests/render/subsurface_cloud.pov
 render plain "$case" +w64 +h48 +wt2 Declare=Case=0; text plain
 has plain 'Subsurfacemethod2fellback' && fail "a closed box warned of a fallback"
+has plain 'memorycap' && fail "a render with no cap set spoke of a memory cap"
 share plain 95 || fail "a closed box was not served by the cloud: $(served plain)"
 if render capped "$case" +w64 +h48 +wt2 Declare=Case=1; then fail "a cloud past its memory cap did not stop the render"; fi
 text capped

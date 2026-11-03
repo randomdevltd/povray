@@ -311,7 +311,8 @@ class SceneData
         double subsurfaceErrorBound;
         /// point-cloud method: point spacing relative to the automatic spacing
         double subsurfaceSpacing;
-        /// point-cloud method: the memory all clouds may take, in MB, past which the render stops
+        /// point-cloud method: the memory all clouds may take, in MB, past which the render stops; 0, the default,
+        /// leaves the clouds uncapped
         double subsurfaceMemory;
 
         // ********************************************************************************
