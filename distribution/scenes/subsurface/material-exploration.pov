@@ -138,7 +138,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
     #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
-  cylinder {<0,-0.047,0>,<0,-0.043,0>,0.026 pigment {rgb <0.25,0.17,0.065>} finish {specular 0.5 metallic}}
+  cylinder {<0,0.036-WaxLength,0>,<0,0.040-WaxLength,0>,WaxRadius+0.008 pigment {rgb <0.25,0.17,0.065>} finish {specular 0.5 metallic}}
   #break
  #case(3)
   difference {sphere {0,1 scale <0.033,0.046,0.020>} sphere {0,1 scale <0.031,0.044,0.018>} box {<-0.05,-0.06,-0.04>,<0.05,-0.035,0.04>} Flesh(A,T)}
