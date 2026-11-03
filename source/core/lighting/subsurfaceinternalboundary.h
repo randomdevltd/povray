@@ -37,6 +37,7 @@ SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point,
 {
     SubsurfaceInternalRootQuery query(point, direction, shift);
     Ray ray(ticket, query.origin, direction, Ray::SubsurfaceRay);
+    const RayRootQueryDisabled restoreQuery(ray);
     ray.SetRootQuery(&query);
     for (;;)
     {
