@@ -37,3 +37,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 `CameraZoom` enlarges an isolated object without changing physical dimensions. The physical hand source follows a boundary inset by 0.7 mm and occupies a 0.4 mm central slice through the palm and fingers. Its blue vein density remains separate from homogeneous flesh scattering.
 
 The transparent embedded emitter has `ior off`: it supplies light within the host material without adding a separate air cavity or optical interface.
+
+`VeinLayer=1` puts the hand emission inside a vascular layer bounded by the 0.7 mm and 1.5 mm inset hand surfaces, instead of the central slice. `VeinScale=0.015` spaces the physical blue veins farther apart than the default 5 mm pattern so their diffusion remains distinct. These controls change real source placement and pattern scale, not material attenuation.

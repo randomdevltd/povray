@@ -7,6 +7,8 @@
 #ifndef (SubsurfaceSamples) #declare SubsurfaceSamples=12; #end
 #ifndef (InternalSamples) #declare InternalSamples=2; #end
 #ifndef (EmitterSamples) #declare EmitterSamples=16; #end
+#ifndef (VeinScale) #declare VeinScale=0.005; #end
+#ifndef (VeinLayer) #declare VeinLayer=0; #end
 #ifndef (CameraZoom) #declare CameraZoom=1; #end
 #ifndef (PanelHalfDepth) #declare PanelHalfDepth=0.006; #end
 #ifndef (PanelRound) #declare PanelRound=1; #end
@@ -42,7 +44,7 @@
 #declare Names=array[8] {"ALIEN VEINS","SKIN / EAR","WAX / FLAME","LAMP MEMBRANE","FRUIT / CORE","LEAF RIBS","ALIEN PANEL","RUNE SCROLL"};
 #declare Veins=pigment { marble turbulence 0.9 octaves 6 omega 0.6 lambda 2.2
  colour_map {[0 rgb <0.3,1.35,7.2>*Exposure] [0.04 rgb <0.3,1.35,7.2>*Exposure] [0.10 rgb 0] [1 rgb 0]}
- scale <0.005,0.018,0.005> };
+ scale <VeinScale,VeinScale*3.6,VeinScale> };
 #declare VeinField=function {pigment {Veins}};
 #declare RuneX=function(X) {mod(X+0.036,0.018)-0.009};
 #declare RuneY=function(Y) {mod(Y+0.036,0.018)-0.009};
@@ -173,7 +175,11 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #if (InternalSource & SourceMode=1 & (A=0 | A=6 | A=7))
   #local Glow=(A=7?<1.8,0.32,0.04>:<0.05,0.4,1.7>);
   #if (A=0)
-   intersection {HandBoundary(0.0007) box {<-0.06,-0.06,-0.0002>,<0.06,0.07,0.0002>}
+   #if (VeinLayer)
+    difference {HandBoundary(0.0007) HandBoundary(0.0015)
+   #else
+    intersection {HandBoundary(0.0007) box {<-0.06,-0.06,-0.0002>,<0.06,0.07,0.0002>}
+   #end
   #else
    box {<-0.025,-0.034,-0.0002>,<0.025,0.035,0.0002>
   #end
