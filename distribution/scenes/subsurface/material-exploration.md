@@ -27,3 +27,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 `Export=1` adds a surface bounce light to the selected material, including the panel and parchment. Compare this switch at fixed source power to test the surface light bridge. `SurfaceSource=1` adds an independent, outward patterned surface light while retaining the chosen embedded source mode; it supplies its own energy and is not an exported-flux measurement.
 
 `EmissionExport=1` requests a surface `light { emission }` without legacy finish emission. On a renderer supporting primary internal-flux export, this publishes the physical buried source field at the material boundary. Use `Export=0/1` and `EmissionExport=0/1` for none, emission, bounce and combined comparisons. The independent `SurfaceSource` pigment input takes precedence over the emission input when both are selected.
+
+`PanelRound=0` replaces the rounded panel with a closed box as a boundary-tracing diagnostic. Both versions enclose the same physical source. Keep this setting identical in comparisons; the box does not validate curved-boundary behaviour.
