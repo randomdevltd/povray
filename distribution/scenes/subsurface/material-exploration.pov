@@ -391,5 +391,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   global_lights off
   translate <PX,PY,0>
  }
+ #if (!Single | CameraZoom<=1.25)
  text {ttf "timrom.ttf" Names[A] 0.0001,0 scale 0.004 translate <PX-0.04,PY-0.064,-0.01> pigment {rgb <0.6,0.72,0.8>} finish {emission 0.6*Exposure}}
+ #end
 #end
