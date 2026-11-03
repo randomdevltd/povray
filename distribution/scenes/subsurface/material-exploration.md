@@ -29,3 +29,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 `EmissionExport=1` requests a surface `light { emission }` without legacy finish emission. On a renderer supporting primary internal-flux export, this publishes the physical buried source field at the material boundary. Use `Export=0/1` and `EmissionExport=0/1` for none, emission, bounce and combined comparisons. The independent `SurfaceSource` pigment input takes precedence over the emission input when both are selected.
 
 `PanelRound=0` replaces the rounded panel with a closed box as a boundary-tracing diagnostic. Both versions enclose the same physical source. Keep this setting identical in comparisons; the box does not validate curved-boundary behaviour.
+
+`SubsurfaceSamples`, `InternalSamples` and `EmitterSamples` expose the global surface, internal-walk and emitter budgets. Defaults are 12, 2 and 16 for quick shape proofs; `InternalSamples=32` or higher reduces physical internal-source noise. Use Radiance output (`+FH`) to retain bright flame and wax values without changing source power; the gallery can tone-map HDR previews.

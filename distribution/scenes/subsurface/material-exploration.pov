@@ -4,6 +4,9 @@
 #ifndef (Artifact) #declare Artifact=-1; #end
 #ifndef (Case) #declare Case=-1; #end
 #ifndef (Sheet) #declare Sheet=0; #end
+#ifndef (SubsurfaceSamples) #declare SubsurfaceSamples=12; #end
+#ifndef (InternalSamples) #declare InternalSamples=2; #end
+#ifndef (EmitterSamples) #declare EmitterSamples=16; #end
 #ifndef (PanelRound) #declare PanelRound=1; #end
 #ifndef (EmissionExport) #declare EmissionExport=0; #end
 #ifndef (Export) #declare Export=0; #end
@@ -57,7 +60,7 @@
  box {<-0.020,0.005,-0.006>,<0.020,0.0062,0.006>}
 }
 global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12
- subsurface {method 2 samples 12,2 spacing 1 error_bound 0.15 memory 256} }
+ subsurface {method 2 samples SubsurfaceSamples,InternalSamples spacing 1 error_bound 0.15 memory 256} }
 #default {finish {ambient 0 diffuse 0.7}}
 background {rgb <0.012,0.019,0.031>}
 #declare Single=(Artifact>=0 | Case>=0);
@@ -103,7 +106,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  interior {ior 1.4}
  #local BounceEnabled=(Export | (CurrentBounce & (A=2 | Case>=0)));
  #if (EmissionExport | BounceEnabled | SourceMode=2 | SurfaceSource)
-  light {samples 16
+  light {samples EmitterSamples
    #if (SourceMode=2 | SurfaceSource) pigment {Veins} brightness Exposure*0.05 lumens
    #elseif (EmissionExport) emission #end
    #if (BounceEnabled) bounce {passes WaxBouncePasses} #end
@@ -131,14 +134,14 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   cylinder {<0,0.034,0>,<0,0.047,0>,0.0007 pigment {rgb 0.025}}
   sphere {0,1 scale <0.004,0.013,0.004> translate y*0.058 pigment {rgbt 1}
    interior {media {mix add method 4 resolution 0.001 emission <7,2.5,0.4>*Exposure density {spherical}}
-    #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples 16} #end
+    #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
   cylinder {<0,-0.047,0>,<0,-0.043,0>,0.026 pigment {rgb <0.25,0.17,0.065>} finish {specular 0.5 metallic}}
   #break
  #case(3)
   difference {sphere {0,1 scale <0.033,0.046,0.020>} sphere {0,1 scale <0.031,0.044,0.018>} box {<-0.05,-0.06,-0.04>,<0.05,-0.035,0.04>} Flesh(A,T)}
-  sphere {0,0.004 pigment {rgb 1} finish {emission Exposure} interior {#if(SourceOn) light {pigment {rgb <1,0.45,0.13>} brightness (0.3*Exposure) lumens samples 16} #end}}
+  sphere {0,0.004 pigment {rgb 1} finish {emission Exposure} interior {#if(SourceOn) light {pigment {rgb <1,0.45,0.13>} brightness (0.3*Exposure) lumens samples EmitterSamples} #end}}
   #break
  #case(4)
   difference {sphere {0,1 scale <0.036,0.043,0.028>} box {<-0.05,-0.05,-0.05>,<0.05,0.05,-0.006>} Flesh(A,T)}
@@ -173,7 +176,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
      #else function {RuneMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]} #end
     }
    }
-   light {emission brightness 0.02*Exposure lumens samples 16}
+   light {emission brightness 0.02*Exposure lumens samples EmitterSamples}
    }
   }
  #end
