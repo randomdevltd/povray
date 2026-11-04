@@ -34,8 +34,7 @@ comparison variable.
 The hand transport multiplier is `0.2`; other rows use their nominal `1.0`
 multiplier. Hand source power is `0.02 lm`. Power is held
 constant across the four source-enabled versions of a row. The hand emitter
-domain uses 500,000 cells, matching the effective grid of the lower-resolution
-source reference. Coating uses an independent narrow crackle network with an
+domain requests 500,000 cells. Coating uses an independent narrow crackle network with an
 opaque core and a short transition to transparency; it leaves most surface area
 open and does not follow the embedded emitter pattern. Other source powers
 and material settings are declared in `material-exploration.pov`.
