@@ -255,10 +255,11 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #local FlameColour=colour rgb <3,1.07143,0.17143>;
   #local FlameVolume=4*pi*FlameAxes.x*FlameAxes.y*FlameAxes.z/3;
   #local FlameEmission=FlameColour*CandleLumens/(pi*FlameVolume*FlameColour.gray);
-  sphere {0,1 scale FlameAxes translate y*0.058 pigment {rgbt 1}
+  sphere {0,1 pigment {rgbt 1}
    interior {media {mix add method 4 resolution 0.001 emission FlameEmission*Exposure*SourceOn density {spherical}}
     #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
+   scale FlameAxes translate y*0.058
   }
   cylinder {<0,0.036-WaxLength,0>,<0,0.040-WaxLength,0>,WaxRadius+0.008 pigment {rgb <0.25,0.17,0.065>} finish {specular 0.5 metallic}}
   #break

@@ -96,10 +96,16 @@ Source-domain and prepared-media cell budgets control spatial detail and work pe
 For the complete labelled eight-by-five comparison, use `material-matrix.pov` and the controls documented in `material-matrix.md`. Its row settings differ from the selected closeup recipes above.
 
 The candle's visible flame and cast light use the same `CandleLumens` flux. Its
-`spherical` density is `1-r` in the unit ball, whose mean is one quarter. For
+`spherical` density is `1-r` in the unit ball, whose mean is one quarter.
+The interior is attached before the ellipsoid transforms, so density follows
+the flame's local coordinates. For
 ellipsoid volume `V` and flame colour `C`, the media emission coefficient is
 `C * CandleLumens / (pi * V * C.gray)`. The explicit lumen normalization keeps
 cast illumination fixed despite prepared-density discretization. The matrix
 translates specimens without an additional geometry scale, so the ellipsoid
 axes include its complete volume determinant. Any additional geometry scaling
 requires the same determinant in the visible-emission calculation.
+
+This localized density differs from a world-space spherical pattern attached
+after the shape transforms. Its fixed total flux can therefore produce a
+different near-field wax and receiver profile without increasing source power.
