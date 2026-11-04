@@ -7200,6 +7200,7 @@ const LightSource* Trace::LightOnObject(const LightSource& light, ConstObjectPtr
 
 bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId)
 {
+    const PreciseInsideScope precision(threadData);
     RayInteriorVector containing;
     FindContainingInteriors(point, containing, preparedSetId);
     return std::find(containing.begin(), containing.end(), interior) != containing.end();
@@ -7208,6 +7209,7 @@ bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* in
 SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
     ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket)
 {
+    const PreciseInsideScope precision(threadData);
     const Interior* material = object->interior.get();
     const double extent = (material->boundsHigh - material->boundsLow).length();
     const double shift = std::max(2.0 * MIN_ISECT_DEPTH, std::max(InterfaceTolerance(point, material), 4.0e-6 * extent));
@@ -7222,7 +7224,8 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
         hit.Object->Normal(outward, &hit, threadData);
         outward.normalize();
         return SubsurfaceBoundaryExit(hit.IPoint, direction, outward, hit.Object->SurfaceTolerance(), extent,
-            [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); });
+            [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); },
+            dot(hit.IPoint - point, direction), Test_Flag(hit.Object, INVERTED_FLAG));
     };
     return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, find, exits);
 }
