@@ -332,6 +332,7 @@ int main()
         const PreciseInsideScope outerPrecision(&thread);
         assert(wrist->Inside(thinPoint, &thread));
         assert(!wrist->Inside(thinPoint, &otherThread));
+        assert(!wrist->Inside(thinPoint, nullptr));
         {
             const PreciseInsideScope nestedPrecision(&thread);
             assert(wrist->Inside(thinPoint, &thread));
