@@ -1,5 +1,6 @@
 #version 4.0;
 #include "functions.inc"
+#ifndef (LibraryOnly) #declare LibraryOnly=0; #end
 #ifndef (Coating) #declare Coating=1; #end
 #ifndef (Detail) #declare Detail=1; #end
 #ifndef (AreaSamples) #declare AreaSamples=9; #end
@@ -97,8 +98,9 @@
  box {<-0.020,0.005,-0.006>,<0.020,0.0062,0.006>}
 }
 global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12 prepared_media_cells 16000000
- subsurface {method 2 samples SubsurfaceSamples,InternalSamples spacing 1 error_bound 0.15 memory 256} }
+ subsurface {method 2 samples SubsurfaceSamples,InternalSamples spacing 1 error_bound 0.15} }
 #default {finish {ambient 0 diffuse 0.7}}
+#if (!LibraryOnly)
 background {rgb <0.012,0.019,0.031>}
 #declare Single=(Artifact>=0 | Case>=0);
 #declare Cols=(Sheet?5:(Single?1:4));
@@ -108,6 +110,7 @@ background {rgb <0.012,0.019,0.031>}
 #declare ViewWidth=max(Cols*SX+0.035,(Rows*SY+0.025)*image_width/image_height);
 camera {orthographic location <0,0.07,-0.8> look_at <0,0,0> right x*ViewWidth/CameraZoom up y*ViewWidth*image_height/image_width/CameraZoom}
 plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
+#end
 #macro Flesh(A,T)
  #local K=Travel[T]; #local D=Depths[T]; #local Spread=D*0.2;
  #if (Case>=0)
@@ -150,19 +153,12 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    }
   }
  }
- #if(Coating & (A=0 | A=6 | A=7))
+ #if(Coating)
   texture {
    pigment {
-    #if(A=6)
-     function {max(CircuitMask(x,y),max(0,1-abs(abs(x)-0.031)/0.0006),max(0,(f_noise3d(x*900,y*900,z*900)-0.76)*8))}
-     colour_map {[0 rgb <0.065,0.14,0.13>] [0.08 rgb <0.065,0.14,0.13>] [0.15 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]}
-    #elseif(A=7)
-     function {max(RuneMask(x,y),select(abs(RuneY(y))-0.006,0,1),select(abs(x)-0.030,0,1))}
-     colour_map {[0 rgb <0.12,0.045,0.018>] [0.12 rgb <0.12,0.045,0.018>] [0.2 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]}
-    #else
-     CapillaryPattern()
-     colour_map {[0 rgbt <1,1,1,1>] [0.02 rgbt <1,1,1,1>] [0.06 rgb <0.12,0.06,0.17>] [1 rgb <0.12,0.06,0.17>]}
-    #end
+    crackle form <-1,1,0> metric 2 turbulence 0.35
+    scale <0.009,0.018,1000>
+    colour_map {[0 rgb <0.10,0.055,0.13>] [0.012 rgb <0.10,0.055,0.13>] [0.025 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]}
    }
    normal {bumps 0.08 scale 0.00018}
    finish {ambient 0 diffuse 0.65 specular 0.25 roughness 0.035}
@@ -256,7 +252,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #end
   cylinder {<0,0.034,0>,<0,0.047,0>,0.0007 pigment {rgb 0.025}}
   sphere {0,1 scale <0.004,0.013,0.004> translate y*0.058 pigment {rgbt 1}
-   interior {media {mix add method 4 resolution 0.001 emission <3,1.07143,0.17143>*Exposure density {spherical}}
+   interior {media {mix add method 4 resolution 0.001 emission <3,1.07143,0.17143>*Exposure*SourceOn density {spherical}}
     #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
@@ -277,7 +273,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    torus {0.017,0.0015 translate y*-0.046 texture {Hardware}}
   #end
   sphere {0,0.004 pigment {rgbt 1}
-   interior {ior off media {mix add method 4 emission <1,0.45,0.13>*Exposure}
+   interior {ior off media {mix add method 4 emission <1,0.45,0.13>*Exposure*SourceOn}
     #if(SourceOn) light {emission brightness (LampLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
@@ -345,7 +341,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #end
   #break
  #end
- #if (InternalSource & SourceMode=1 & (A=0 | A=6 | A=7))
+ #if (SourceOn & InternalSource & SourceMode=1 & (A=0 | A=6 | A=7))
   #local Glow=(A=7?<1.8,0.32,0.04>:<0.05,0.4,1.7>);
   #local Glow=Glow/max(Glow.x,Glow.y,Glow.z);
   #if (A=0)
@@ -373,6 +369,30 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #end
 
 #end
+#macro MatrixSpecimen(A,C)
+ #declare SourceOn=(C>0);
+ #declare SourceMode=SourceOn;
+ #declare InternalSource=1;
+ #declare Fill=(C=2?0:1);
+ #declare Coating=(C>=3);
+ #declare Export=(C=4);
+ #declare CurrentBounce=0;
+ #declare CurrentVolume=1;
+ #declare CurrentNormal=NormalStrength;
+ #declare TransportScale=(A=0?0.2:1);
+ #declare EmissionExport=(C=4);
+ #declare HandLumens=0.02;
+ #declare InternalLumens=0.012;
+ #declare VeinScale=0.008;
+ #declare HandDomainCells=500000;
+ light_source {<-0.4,0.6,-0.5> rgb <0.75,0.84,1>*0.5*Exposure*Fill area_light x*0.15,z*0.15,AreaSamples,AreaSamples adaptive 1}
+ light_source {<0.3,0.35,0.15> rgb <1,0.55,0.28>*0.45*Exposure*Fill}
+ Specimen(A,2)
+ #if (SourceOn & (A=1 | A=4 | A=5))
+  light_source {<0,0,0.045> rgb <1,0.55,0.22>*0.8}
+ #end
+#end
+#if (!LibraryOnly)
 #if (Sheet)
  #for(J,0,4) text {ttf "timrom.ttf" Treatments[J] 0.0001,0 scale 0.004 translate <(J-2)*SX-0.045,Rows*SY/2-0.015,-0.01> pigment {rgb <0.6,0.72,0.8>} finish {emission 0.6*Exposure}} #end
 #end
@@ -406,4 +426,6 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #if (!Single | CameraZoom<=1.25)
  text {ttf "timrom.ttf" Names[A] 0.0001,0 scale 0.004 translate <PX-0.04,PY-0.064,-0.01> pigment {rgb <0.6,0.72,0.8>} finish {emission 0.6*Exposure}}
  #end
+#end
+
 #end
