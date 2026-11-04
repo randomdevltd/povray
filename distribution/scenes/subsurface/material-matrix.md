@@ -52,3 +52,8 @@ A 900 × 1400 render is a framing proof only; it is too small to evaluate materi
 detail or read all labels. The full output has a minimum text scale of `0.0093`
 scene units in a `0.96`-unit view, approximately 35 pixels per font em at 3600
 pixels wide. The font's visible capital height is approximately 25 pixels.
+
+`MatrixRow` (0–7) and `MatrixColumn` (0–4) select specimens while preserving
+the full frame and labels. Their default `-1` selects every row or column.
+`MatrixRow=-2` renders the labelled frame without specimens. Region renders
+can use the same full output dimensions and camera to preserve pixel placement.
