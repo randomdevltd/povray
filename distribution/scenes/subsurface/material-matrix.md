@@ -21,7 +21,7 @@ of external lighting, 2 with 4 to see the surface coat, and 4 with 5 to see
 surface export. The pale narrow panel beside every object is a diffuse receiver;
 it makes light reaching an adjacent surface visible. A lit receiver in column 2
 may already receive direct source light. Column 5 adds the object's outgoing
-subsurface contribution; it does not uniquely isolate all receiver illumination.
+subsurface and bounced-light contributions; it does not uniquely isolate all receiver illumination.
 
 The hand, panel and scroll contain patterned emitting media. The ear, fruit and
 leaf use rear sources. The wax is illuminated by its flame and the membrane by

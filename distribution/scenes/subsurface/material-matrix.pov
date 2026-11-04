@@ -56,5 +56,5 @@ MatrixText("Read across: same geometry, scattering, source power, camera and nor
 #end
 MatrixText("HOW TO READ THIS MATRIX",<-0.455,-0.657,-0.12>,0.011,<0.94,0.97,1>)
 MatrixText("C1 > C2: add source.  C2 > C3: remove fill.  C2 > C4: add narrow sparse coat.",<-0.455,-0.679,-0.12>,0.0093,<0.78,0.85,0.92>)
-MatrixText("C4 > C5: export outgoing subsurface light. Pale side strips are diffuse receivers.",<-0.455,-0.699,-0.12>,0.0093,<0.78,0.85,0.92>)
+MatrixText("C4 > C5: export subsurface + bounced light. Pale side strips are diffuse receivers.",<-0.455,-0.699,-0.12>,0.0093,<0.78,0.85,0.92>)
 MatrixText("Homogeneous transport; patterns define emitters / surface coats, not varying bulk scattering.",<-0.455,-0.719,-0.12>,0.0093,<0.65,0.78,0.90>)
