@@ -1,4 +1,6 @@
 #version 4.0;
+#ifndef (MatrixRow) #declare MatrixRow=-1; #end
+#ifndef (MatrixColumn) #declare MatrixColumn=-1; #end
 #declare LibraryOnly=1;
 #declare Sheet=0;
 #declare Artifact=-1;
@@ -44,6 +46,7 @@ MatrixText("Read across: same geometry, scattering, source power, camera and nor
  MatrixText(KLabel,<-0.455,Y-0.038,-0.12>,0.0093,<0.78,0.85,0.92>)
  #for(C,0,4)
   #local X=-0.248+C*MatrixPitchX;
+  #if ((MatrixRow=-1 | MatrixRow=A) & (MatrixColumn=-1 | MatrixColumn=C))
   light_group {
    MatrixSpecimen(A,C)
    box {<-0.058,-0.064,0.056>,<0.061,0.071,0.060> pigment {rgb <0.035,0.050,0.071>} finish {ambient 0 diffuse 0 emission 0.7}}
@@ -51,6 +54,7 @@ MatrixText("Read across: same geometry, scattering, source power, camera and nor
    global_lights off
    translate <X,Y,0>
   }
+  #end
   MatrixText(concat("R",str(A+1,0,0)," / C",str(C+1,0,0)),<X-0.054,Y-0.074,-0.12>,0.0093,<0.56,0.72,0.86>)
  #end
 #end
