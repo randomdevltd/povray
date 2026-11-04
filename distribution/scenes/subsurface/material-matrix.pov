@@ -20,7 +20,7 @@
 #declare MatrixSubhead=array[5] {"source OFF | fill 1","source ON | fill 1","source ON | fill 0","source ON | fill 1","source ON | fill 1"};
 #declare MatrixCoats=array[5] {"coat OFF | export OFF","coat OFF | export OFF","coat OFF | export OFF","coat ON | export OFF","coat ON | export ON"};
 #macro MatrixText(S,P,Size,Colour)
- text {ttf "cyrvetic.ttf" S 0.00001,0 scale Size translate P pigment {rgb Colour} finish {ambient 0 diffuse 0 emission 1}}
+ text {ttf "cyrvetic.ttf" S 0.00001,0 no_shadow no_reflection scale Size translate P pigment {rgb Colour} finish {ambient 0 diffuse 0 emission 1}}
 #end
 background {rgb <0.018,0.025,0.038>}
 camera {orthographic location <0,0,-1> look_at 0 right x*MatrixWidth up y*MatrixWidth*image_height/image_width}
@@ -51,7 +51,7 @@ MatrixText("Read across: same geometry, scattering, source power, camera and nor
    global_lights off
    translate <X,Y,0>
   }
-  MatrixText(concat("R",str(A+1,0,0)," / C",str(C+1,0,0)),<X-0.054,Y-0.079,-0.12>,0.0093,<0.56,0.72,0.86>)
+  MatrixText(concat("R",str(A+1,0,0)," / C",str(C+1,0,0)),<X-0.054,Y-0.074,-0.12>,0.0093,<0.56,0.72,0.86>)
  #end
 #end
 MatrixText("HOW TO READ THIS MATRIX",<-0.455,-0.657,-0.12>,0.011,<0.94,0.97,1>)
