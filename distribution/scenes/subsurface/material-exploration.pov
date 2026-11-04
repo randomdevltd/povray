@@ -251,8 +251,12 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    torus {WaxRadius+0.004,0.0012 translate y*(0.038-WaxLength) texture {Hardware}}
   #end
   cylinder {<0,0.034,0>,<0,0.047,0>,0.0007 pigment {rgb 0.025}}
-  sphere {0,1 scale <0.004,0.013,0.004> translate y*0.058 pigment {rgbt 1}
-   interior {media {mix add method 4 resolution 0.001 emission <3,1.07143,0.17143>*Exposure*SourceOn density {spherical}}
+  #local FlameAxes=<0.004,0.013,0.004>;
+  #local FlameColour=colour rgb <3,1.07143,0.17143>;
+  #local FlameVolume=4*pi*FlameAxes.x*FlameAxes.y*FlameAxes.z/3;
+  #local FlameEmission=FlameColour*CandleLumens/(pi*FlameVolume*FlameColour.gray);
+  sphere {0,1 scale FlameAxes translate y*0.058 pigment {rgbt 1}
+   interior {media {mix add method 4 resolution 0.001 emission FlameEmission*Exposure*SourceOn density {spherical}}
     #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
   }
