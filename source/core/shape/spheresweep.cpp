@@ -88,6 +88,8 @@
 // C++ standard header files
 #include <algorithm>
 #include <vector>
+#include <cmath>
+#include <limits>
 
 // POV-Ray header files (base module)
 #include "base/povassert.h"
@@ -118,6 +120,72 @@ const DBL RADIUS_TOLERANCE      = 1.0e-6;
 #define SPHSWEEP_MAX_ISECT  ((Num_Spheres + Num_Segments) * 2 + 64)
 
 
+
+// Precise linear sweeps are convex hulls of their two endpoint balls; see doc/PERF.md.
+static int IntersectPreciseLinearSweep(const BasicRay& ray, const SPHSWEEP_SEG& segment, SPHSWEEP_INT* intersections)
+{
+    long double v[3], b[3], d[3];
+    long double vv = 0.0L, bb = 0.0L, dd = 0.0L, vb = 0.0L, vd = 0.0L, db = 0.0L;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        v[axis] = static_cast<long double>(ray.Origin[axis]) - segment.Center_Coef[0][axis];
+        b[axis] = segment.Center_Coef[1][axis];
+        d[axis] = ray.Direction[axis];
+        vv += v[axis] * v[axis]; bb += b[axis] * b[axis]; dd += d[axis] * d[axis];
+        vb += v[axis] * b[axis]; vd += v[axis] * d[axis]; db += d[axis] * b[axis];
+    }
+    const long double radius = segment.Radius_Coef[0], change = segment.Radius_Coef[1];
+    const long double a = bb - change * change, h = vb + radius * change;
+    struct Candidate { long double distance, position; } candidates[6];
+    int count = 0;
+    auto roots = [](long double qa, long double qb, long double qc, long double (&result)[2])
+    {
+        if (qa == 0.0L)
+        {
+            if (qb == 0.0L) return false;
+            result[0] = result[1] = -qc / qb;
+            return true;
+        }
+        long double discriminant = qb * qb - 4.0L * qa * qc;
+        const long double error = 64.0L * std::numeric_limits<long double>::epsilon() *
+            (qb * qb + std::abs(4.0L * qa * qc));
+        if (discriminant < -error) return false;
+        discriminant = std::max(0.0L, discriminant);
+        const long double q = -0.5L * (qb + std::copysign(std::sqrt(discriminant), qb));
+        if (q == 0.0L) result[0] = result[1] = -qb / (2.0L * qa);
+        else { result[0] = q / qa; result[1] = qc / q; }
+        return true;
+    };
+    long double distances[2];
+    for (int endpoint = 0; endpoint < 2; ++endpoint)
+    {
+        const long double r = radius + endpoint * change;
+        const long double oc2 = vv - 2.0L * endpoint * vb + endpoint * bb;
+        if (roots(dd, 2.0L * (vd - endpoint * db), oc2 - r * r, distances))
+            for (long double t : distances) candidates[count++] = {t, static_cast<long double>(endpoint)};
+    }
+    if (a > 0.0L && roots(a * dd - db * db, 2.0L * (a * vd - h * db), a * (vv - radius * radius) - h * h, distances))
+        for (long double t : distances)
+        {
+            const long double u = (h + db * t) / a;
+            if (u >= 0.0L && u <= 1.0L) candidates[count++] = {t, u};
+        }
+    if (count < 2) return 0;
+    std::sort(candidates, candidates + count, [](const Candidate& x, const Candidate& y) { return x.distance < y.distance; });
+    for (int side = 0; side < 2; ++side)
+    {
+        const auto& candidate = candidates[side == 0 ? 0 : count - 1];
+        intersections[side].t = static_cast<double>(candidate.distance);
+        if (!IsFiniteIntersectionDepth(intersections[side].t)) return 0;
+        intersections[side].Point = ray.Evaluate(intersections[side].t);
+        for (int axis = 0; axis < 3; ++axis)
+            intersections[side].Normal[axis] = static_cast<double>(v[axis] + d[axis] * candidate.distance - b[axis] * candidate.position);
+        if (!(intersections[side].Normal.lengthSqr() > 0.0))
+            throw POV_EXCEPTION_STRING("Precise linear sphere-sweep transport encountered a singular zero-radius tip.");
+        intersections[side].Normal.normalize();
+    }
+    return 2;
+}
 
 /*****************************************************************************
 * Local variables
@@ -205,8 +273,10 @@ bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceTh
         New_Ray.Direction /= len;
     }
 
+    const bool preciseLinear = Interpolation == LINEAR_SPHERE_SWEEP && Num_Segments > 0 &&
+        ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
     // Intersections with single spheres
-    for(i = 0; i < Num_Spheres; i++)
+    for(i = 0; !preciseLinear && i < Num_Spheres; i++)
     {
         // Test for end of vector
         if (Num_Isect + 2 <= SPHSWEEP_MAX_ISECT)
@@ -221,7 +291,8 @@ bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceTh
     for(i = 0; i < Num_Segments; i++)
     {
         // Are there intersections with this segment?
-        Num_Seg_Isect = Intersect_Segment(New_Ray, &Segment[i], Segment_Isect, Thread->Stats());
+        Num_Seg_Isect = preciseLinear ? IntersectPreciseLinearSweep(New_Ray, Segment[i], Segment_Isect) :
+            Intersect_Segment(New_Ray, &Segment[i], Segment_Isect, Thread->Stats());
 
         // Test for end of vector
         if(Num_Isect + Num_Seg_Isect <= SPHSWEEP_MAX_ISECT)

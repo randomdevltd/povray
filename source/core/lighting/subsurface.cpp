@@ -362,8 +362,8 @@ PreciseMathColour SubsurfaceBoundary::GetReducedAlbedo(const MathColour& diffuse
 size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
     size_t h = std::hash<const void*>()(k.object) ^ (std::hash<const void*>()(k.medium) * 31u) ^
-               (std::hash<size_t>()(k.preparedSetId) * 65599u);
-    for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel) })
+               (std::hash<size_t>()(k.preparedSetId) * 65599u) ^ std::hash<double>()(k.lightSamples);
+    for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel), std::int64_t(k.normals) })
         h = h * 1000003u ^ std::hash<std::int64_t>()(v);
     return h;
 }
@@ -912,6 +912,9 @@ void SubsurfaceCell::Release()
     std::vector<float>().swap(ambient);
     std::vector<float>().swap(photonEntry);
     std::vector<float>().swap(entry);
+    std::vector<float>().swap(taps);
+    std::vector<size_t>().swap(tapStart);
+    std::vector<std::vector<float>>().swap(tapRows);
     read.reset();
 }
 

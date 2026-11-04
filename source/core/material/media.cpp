@@ -1735,13 +1735,26 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         progress->Begin("lights", refracting.size() + scene->mediaLights.size());
     PrepareRefractionDefinitions(refracting, td, cooperate);
     std::vector<ConstObjectPtr> sourceOwners;
+    std::map<ConstObjectPtr, double> statedDomainCells;
     for (const LightSource* light : scene->mediaLights)
         if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
+        {
             sourceOwners.push_back(light->emitterContainer);
+            if (light->sourceDomainCells > 0.0)
+                statedDomainCells.emplace(light->emitterContainer, light->sourceDomainCells);
+        }
+    // a light's own domain_cells overrides the scene budget for its container's domain; first light wins a shared container
     std::map<ConstObjectPtr, std::shared_ptr<const PreparedSourceDomain>> sourceDomains;
-    for (const auto& group : PrepareSourceDomains(sourceOwners))
-        for (ConstObjectPtr owner : group.owners)
-            sourceDomains.emplace(owner, group.domain);
+    for (ConstObjectPtr owner : sourceOwners)
+    {
+        if (sourceDomains.count(owner) != 0)
+            continue;
+        PreparedSourceDomainPolicy policy = SceneSourceDomainPolicy(*scene);
+        const auto stated = statedDomainCells.find(owner);
+        if (stated != statedDomainCells.end())
+            policy.automaticCells = stated->second;
+        sourceDomains.emplace(owner, PrepareSourceDomain(owner, policy));
+    }
     for (LightSource *light : scene->mediaLights)
     {
         if (!light->emitter || !light->emitterContainer)
@@ -1843,7 +1856,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
     bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
-    samples(source.samples),
+    samples(source.samples), domainCells(source.domainCells),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
     photonOptions(source.photonOptions), where(source.where)
@@ -2106,6 +2119,32 @@ class VolumeEmitter final : public Emitter
         double Reach(const Vector3d& from) const override { return BoxReach(from, low, size); }
 
         bool HasVolumeEmission() const override { return volumeEmission; }
+        MathColour VolumeEmissionAlong(const Vector3d& from, const Vector3d& direction, double reach,
+            double extinction, double draw, TraceThreadData* td) const override
+        {
+            vector<std::pair<double, double>> pieces;
+            const double length = Chord(from, direction, reach, td, pieces);
+            if (!(length > 0.0)) return MathColour();
+            double integral = 0.0;
+            for (const auto& piece : pieces)
+                integral += std::exp(-extinction * piece.first) * -std::expm1(-extinction * (piece.second - piece.first)) / extinction;
+            double at = draw * integral;
+            for (const auto& piece : pieces)
+            {
+                const double start = std::exp(-extinction * piece.first);
+                const double span = -std::expm1(-extinction * (piece.second - piece.first));
+                const double weight = start * span / extinction;
+                if (at < weight)
+                {
+                    const double fraction = std::min(std::nextafter(1.0, 0.0), at * extinction / start);
+                    const double distance = piece.first - std::log1p(-fraction) / extinction;
+                    const Vector3d outgoing = -direction;
+                    return EmissionAt(from + direction * distance, td, &outgoing) * integral;
+                }
+                at -= weight;
+            }
+            return MathColour();
+        }
 
         MathColour EmissionAt(const Vector3d& p, TraceThreadData *td, const Vector3d *outgoing = nullptr) const
         {

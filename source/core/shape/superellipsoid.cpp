@@ -218,6 +218,8 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
     DBL t, t1, t2, v0, v1, len;
     Vector3d P, D, P0, P1, P2, P3;
 
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+
     /* Transform the ray into the superellipsoid space. */
 
     MInvTransPoint(P, ray.Origin, Trans);
@@ -306,7 +308,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
             {
                 /* Opposite signs, there must be a root between */
 
-                solve_hit1(v0, P0, v1, P1, P2);
+                solve_hit1(v0, P0, v1, P1, P2, precise);
 
                 P3 = P2 - P;
 
@@ -332,7 +334,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                  * surface into thinking there isn't a root between sample points.
                  */
 
-                if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2))
+                if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2, precise))
                 {
                     if (insert_hit(ray, t / len, Depth_Stack, Thread))
                     {
@@ -343,6 +345,24 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                         else
                         {
                             return(true);
+                        }
+                    }
+                    else if (precise)
+                    {
+                        double probe = 0.5 * (t + dists[i]);
+                        for (int step = 0; step < 64 && probe > t; ++step, probe = 0.5 * (t + probe))
+                        {
+                            const Vector3d inside = P + probe * D;
+                            const double value = evaluate_superellipsoid(inside);
+                            if (value * v1 >= 0.0) continue;
+                            solve_hit1(value, inside, v1, P1, P2, precise);
+                            const double farther = (P2 - P).length() / len;
+                            if (insert_hit(ray, farther, Depth_Stack, Thread))
+                            {
+                                if (Type & IS_CHILD_OBJECT) Found = true;
+                                else return true;
+                            }
+                            break;
                         }
                     }
                     else
@@ -1342,7 +1362,14 @@ int Superellipsoid::find_ray_plane_points(const Vector3d& P, const Vector3d& D, 
 *
 ******************************************************************************/
 
-void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P) const
+double Superellipsoid::SurfaceTolerance() const
+{
+    double squared = 0.0;
+    for (int axis = 0; axis < 3; ++axis) squared += Sqr(double(BBox.size[axis]));
+    return 2.0 * ZERO_TOLERANCE * std::sqrt(squared);
+}
+
+void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P, bool precise) const
 {
     int i;
     DBL x, v2, v3;
@@ -1350,6 +1377,19 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
 
     P0 = tP0;
     P1 = tP1;
+    if (precise)
+    {
+        for (int step = 0; step < 128; ++step)
+        {
+            P = 0.5 * (P0 + P1);
+            if ((P - P0).lengthSqr() == 0.0 || (P - P1).lengthSqr() == 0.0) return;
+            const double value = evaluate_superellipsoid(P);
+            if (value == 0.0) return;
+            if ((value < 0.0) == (v0 < 0.0)) { P0 = P; v0 = value; }
+            else { P1 = P; v1 = value; }
+        }
+        return;
+    }
 
     /* The sign of v0 and v1 changes between P0 and P1, this
        means there is an intersection point in there somewhere. */
@@ -1438,20 +1478,7 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
     }
 
     if (i == MAX_ITERATIONS)
-    {
-        // The loop never quite closed in on the result - just use the point
-        // closest to zero.  This really shouldn't happen since the max number
-        // of iterations is enough to converge with straight bisection.
-
-        if (fabs(v0) < fabs(v1))
-        {
-            P = P0;
-        }
-        else
-        {
-            P = P1;
-        }
-    }
+        solve_hit1(v0, P0, v1, P1, P, true);
 }
 
 
@@ -1483,7 +1510,7 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
 *
 ******************************************************************************/
 
-bool Superellipsoid::check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q) const
+bool Superellipsoid::check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q, bool precise) const
 {
     int i;
     DBL dt0, dt1, v1, deltat, maxdelta;
@@ -1504,7 +1531,7 @@ bool Superellipsoid::check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Ve
         {
             /* Found a crossing point, go back and use normal root solving. */
 
-            solve_hit1(v0, P0, v1, P1, Q);
+            solve_hit1(v0, P0, v1, P1, Q, precise);
 
             P0 = Q - P;
 

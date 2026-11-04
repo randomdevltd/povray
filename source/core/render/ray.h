@@ -74,6 +74,7 @@ struct RayRootQuery
     virtual ~RayRootQuery() = default;
     virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
     virtual bool AllRoots() const { return false; }
+    virtual bool PreciseBoundary() const { return false; }
 };
 
 /// The root query active on one ray of a ticket; a copy of a ticket has none, and assigning a ticket keeps it.

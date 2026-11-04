@@ -8631,6 +8631,13 @@ void Parser::Parse_Global_Settings()
                     Error("prepared_media_cells must be an integer from 1 to 1000000000.");
                 sceneData->preparedMediaCells = cells;
             }
+            else if (CurrentTokenText() == "prepared_source_cells")
+            {
+                const DBL cells = Parse_Float();
+                if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
+                    Error("prepared_source_cells must be an integer from 1 to 1000000000.");
+                sceneData->preparedSourceCells = cells;
+            }
             else if (CurrentTokenText() == "atmospheric_ior")
             {
                 if (interiorSerial > 0)
@@ -10636,6 +10643,7 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
     light->attenuationScale = settings.attenuationScale;
     light->attenuationPower = settings.attenuationPower;
     light->cutoff = settings.cutoff;
+    light->sourceDomainCells = settings.domainCells;
     light->lawRadius = emitter->Radius();
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;

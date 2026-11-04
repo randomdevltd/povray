@@ -98,6 +98,7 @@ class Emitter
         virtual ~Emitter() {}
         virtual bool IsSurface() const { return false; }
         virtual bool HasVolumeEmission() const { return false; }
+        virtual MathColour VolumeEmissionAlong(const Vector3d&, const Vector3d&, double, double, double, TraceThreadData*) const { return MathColour(); }
         virtual void AccumulateSurfaceGuide(SurfaceAngularGuide&) const {}
         virtual MathColour SurfaceRadianceAt(const Intersection&, const Vector3d&, const Vector3d&, TraceThreadData*) const { return MathColour(); }
         virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const { return sample.weight * PhotonDirectionWeight(sample, outgoing); }
@@ -160,6 +161,7 @@ struct MediaLight final
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
     int samples = 16;               ///< emitter draws per receiver point
+    double domainCells = 0.0;       ///< interior only: prepared source domain budget overriding global_settings; 0 = no override
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;

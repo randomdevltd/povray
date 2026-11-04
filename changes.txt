@@ -1,5 +1,8 @@
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
+
+- Prepared interior light source domains refine beyond the default cell budget, including thin domains; the automatic node bound now follows the same axis limit.
+- Carry finite volume light emission through homogeneous method 2 subsurface solids, with direct source sampling, internal Fresnel reflection and flux-conserving diffuse bounce export. Existing emission syntax remains available.
 ------------------------------------------------------------------------------
 Notes:
 
@@ -39,6 +42,7 @@ v3.7.1 release proper.
 
 Changed Behaviour
 
+- Surface and volume light samples and finish light_samples now control method 2 subsurface irradiance sampling.
 - Add independent interior refraction { function { DeltaN } detail D },
   or refraction off, in classic SDL and .pov4 at every scene version.
   Blocks require one or more raw signed scalar functions; their sum adds to
@@ -99,6 +103,12 @@ Changed Behaviour
     of acceleration size heuristics. Large translated emitters and rotated
     plane intersections retain finite domains; open mesh interiors require
     finite clipping. Framing uses finite surface bounds independently.
+
+  - A mesh counts as closed when every edge appears an even number of
+    times, the same parity the subsurface sheet test uses, so shells
+    touching along a pinched edge, where one edge is shared four times,
+    qualify for interior media, inside tests and photon boundaries. A mesh
+    with an odd edge count is still open and needs finite clipping.
 
   - Requested method 4 constant media own prepared layout metadata without
     allocating constant density cells. Prepared modifier fields also select
@@ -518,6 +528,15 @@ New Features
     scene's request without editing it. Long marches are coarsened to fit a
     step budget; splitting long containers or a coarser resolution avoids
     that.
+  - `prepared_source_cells`, in `global_settings`, sets the target cell
+    budget of every interior light's prepared source domain, 500000 by
+    default (about 80 cells per axis, capped at 128). The domain's node
+    positions, corner indices and sampling tree, and the bounce gather
+    lattice that hangs off the same domain, scale roughly linearly with it,
+    so it tunes both memory and bounce preparation. A single interior light
+    states its own budget with `domain_cells N` in its `light { }` block,
+    overriding the global value for that light alone. Both words are matched
+    by text and remain free as identifiers.
   - A finite object can be an independent volume light: `interior { light { } }`.
     Its pigment and declared emitting region define its source; media density,
     extinction and prepared grids affect transport separately. Nits use
@@ -4802,3 +4821,5 @@ You can render in only one thread by using the '/THREADS 1' switch in the
 Windows version. Note that parsing and photon building will only use one
 thread no matter how many are specified. However photon scenes will benefit
 from multiple threads once photon building has completed.
+
+Texture normals now affect method 2 subsurface entry illumination over each estimate's surface area; geometry and outgoing transmission retain surface normals.

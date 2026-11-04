@@ -285,5 +285,7 @@ $RECYCLE.BIN/
 /tests/prepared-transfer/
 /tests/sphere-intersection/
 /tests/subsurface-entry-ior/
+/tests/subsurface-internal-boundary/
+/tests/subsurface-internal-sweep/
 *.vsix
 tools/language/reference/.stamp

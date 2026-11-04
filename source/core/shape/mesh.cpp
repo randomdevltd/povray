@@ -1234,10 +1234,16 @@ static bool Closed_Mesh_Topology(const MESH_DATA& data)
         edges.emplace_back(std::min(c, a), std::max(c, a));
     }
     std::sort(edges.begin(), edges.end());
-    for (size_t i = 0; i < edges.size(); i += 2)
-        if ((i + 1 == edges.size()) || (edges[i] != edges[i + 1]) ||
-            ((i + 2 < edges.size()) && (edges[i] == edges[i + 2])))
+    // Closed = every edge used an even number of times; touching shells share an edge four times (SubsurfaceSheet, trace.cpp).
+    for (size_t i = 0; i < edges.size(); )
+    {
+        size_t j = i + 1;
+        while (j < edges.size() && edges[j] == edges[i])
+            ++j;
+        if (((j - i) & 1u) != 0)
             return false;
+        i = j;
+    }
     return true;
 }
 

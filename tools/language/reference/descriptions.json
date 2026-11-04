@@ -1536,6 +1536,11 @@
    "code": "distance 1000",
    "from": "doc/html/r3_7.html"
   },
+  "domain_cells": {
+   "rank": 1022,
+   "code": "domain_cells Integer |",
+   "from": "doc/html/r3_12.html"
+  },
   "double_illuminate": {
    "rank": 1028,
    "code": "double_illuminate [ Bool ] |",
@@ -2453,6 +2458,11 @@
    "rank": 63,
    "code": "global_settings { assumed_gamma 1.0 prepared_media_cells 4096 }",
    "from": "tests/pov4/framing_tagged.pov4:3"
+  },
+  "prepared_source_cells": {
+   "rank": 47,
+   "code": "global_settings { prepared_source_cells 65536 }",
+   "from": "doc/html/r3_4.html"
   },
   "pretrace_end": {
    "rank": 1019,

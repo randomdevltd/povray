@@ -162,6 +162,7 @@ struct SubsurfacePoint final
     float tolerance; ///< the stated accuracy of the surface part the point lies on, in world units
     unsigned id : 30; ///< index into the cell's visibility, which stays in build order; while casting, its part's light set and photons
     unsigned axis : 2; ///< that of the line that found it
+    unsigned char taps; ///< how many perturbed normals over its area its texture gives it, kept in its cell's taps until lit
 };
 
 /// A node of a cell's point hierarchy: its box, area-weighted centre, total area, area-weighted irradiance, and the
@@ -211,7 +212,11 @@ struct SubsurfaceCell final
     int jobs = 0, next = 0, done = 0, steps[3] = {}; ///< steps: lines per row along each axis
     std::atomic<bool> failed{false};
     size_t found = 0; ///< while casting: points kept
+    size_t tapBytes = 0; ///< while casting: normal tap row capacities
     std::vector<std::vector<SubsurfacePoint>> rows; ///< points found by each row of lines while casting
+    std::vector<std::vector<float>> tapRows; ///< the perturbed normals over each row's points' areas, in point order
+    std::vector<float> taps; ///< while lighting, those of all points in point order, three floats a normal
+    std::vector<size_t> tapStart; ///< while lighting, where each point's normals begin in taps
 };
 
 /// Where a cell sits: the object, the cell size level (its side is 2^level scene units) and the cell's integer position.
@@ -225,10 +230,12 @@ struct SubsurfaceCellKey final
     const void *medium; ///< the texture layer whose flesh and skin its points look up where light enters, or null
     size_t preparedSetId;
     int depthLevel; ///< where the diffusion would set too coarse a step for its depth, the step is 2^depthLevel scene units
+    double lightSamples = 1.0;
+    bool normals = true; ///< whether entry lighting uses texture normals
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
-               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel;
+               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples && normals == o.normals;
     }
 };
 
