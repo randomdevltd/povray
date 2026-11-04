@@ -1637,6 +1637,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
     {
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Info("Method 2 irradiance: %.0f emitter draws.", double(stats[Subsurface_Cloud_Emitter_Draws]));
         double attempts = double(stats[Subsurface_Cloud_Attempts]), served = double(stats[Subsurface_Cloud_Served]);
         messages.Info("Method 2 point cloud: %.0f shading points tried, %.0f served (%.0f in the radiosity pretrace), %.0f left without "
                       "subsurface light; discs bending %.0f, with points unfolded across creases %.0f; near field drawn at %.0f, with %.0f "
