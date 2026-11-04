@@ -6,6 +6,8 @@
 #declare InternalSource=1;
 #declare TransportScale=0.2;
 #declare HandLumens=0.02;
+#declare VeinScale=0.008;
+#declare HandDomainCells=500000;
 #declare Fill=1;
 #include "material-exploration.pov"
 
@@ -37,7 +39,9 @@ MatrixText("Read across: same geometry, scattering, source power, camera and nor
  MatrixText(MatrixNames[A],<-0.455,Y+0.028,-0.12>,0.010,<0.94,0.97,1>)
  MatrixText("SOURCE:",<-0.455,Y+0.005,-0.12>,0.0093,<0.56,0.72,0.86>)
  MatrixText(MatrixSources[A],<-0.455,Y-0.013,-0.12>,0.0093,<0.78,0.85,0.92>)
- MatrixText("K = 0.20",<-0.455,Y-0.038,-0.12>,0.0093,<0.78,0.85,0.92>)
+ #local KLabel="K = 1.00";
+ #if(A=0) #local KLabel="K = 0.20"; #end
+ MatrixText(KLabel,<-0.455,Y-0.038,-0.12>,0.0093,<0.78,0.85,0.92>)
  #for(C,0,4)
   #local X=-0.248+C*MatrixPitchX;
   light_group {
@@ -51,6 +55,6 @@ MatrixText("Read across: same geometry, scattering, source power, camera and nor
  #end
 #end
 MatrixText("HOW TO READ THIS MATRIX",<-0.455,-0.657,-0.12>,0.011,<0.94,0.97,1>)
-MatrixText("C1 > C2: add source.  C2 > C3: remove fill.  C2 > C4: add narrow transparent coat.",<-0.455,-0.679,-0.12>,0.0093,<0.78,0.85,0.92>)
+MatrixText("C1 > C2: add source.  C2 > C3: remove fill.  C2 > C4: add narrow sparse coat.",<-0.455,-0.679,-0.12>,0.0093,<0.78,0.85,0.92>)
 MatrixText("C4 > C5: export outgoing subsurface light. Pale side strips are diffuse receivers.",<-0.455,-0.699,-0.12>,0.0093,<0.78,0.85,0.92>)
 MatrixText("Homogeneous transport; patterns define emitters / surface coats, not varying bulk scattering.",<-0.455,-0.719,-0.12>,0.0093,<0.65,0.78,0.90>)
