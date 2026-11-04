@@ -31,6 +31,50 @@ inline Vector3d SubsurfaceBoundaryProbe(const Vector3d& point, const Vector3d& d
     return result;
 }
 
+template<typename Contains>
+bool SubsurfaceBoundaryExit(const Vector3d& point, const Vector3d& direction, Vector3d& normal,
+    double tolerance, double extent, Contains&& contains)
+{
+    const double coordinates = std::max(std::abs(point[0]), std::max(std::abs(point[1]), std::abs(point[2])));
+    const double minimum = std::max(tolerance, 32.0 * std::numeric_limits<double>::epsilon() * std::max(extent, coordinates));
+    enum class Side { Exit, Entry, Outside, Inside };
+    auto classify = [&](double probe)
+    {
+        const bool plus = contains(SubsurfaceBoundaryProbe(point, normal, probe, extent));
+        const bool minus = contains(SubsurfaceBoundaryProbe(point, -normal, probe, extent));
+        if (plus != minus)
+        {
+            if (plus) normal.invert();
+            return dot(normal, direction) > 0.0 ? Side::Exit : Side::Entry;
+        }
+        if (!plus) return Side::Outside;
+        // An outward primitive normal can enter a sibling at a CSG seam while the ray exits.
+        const bool after = contains(SubsurfaceBoundaryProbe(point, direction, probe, extent));
+        const bool before = contains(SubsurfaceBoundaryProbe(point, -direction, probe, extent));
+        if (after == before) return Side::Inside;
+        if (after) return Side::Entry;
+        if (dot(normal, direction) < 0.0) normal.invert();
+        return dot(normal, direction) > 0.0 ? Side::Exit : Side::Entry;
+    };
+    double probe = std::max(tolerance, extent * 1.0e-8);
+    for (int attempt = 0; attempt < 8; ++attempt, probe *= 4.0)
+    {
+        auto result = classify(probe);
+        if (result == Side::Exit || result == Side::Entry) return result == Side::Exit;
+        if (result == Side::Inside)
+        {
+            while (probe > minimum)
+            {
+                probe = std::max(minimum, probe * 0.25);
+                result = classify(probe);
+                if (result == Side::Exit || result == Side::Entry) return result == Side::Exit;
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
 }
 
 #endif
