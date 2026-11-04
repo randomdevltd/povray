@@ -7221,19 +7221,8 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
         if (!IsSameSSLTObject(hit.Object, object)) return false;
         hit.Object->Normal(outward, &hit, threadData);
         outward.normalize();
-        double probe = std::max(hit.Object->SurfaceTolerance(), extent * 1.0e-8);
-        for (int attempt = 0; attempt < 8; ++attempt, probe *= 4.0)
-        {
-            const bool plus = ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, outward, probe, extent), material, ticket.preparedSetId);
-            const bool minus = ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, -outward, probe, extent), material, ticket.preparedSetId);
-            if (plus && minus) return false;
-            if (plus != minus)
-            {
-                if (plus) outward.invert();
-                return dot(outward, direction) > 0.0;
-            }
-        }
-        return false;
+        return SubsurfaceBoundaryExit(hit.IPoint, direction, outward, hit.Object->SurfaceTolerance(), extent,
+            [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); });
     };
     return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, find, exits);
 }
