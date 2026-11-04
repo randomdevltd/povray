@@ -344,6 +344,14 @@ bool Cone::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
     w2 = New_Point[X] * New_Point[X] + New_Point[Y] * New_Point[Y];
 
+    if (Thread != nullptr && Thread->preciseInside)
+    {
+        const bool cylinder = Test_Flag(this, CYLINDER_FLAG);
+        const bool inside = w2 < (cylinder ? 1.0 : Sqr(New_Point[Z])) &&
+            New_Point[Z] > (cylinder ? 0.0 : dist) && New_Point[Z] < 1.0;
+        return inside != bool(Test_Flag(this, INVERTED_FLAG));
+    }
+
     if (Test_Flag(this, CYLINDER_FLAG))
     {
         /* Check to see if we are inside a cylinder */
