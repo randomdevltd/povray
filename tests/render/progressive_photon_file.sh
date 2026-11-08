@@ -76,7 +76,7 @@ skip_header() {
     at=$((at + 4 + $(u32 $at))); at=$((at + 8)); at=$((at + 4 + $(u32 $at))); at=$((at + 4)); at=$((at + 4 + $(u32 $at)))
 }
 patch 8 4 "$(native_u32 2)"
-refuse old_version 'format version 2; this build reads version 3' Declare=Dispersion=1.03
+refuse old_version 'format version 2; this build reads version 4' Declare=Dispersion=1.03
 skip_header
 patch "$at" 4 "$(native_u32 $(((1 << 29) + 1)))"
 refuse receiver_overflow 'truncated or damaged' Declare=Dispersion=1.03
@@ -92,6 +92,15 @@ od -An -t u1 -j "$at" -N 8 progressive_photon_file.whole | grep -q '[1-9]' ||
     { echo "progressive_photon_file: no surface photons at byte $at" >&2; exit 1; }
 patch $((at + 8)) 8 "$(native 0 0 0 0 0 0 248 127)"
 refuse nan 'non-finite surface photon point' Declare=Dispersion=1.03
+render media_saved Declare=Mist=1 Declare=PhotonFile=1 +wt2
+cp "$FILE" progressive_photon_file.whole
+bytes=$(wc -c < progressive_photon_file.whole)
+# The final segment ends with three float colours, two doubles, two indices, then the eight-byte footer.
+share=$((bytes - 56))
+patch "$share" 4 "$(native 0 0 192 127)"
+refuse share_nan 'non-finite media segment self share' Declare=Mist=1
+patch "$share" 4 "$(native 0 0 0 64)"
+refuse share_range 'media segment self share outside' Declare=Mist=1
 rm -f "$FILE"
 refuse missing 'Cannot open the photon file' Declare=Dispersion=1.03
 render classic_saved Declare=Method=1 Declare=PhotonFile=1 +wt2

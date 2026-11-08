@@ -142,6 +142,7 @@ struct Target final
     unsigned int passes;
     double gain = 1.0;
     bool surface = false;
+    MathColour self = MathColour(1.0);
     std::size_t part = 0;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
 };
@@ -159,6 +160,16 @@ inline bool Receives(ConstObjectPtr owner, const LightSource* light)
     if (!light->lightGroupLight)
         return !Test_Flag(owner, NO_GLOBAL_LIGHTS_FLAG);
     return std::find(owner->LLights.begin(), owner->LLights.end(), light) != owner->LLights.end();
+}
+
+/// Draws per light at a bounced volume's nodes: its light's samples and its scattering media's largest light_samples.
+inline unsigned int BounceGatherDraws(ConstObjectPtr owner)
+{
+    DBL multiplier = 0.0;
+    for (const auto& medium : owner->interior->media)
+        if (medium.use_scattering)
+            multiplier = std::max(multiplier, medium.Light_Samples);
+    return VolumeGatherDraws(owner->interior->light->samples, multiplier > 0.0 ? multiplier : 1.0);
 }
 
 inline void CollectObjects(ConstObjectPtr object, std::vector<ConstObjectPtr>& objects,
@@ -391,6 +402,26 @@ inline bool EmitsPreparedSource(const LightSource& light)
     return !light.emitter || light.emitter->IsSurface() || light.emitter->HasVolumeEmission();
 }
 
+// The previous order's lights a volume target gathers, its own bounced light scaled by its self share.
+inline Sources VolumeSources(const Target& target, unsigned int order,
+                             const std::vector<std::shared_ptr<LightSource>>& previous,
+                             const std::vector<const LightSource*>& previousOriginal)
+{
+    Sources sources;
+    for (size_t source = 0; source < previous.size(); ++source)
+    {
+        const MathColour scale = (order > 1 && previousOriginal[source] == target.light) ? target.self : MathColour(1.0);
+        if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
+            previous[source]->Media_Interaction && Receives(target.light->emitterContainer, previousOriginal[source]) &&
+            !scale.IsZero())
+        {
+            sources.lights.push_back(previous[source].get());
+            sources.scales.push_back(scale);
+        }
+    }
+    return sources;
+}
+
 inline std::shared_ptr<LightSource> Clone(const LightSource* light)
 {
     return std::shared_ptr<LightSource>(
@@ -429,6 +460,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         target.primary = light->emitter;
         target.passes = settings->bouncePasses;
         target.gain = settings->BounceGain();
+        target.self = settings->bounceSelf;
         maximum = std::max(maximum, target.passes);
         if (surface)
         {
@@ -508,8 +540,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         struct SharedGroup
         {
             std::shared_ptr<const PreparedSourceDomain> domain;
-            std::vector<LightSource*> sources;
-            unsigned int samples;
+            Sources sources;
+            unsigned int draws;
             std::vector<PreparedBouncePhase> phases;
             std::vector<std::shared_ptr<const PreparedDirectionalSourceField>> fields;
             std::shared_ptr<const PreparedSourceDistribution> proposal;
@@ -517,17 +549,23 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         std::vector<SharedGroup> groups;
         std::vector<std::size_t> active, activeTarget(targets.size(), SIZE_MAX);
         std::vector<double> activeGain;
-        std::vector<std::vector<LightSource*>> activeSources;
+        std::vector<Sources> activeSources;
         for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex)
         {
             const Target& target = targets[targetIndex];
             if (!target.surface || order > target.passes)
                 continue;
-            std::vector<LightSource*> sources;
+            // Its own bounced light is gathered at its self share; a zero share keeps its place so others draw alike.
+            Sources sources;
+            const bool scaled = !(target.self - MathColour(1.0)).IsZero();
             for (size_t source = 0; source < previous.size(); ++source)
                 if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
                     Receives(target.light->emitterContainer, previousOriginal[source]))
-                    sources.push_back(previous[source].get());
+                {
+                    sources.lights.push_back(previous[source].get());
+                    if (scaled)
+                        sources.scales.push_back(order > 1 && previousOriginal[source] == target.light ? target.self : MathColour(1.0));
+                }
             activeTarget[targetIndex] = active.size();
             active.push_back(target.part);
             activeGain.push_back(target.gain);
@@ -623,23 +661,19 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 nextOriginal.push_back(target.light);
                 continue;
             }
-            std::vector<LightSource*> sources;
-            for (size_t source = 0; source < previous.size(); ++source)
-                if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
-                    previous[source]->Media_Interaction && Receives(owner, previousOriginal[source]))
-                    sources.push_back(previous[source].get());
-            const unsigned int samples = std::max(1, owner->interior->light->samples);
+            const Sources sources = VolumeSources(target, order, previous, previousOriginal);
+            const unsigned int draws = BounceGatherDraws(owner);
             auto group = std::find_if(groups.begin(), groups.end(),
                                       [&](const SharedGroup& candidate)
                                       {
                                           return candidate.domain == target.domain &&
-                                                 candidate.samples == samples && candidate.sources == sources;
+                                                 candidate.draws == draws && candidate.sources == sources;
                                       });
             if (group != groups.end())
                 AdvancePreparation(td->preparationProgress, target.domain->NodeCount() + target.domain->CellCount());
             if (group == groups.end())
             {
-                SharedGroup prepared{target.domain, sources, samples, {}, {}, nullptr};
+                SharedGroup prepared{target.domain, sources, draws, {}, {}, nullptr};
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain)
                         for (const auto& phase : candidate.phases)
@@ -655,8 +689,9 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 for (int axis = X; axis <= Z; ++axis)
                     cellSize[axis] = target.domain->Size()[axis] / double(target.domain->Counts()[axis]);
                 VolumeGather gather;
-                gather.lights.assign(sources.begin(), sources.end());
-                gather.samples = samples;
+                gather.lights.assign(sources.lights.begin(), sources.lights.end());
+                gather.scales = sources.scales;
+                gather.draws = draws;
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain)
                         gather.receivers.push_back(candidate.light->emitterContainer);
@@ -684,18 +719,9 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain &&
                         order <= candidate.passes &&
-                        unsigned(std::max(1, candidate.light->emitterContainer->interior->light->samples)) ==
-                            samples)
-                    {
-                        std::vector<LightSource*> candidateSources;
-                        for (size_t source = 0; source < previous.size(); ++source)
-                            if (!previous[source]->Photon_Only && previous[source]->Media_Interaction &&
-                                EmitsPreparedSource(*previous[source]) &&
-                                Receives(candidate.light->emitterContainer, previousOriginal[source]))
-                                candidateSources.push_back(previous[source].get());
-                        if (candidateSources == sources)
-                            contributing.push_back(&candidate);
-                    }
+                        BounceGatherDraws(candidate.light->emitterContainer) == draws &&
+                        VolumeSources(candidate, order, previous, previousOriginal) == sources)
+                        contributing.push_back(&candidate);
                 std::vector<DBL> proposalMasses(target.domain->CellCount());
                 workers.Step(step + " proposal");
                 workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
@@ -786,13 +812,41 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     {
         if (target.surface)
         {
+            const auto owner = const_cast<ObjectPtr>(target.light->emitterContainer);
             const auto field =
                 std::make_shared<const SumSurfaceBounceRadiance>(std::move(target.surfaceOrders));
-            target.light->emitter = MakeBouncedSurfaceEmitter(
-                target.primary, const_cast<ObjectPtr>(target.light->emitterContainer), field, true);
+            // Its own surface receives the light as it was before bouncing and the self share of the bounce.
+            if (!(target.self - MathColour(1.0)).IsZero())
+            {
+                if (!target.primary->Intensity().IsZero() || !target.self.IsZero())
+                {
+                    target.light->ownLight = Clone(target.light);
+                    target.light->ownLight->emitter = MakeBouncedSurfaceEmitter(
+                        target.primary, owner, std::make_shared<const TintedSurfaceBounceRadiance>(field, target.self), true);
+                    target.light->ownLight->colour = target.light->ownLight->emitter->Intensity() / M_PI;
+                    target.light->ownLight->Center = target.light->ownLight->emitter->Centre();
+                    target.light->ownLight->lawRadius = target.light->ownLight->emitter->Radius();
+                }
+                target.light->ownSurface = owner;
+            }
+            target.light->emitter = MakeBouncedSurfaceEmitter(target.primary, owner, field, true);
         }
         else
         {
+            // Its own media scatter the self share of the bounced light, and the rest of the light as it was before bouncing.
+            if (!(target.self - MathColour(1.0)).IsZero())
+            {
+                const auto owner = target.light->emitterContainer;
+                if (target.primary->HasVolumeEmission())
+                {
+                    target.light->selfLight = Clone(target.light);
+                    target.light->selfLight->selfContainer = owner;
+                    target.light->selfLight->selfScale = target.self;
+                    target.light->selfLight->selfOnly = true;
+                }
+                target.light->selfContainer = owner;
+                target.light->selfScale = target.self;
+            }
             const auto field =
                 std::make_shared<const SumPreparedBounceField>(target.domain, std::move(target.orders));
             target.light->emitter =

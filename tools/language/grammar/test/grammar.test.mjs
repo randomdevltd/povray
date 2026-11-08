@@ -51,7 +51,7 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['texture', 'pigment', 'interior', 'light', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
     assert.ok(blocks.union.items.includes('sphere'));
     for (const w of ['photons', 'attenuation', 'emission', 'bounce']) assert.ok(blocks.light.items.includes(w), `light item '${w}'`);
-    assert.deepEqual(blocks.bounce.items, ['passes']);
+    assert.deepEqual(blocks.bounce.items, ['passes', 'self']);
     for (const w of ['shadows', 'method']) assert.ok(!blocks.light.items.includes(w), `invalid light item '${w}'`);
     for (const w of ['function', 'detail', 'auto']) assert.ok(blocks.refraction.items.includes(w), `refraction item '${w}'`);
     for (const w of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(w), `invalid refraction item '${w}'`);

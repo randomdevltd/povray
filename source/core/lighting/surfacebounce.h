@@ -221,6 +221,28 @@ private:
     double gain;
 };
 
+/// A field scaled per channel.
+class TintedSurfaceBounceRadiance final : public SurfaceBounceRadiance
+{
+public:
+    TintedSurfaceBounceRadiance(std::shared_ptr<const SurfaceBounceRadiance> field, const MathColour& tint) :
+        field(std::move(field)), tint(tint) {}
+    MathColour IntegratedRadiance() const override { return field->IntegratedRadiance() * tint; }
+    void AccumulateGuide(SurfaceAngularGuide& guide, double scale = 1.0) const override
+    {
+        double most = 0.0;
+        for (int c = 0; c < MathColour::channels; ++c) most = std::max(most, double(tint[c]));
+        if (most > 0.0) field->AccumulateGuide(guide, scale * most);
+    }
+    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
+    {
+        return field->Sample(hit, normal, outgoing, td) * tint;
+    }
+private:
+    std::shared_ptr<const SurfaceBounceRadiance> field;
+    MathColour tint;
+};
+
 class BouncedSurfaceEmitter final : public Emitter
 {
 public:

@@ -116,6 +116,30 @@ Changed Behaviour
   - Volume bounce gathers each order at its volume's nodes as up to six
     directional lobes, each scattered by the medium's phase over its spread.
 
+  - An interior light's `bounce { self off }` keeps its bounced light off
+    its own container's media, on camera rays and in the light its next
+    pass gathers, while it still lights surfaces and other media; the
+    medium's own emission lights it as before. The container is told apart
+    by identity, not position. A scalar or RGB vector self share retains
+    any fraction from 0 to 1 per channel; all channels must be finite.
+    Default `self on` (1), `off` is 0. A surface light takes the same
+    setting: its object receives its own emission and the self share of
+    its bounce, on camera rays, beneath the surface (subsurface method 2),
+    through progressive photons and in its next pass, while other objects
+    receive the whole bounce. `self` is contextual and remains a free
+    identifier elsewhere.
+    Progressive photon maps now use format version 4 to retain each
+    source's self share; older saved maps must be regenerated.
+
+  - Surface and interior light blocks now default to 64 samples rather
+    than 16, at every scene version. Explicit samples remain unchanged.
+    The lantern-cloud example adds tower-facing lanterns, blue lightning
+    of unchanged luminance, and a Bounce switch for paired comparisons.
+    Cumulus bounce gain 48 with self share 0.00625 favours warm outward
+    spill; the storm uses a weak reciprocal gain of 0.1 and the distant
+    deck remains a receiving medium rather than an additional bounce
+    source.
+
   - A light block's `samples` N is the light's detail for every receiver,
     and a receiver scales it by its `light_samples` M (default 1). Surfaces
     draw round(N x M) points per hit. Varying prepared method 4 media draw
@@ -597,7 +621,9 @@ New Features
   - `light_samples FLOAT` in `finish` and `media` scales the `samples` of
     every surface and volume light for that receiver: round(N x M) draws
     per surface hit, sqrt(N) x M draws per cell width in varying method 4
-    media, round(N x M) joint pairs in constant method 4 media.
+    media, round(sqrt(N) x M) joint pairs in constant method 4 media, and
+    round(8 x sqrt(N) x M) draws per light at each node of a bounced
+    volume's preparation, where M is that volume's own light_samples.
   - Subsurface scattering: a point-cloud `method 2` (global setting
     `subsurface { method INT spacing FLOAT error_bound FLOAT }`, or `method`
     in a finish's `subsurface` block); `colour`, `pigment`, `emission` and

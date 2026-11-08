@@ -476,6 +476,9 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             else if (dot(photon.normal, ray.Direction) > 0.0)
                 photon.normal.invert();
             photon.flux = LightCol * PhotonPathWeight(threadData->photonSourceLight, threadData->photonDepth);
+            if (threadData->photonSourceLight->ownSurface != nullptr &&
+                IsObjectInCSG(isect.Object, threadData->photonSourceLight->ownSurface))
+                photon.flux *= threadData->photonSelfShare;
             photon.physicalFlux = threadData->photonSourceLight->emitter != nullptr;
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();
@@ -1163,7 +1166,7 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
 
     // Prepare the Monte Carlo integration along the ray from P0 to P1.
     // for photon trace, this is always a light ray, so always do this
-    ComputeMediaLightInterval(lights, litintervals, ray, isect);
+    ComputeMediaLightInterval(lights, litintervals, ray, isect, medias);
 
     if(litintervals.empty())
         litintervals.push_back(LitInterval(false, 0.0, isect.Depth, 0, 0));
@@ -1266,6 +1269,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     photon.length = step;
                     photon.domain = domain;
                     photon.light = threadData->photonSourceLight;
+                    photon.selfShare = threadData->photonSelfShare;
                     photon.grouped = photon.light != nullptr && photon.light->lightGroupLight;
                     photon.set = std::uint32_t(ray.GetPreparedSetId());
                     bool merged = false;

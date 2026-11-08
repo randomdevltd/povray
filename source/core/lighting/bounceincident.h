@@ -27,10 +27,21 @@ struct BounceIncidentBeam final
 
 // Source emitters and the supplied Trace's shadow-media evaluator must read the immutable previous order. A receiver
 // with a radius stands for the region about it: a light nearer than that is seen from all of it (Ray::ReceiverRadius).
+// Lights a bounce receiver gathers, each with its multiplier; no scales for all 1.
+struct Sources final
+{
+    std::vector<LightSource*> lights;
+    std::vector<MathColour> scales;
+    bool operator==(const Sources& other) const { return lights == other.lights && scales.size() == other.scales.size() &&
+        std::equal(scales.begin(), scales.end(), other.scales.begin(),
+                   [](const MathColour& a, const MathColour& b) { return (a - b).IsZero(); }); }
+};
+
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     Trace& trace, const Vector3d& point, const std::vector<LightSource*>& sources,
     unsigned int samplesPerSource, std::uint64_t key, TraceTicket& ticket,
-    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0)
+    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0,
+    const std::vector<MathColour>* scales = nullptr)
 {
     std::vector<BounceIncidentBeam> beams;
     if (samplesPerSource == 0)
@@ -51,7 +62,7 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     }
     for (std::size_t source = 0; source < sources.size(); ++source)
     {
-        if (sources[source] == nullptr)
+        if (sources[source] == nullptr || (scales && (*scales)[source].IsZero()))
             continue;
         const LightSource& light = *sources[source];
         for (unsigned int sample = 0; sample < samplesPerSource; ++sample)
@@ -103,6 +114,8 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             // side; an emitter's draws already spread over its own extent.
             const double directed = !light.emitter && depth < receiverRadius ? depth / receiverRadius : 1.0;
             const double distance = depth > 0.0 ? depth : HUGE_VAL;
+            if (scales)
+                incoming *= (*scales)[source];
             if (positive && directed > 0.0)
                 beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * (share * directed), distance});
             if (positive && directed < 1.0)
@@ -117,11 +130,12 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     Trace& trace, const Vector3d& point, const std::vector<LightSource*>& sources,
     unsigned int samplesPerSource, std::uint64_t key,
-    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0)
+    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0,
+    const std::vector<MathColour>* scales = nullptr)
 {
     TraceTicket ticket(256, 0.0);
     return CollectBounceIncident(trace, point, sources, samplesPerSource, key, ticket, receiverHit, receiverNormal,
-                                 receiverRadius);
+                                 receiverRadius, scales);
 }
 
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
@@ -135,15 +149,23 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
 }
 
 
-// Draws per light at each volume bounce node, as a multiple of the bouncing light's samples.
-const unsigned int kVolumeDrawsPerSample = 2;
+// Draws per light at each volume bounce node per sqrt(samples) x light_samples of the bouncing light; 32 at samples 16.
+const double kVolumeDrawsPerRootSample = 8.0;
 
-/// Where a volume bounce node gathers: its lights, the bouncing light's samples, and the containers its medium fills
+/// Draws per light at a volume bounce node for a bouncing light of `samples` N in media of `light_samples` M: sqrt(N) x M,
+/// the rule the camera march spaces its volume-light draws by.
+inline unsigned int VolumeGatherDraws(int samples, double lightSamples)
+{
+    return unsigned(std::max(1L, std::lround(kVolumeDrawsPerRootSample * std::sqrt(double(std::max(1, samples))) * lightSamples)));
+}
+
+/// Where a volume bounce node gathers: its lights, its draws per light, and the containers its medium fills
 /// (draw points outside them receive nothing).
 struct VolumeGather final
 {
     std::vector<const LightSource*> lights;
-    unsigned int samples = 1;
+    std::vector<MathColour> scales;            ///< each light's multiplier, none for all 1
+    unsigned int draws = 1;
     std::vector<ConstObjectPtr> receivers;
 };
 
@@ -210,9 +232,11 @@ inline VolumeIncident GatherVolumeIncident(Trace& trace, const Vector3d& centre,
     const Vector3d low = centre - cell * 0.5, high = centre + cell * 0.5;
     const double volume = cell[X] * cell[Y] * cell[Z];
     bool received = false;
-    for (const LightSource* light : gather.lights)
+    for (std::size_t index = 0; index < gather.lights.size(); ++index)
     {
-        const unsigned int count = gather.samples * kVolumeDrawsPerSample;
+        const LightSource* light = gather.lights[index];
+        const MathColour scale = gather.scales.empty() ? MathColour(1.0) : gather.scales[index];
+        const unsigned int count = gather.draws;
         const std::uint64_t lightKey = DeriveKey(key, kDrawAreaLight,
                                                  std::uint64_t(light->index) | (light->lightGroupLight ? (std::uint64_t(1) << 63) : 0));
         const PhotonSobol sequence(lightKey), spread(DeriveKey(lightKey, kDrawPosition, 0)),
@@ -295,7 +319,7 @@ inline VolumeIncident GatherVolumeIncident(Trace& trace, const Vector3d& centre,
                 continue;
             if (!(length > 0.0) || !std::isfinite(length))
                 throw std::domain_error("Light arriving in a volume needs a finite direction");
-            draws.push_back(IncidentDraw{ray.Direction / length, incoming * weight});
+            draws.push_back(IncidentDraw{ray.Direction / length, incoming * (weight * scale)});
         }
         for (std::size_t d = first; d < draws.size(); ++d)
             draws[d].light /= total;

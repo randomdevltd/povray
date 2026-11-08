@@ -331,7 +331,7 @@ class Order final
 {
 public:
     Order(Workers& workers, std::vector<Part>& parts, const std::vector<std::size_t>& active,
-          const std::vector<std::vector<LightSource*>>& sources, unsigned order, double baseline,
+          const std::vector<Sources>& sources, unsigned order, double baseline,
           std::size_t allowance, const std::vector<Trace*>& entries, const std::function<void()>& cooperate, std::size_t units) :
         workers(workers), parts(parts), active(active), sources(sources), order(order), baseline(baseline),
         allowance(allowance), subsurface(!entries.empty()), entries(entries), cooperate(cooperate), units(units)
@@ -448,8 +448,10 @@ private:
             }
             const Intersection& at = j > 0 ? origin.intersection : node.hit;
             const Vector3d& normal = j > 0 ? origin.normal : node.normal;
-            auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, sources[node.part], 1,
-                                               BounceOrderSeed(node.key, order, j, 0), &at, &normal);
+            const Sources& gathered = sources[node.part];
+            auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, gathered.lights, 1,
+                                               BounceOrderSeed(node.key, order, j, 0), &at, &normal, 0.0,
+                                               gathered.scales.empty() ? nullptr : &gathered.scales);
             double scalar = 0.0;
             for (auto& beam : beams)
             {
@@ -755,7 +757,7 @@ private:
     Workers& workers;
     std::vector<Part>& parts;
     const std::vector<std::size_t>& active;
-    const std::vector<std::vector<LightSource*>>& sources;
+    const std::vector<Sources>& sources;
     unsigned order;
     double baseline;
     std::size_t allowance, bytes = 0, reasons[3] = {0, 0, 0};

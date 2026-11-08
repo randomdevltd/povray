@@ -454,7 +454,7 @@ bool PhotonSortingTask::load()
 namespace
 {
 const unsigned char kProgressiveMagic[8] = {'P','O','V','P','H','M','Q',0}, kProgressiveEnd[8] = {'P','H','M','Q','E','N','D',0};
-const std::uint32_t kProgressiveVersion = 3, kAtmosphere = 0xFFFFFFFFu;
+const std::uint32_t kProgressiveVersion = 4, kAtmosphere = 0xFFFFFFFFu;
 
 /// Every object, interior and light a photon can name, numbered in a traversal fixed by the scene's structure.
 struct ProgressiveSceneIndex final
@@ -678,6 +678,7 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
             for (unsigned int a = 0; a < 3; ++a)
                 out.Put(segment.direction[a]);
             out.Colour(segment.flux);
+            out.Colour(segment.selfShare);
             out.Colour(segment.extinction);
             out.Put(segment.length);
             out.Put(segment.depth);
@@ -874,6 +875,7 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
             for (unsigned int a = 0; a < 3; ++a)
                 segment.direction[a] = in.Get<double>();
             segment.flux = in.Colour();
+            segment.selfShare = in.Colour();
             segment.extinction = in.Colour();
             segment.length = in.Get<double>();
             segment.depth = in.Get<double>();
@@ -886,6 +888,11 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
                 return invalid("media segment direction");
             if (!Finite(segment.flux, MathColour::channels))
                 return invalid("media segment flux");
+            if (!Finite(segment.selfShare, MathColour::channels))
+                return invalid("media segment self share");
+            for (int channel = 0; channel < MathColour::channels; ++channel)
+                if (segment.selfShare[channel] < 0.0 || segment.selfShare[channel] > 1.0)
+                    return "The photon file '" + name + "' holds a media segment self share outside [0, 1].";
             if (!Finite(segment.extinction, MathColour::channels))
                 return invalid("media segment extinction");
             if (!std::isfinite(segment.depth))

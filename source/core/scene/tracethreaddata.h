@@ -185,6 +185,7 @@ class TraceThreadData : public ThreadData
         // all of these are for photons
         // most of them should be refactored into parameters, return values, or other objects
         LightSource *photonSourceLight;
+        MathColour photonSelfShare = MathColour(1.0);
         ObjectPtr photonTargetObject;
         bool litObjectIgnoresPhotons;
         bool subsurfacePhotonBoundaryProbe = false;

@@ -3137,8 +3137,11 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
 {
     if (lightsource.emitter != nullptr)
     {
+        const LightSource* received = LightOnObject(lightsource, object);
+        if (received == nullptr)
+            return;
         Ray sampleRay(eye);
-        ComputeFullAreaDiffuseLight(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour,
+        ComputeFullAreaDiffuseLight(*received, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour,
                                     attenuation, 0.0, sampleRay, MathColour(), object, relativeIor, geometricNormal);
         return;
     }
@@ -6900,10 +6903,19 @@ void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const Lig
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
         for(unsigned int i : view.globalLights)
-            lights.push_back(threadData->lightSources[i]);
+            if (const LightSource *received = LightOnObject(*threadData->lightSources[i], object))
+                lights.push_back(received);
     for(const LightSource *light : object->LLights)
         if(view.UsesGroupLight(light->index))
-            lights.push_back(light);
+            if (const LightSource *received = LightOnObject(*light, object))
+                lights.push_back(received);
+}
+
+const LightSource* Trace::LightOnObject(const LightSource& light, ConstObjectPtr object)
+{
+    if ((light.ownSurface == nullptr) || (object == nullptr) || !IsObjectInCSG(object, light.ownSurface))
+        return &light;
+    return light.ownLight.get();
 }
 
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.

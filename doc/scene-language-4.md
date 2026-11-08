@@ -22,8 +22,11 @@ Generated C sources are committed; renderer builds do not run the generator.
 
 ## Independent volume lights
 
+Surface and interior light blocks default to 64 samples at every scene version;
+an explicit `samples` value overrides this.
+
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
-attenuation { power 2 scale 1 } samples 16 } }`. By default the source depends on its object's geometry
+attenuation { power 2 scale 1 } samples 64 } }`. By default the source depends on its object's geometry
 and its own pigment, independently of media coefficients and density. A unitless pigment uses
 the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; `nits` normalize the
 pigment as they do the emission below, so its mean boundary radiance is `L`; this normalizes
@@ -71,7 +74,7 @@ volume. No new word is reserved: `light`, `nits` and `lumens` remain contextual.
 
 ```
 box { <-1,2,-1>, <1,2.1,1>
-  light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 16 }
+  light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 64 }
 }
 ```
 
@@ -124,6 +127,18 @@ be a finite positive integer in the unsigned range; zero, negative, fractional
 and out-of-range values are errors. A light accepts only one bounce setting,
 and a bounce block accepts only one `passes` setting.
 
+`bounce { self 0.05 }` retains five percent of the bounce on its own media.
+A scalar or RGB vector (`self <0.1, 0.03, 0>` or `self rgb <0.1, 0.03, 0>`)
+sets a finite fraction from 0 to 1 in every channel. Values outside this range
+are errors. The default is `on` (1); `off` is 0. `self` may appear at most once.
+`bounce { self off }` keeps an interior light's
+bounced light off its own container's media, at the camera and in its own next
+pass, while it still lights surfaces and other media; the medium's own emission
+lights it as before. A surface light takes the same setting: its own object
+receives its own emission and the self share of its bounce, which matters only
+where it faces itself (a concave or composite shape), while every other object
+receives the whole bounce.
+
 A light block emits light of its own only from an explicit `pigment` or `emission`
 input. Without one, a block without `bounce` is a solid white pigment light, and a
 block with `bounce` is bounce-only: it emits nothing of its own, whatever its
@@ -131,7 +146,7 @@ material's or media's emission, and its `brightness` (default 1, physical) multi
 every order it re-emits. `nits` or `lumens` in a bounce-only block are a parse error,
 `A bounce-only light block takes a plain brightness multiplier; nits and lumens need an
 emission input.` An explicit input can precede or follow `bounce`.
-`bounce` and `passes` remain free identifiers outside their light-block contexts.
+`bounce`, `passes` and `self` remain free identifiers outside their light-block contexts.
 
 Each pass produces the next scattering order from the preceding order across
 sources. A source past its own cutoff produces zero new output; older orders
@@ -191,7 +206,7 @@ the cutoff only):
 // 800 lumens spread over the panel, whatever its size
 box { <-0.6, 1, -0.05>, <0.6, 2, 0.05>
   pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0 }
-  light { brightness 800 lumens samples 16 }
+  light { brightness 800 lumens samples 64 }
 }
 
 // lantern: 400 lumens, falling as 1/d^1.5 so it reaches further, with a stricter cutoff
