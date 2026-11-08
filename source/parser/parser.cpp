@@ -520,6 +520,7 @@ void Parser::Run()
                 ResolveInheritedTags(object);
             Assign_Scene_Lights();
             Check_Legacy_Transport();
+            Check_Subsurface_Light_Hosts();
             Warn_Unused_Media_Resolution();
             Split_Unions();
 
@@ -11390,6 +11391,118 @@ bool Strip_Subsurface_Without_Inside(ObjectPtr Object, SubsurfaceStrip& Strip)
     return true;
 }
 
+}
+
+// A part that cannot enclose a volume: a disc that does not cut, or a mesh with an inside_vector whose triangles leave a
+// border open. Such a part is a subsurface sheet, with no inside for light to diffuse through or to emit from.
+static const char *Open_Part(ConstObjectPtr part, bool cutter)
+{
+    if (!cutter && (dynamic_cast<const Disc *>(part) != nullptr))
+        return "disc";
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(part))
+        if (mesh->has_inside_vector && !mesh->Pending() && (mesh->Data != nullptr) && (mesh->Data->ClosedTopology == 0))
+            return "mesh with an open border";
+    return nullptr;
+}
+
+static bool Object_Uses_Subsurface(ConstObjectPtr object)
+{
+    if (Uses_Subsurface(object->Texture) || Uses_Subsurface(object->Interior_Texture))
+        return true;
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        for (MeshIndex i = 0; i < mesh->Number_Of_Textures; i++)
+            if (Uses_Subsurface(mesh->Textures[i]))
+                return true;
+    return false;
+}
+
+// Each part with its own finish's subsurface (or its parent's when it has no texture) and whether it cuts.
+static void Collect_Light_Host_Parts(ConstObjectPtr object, bool subsurface, bool cutter,
+                                     std::vector<std::pair<ConstObjectPtr, std::pair<bool, bool>>>& parts)
+{
+    if (object->Texture != nullptr)
+        subsurface = Object_Uses_Subsurface(object);
+    else if (Object_Uses_Subsurface(object))
+        subsurface = true;
+    parts.emplace_back(object, std::make_pair(subsurface, cutter));
+    if (const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object))
+    {
+        const bool cuts = cutter || (dynamic_cast<const CSGIntersection *>(object) != nullptr);
+        for (ConstObjectPtr child : compound->children)
+            Collect_Light_Host_Parts(child, subsurface, cuts, parts);
+    }
+}
+
+static std::string Light_Host_Where(ConstObjectPtr object)
+{
+    return std::string(ShapeName(object)) + (object->source ? " at " + *object->source : std::string());
+}
+
+// A volume light inside a subsurface host lights it from within, which needs the host to enclose a volume, and a light
+// block needs a volume to emit from. A part that cannot enclose one would otherwise drop that light silently or fail
+// mid-render, so either stops the parse, naming the part and where the scene wrote it.
+void Parser::Check_Subsurface_Light_Hosts()
+{
+    std::vector<const LightSource *> volumes;
+    for (const LightSource *light : sceneData->mediaLights)
+        if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer && light->emitterContainer->interior &&
+            light->emitterContainer->interior->light)
+            volumes.push_back(light);
+    if (volumes.empty())
+        return;
+    for (const LightSource *light : volumes)
+    {
+        std::vector<std::pair<ConstObjectPtr, std::pair<bool, bool>>> parts;
+        Collect_Light_Host_Parts(light->emitterContainer, false, false, parts);
+        for (const auto& part : parts)
+            if (const char *kind = Open_Part(part.first, part.second.second))
+                Error("The volume light block at %s is on the %s, a %s, which encloses no volume to emit from.",
+                      light->emitterContainer->interior->light->where.c_str(), Light_Host_Where(part.first).c_str(), kind);
+    }
+    auto overlaps = [](const BoundingBox& a, const BoundingBox& b) {
+        for (int axis = X; axis <= Z; axis++)
+            if ((a.lowerLeft[axis] > b.lowerLeft[axis] + b.size[axis]) || (b.lowerLeft[axis] > a.lowerLeft[axis] + a.size[axis]))
+                return false;
+        return true;
+    };
+    // An open part claims a volume only as a mesh's inside_vector parity does; a disc claims none. A light's container
+    // lies within it when a point of the container, on a lattice over its box, is inside both; any other open part
+    // hosts no internal source, as the subsurface cloud treats it.
+    auto within = [&](ConstObjectPtr part, ConstObjectPtr container) {
+        if ((dynamic_cast<const Disc *>(part) != nullptr) || !overlaps(part->BBox, container->BBox))
+            return false;
+        const BoundingBox& box = container->BBox;
+        constexpr int kLattice = 6;
+        for (int i = 0; i <= kLattice * kLattice * kLattice; i++)
+        {
+            // the box centre first, then the lattice
+            const Vector3d at = (i == 0) ? Vector3d(0.5) :
+                Vector3d(((i - 1) % kLattice + 0.5) / kLattice, (((i - 1) / kLattice) % kLattice + 0.5) / kLattice,
+                         ((i - 1) / (kLattice * kLattice) + 0.5) / kLattice);
+            const Vector3d point(box.lowerLeft[X] + at[X] * box.size[X], box.lowerLeft[Y] + at[Y] * box.size[Y],
+                                 box.lowerLeft[Z] + at[Z] * box.size[Z]);
+            if (Inside_Object(point, const_cast<ObjectPtr>(container), &mThreadData) &&
+                Inside_Object(point, const_cast<ObjectPtr>(part), &mThreadData))
+                return true;
+        }
+        return false;
+    };
+    for (ConstObjectPtr object : sceneData->objects)
+    {
+        std::vector<std::pair<ConstObjectPtr, std::pair<bool, bool>>> parts;
+        Collect_Light_Host_Parts(object, false, false, parts);
+        for (const auto& part : parts)
+        {
+            const char *kind = part.second.first ? Open_Part(part.first, part.second.second) : nullptr;
+            if (kind == nullptr)
+                continue;
+            for (const LightSource *light : volumes)
+                if (within(part.first, light->emitterContainer))
+                    Error("The volume light block at %s lies within the subsurface %s, a %s, which cannot enclose it: light "
+                          "from inside a subsurface host needs a closed solid around it.",
+                          light->emitterContainer->interior->light->where.c_str(), Light_Host_Where(part.first).c_str(), kind);
+        }
+    }
 }
 
 // Subsurface light needs a volume under the surface; on a sheet it would also switch off the ordinary diffuse light.

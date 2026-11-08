@@ -1,12 +1,14 @@
 // Hosts of a buried volume light under method 2 subsurface: every Case must render, and the exit search must find where
 // each path leaves the material whatever the host's shape. S scales the whole scene with mm_per_unit, so the image is
-// the same at any S. Case 4 is an open mesh, which cannot enclose a source.
+// the same at any S. Case 20 is an open mesh that claims a source it cannot enclose, and case 22 a light block on a
+// disc: each parse must stop and name it, with or without subsurface (Sss=0).
 #version 4.0;
 #ifndef (Case) #declare Case=0; #end
 #ifndef (S) #declare S=1; #end
 #ifndef (Lm) #declare Lm=0.02; #end
+#ifndef (Sss) #declare Sss=1; #end
 global_settings { assumed_gamma 1 mm_per_unit 1000/S
- subsurface { method 2 samples 8,8 } }
+ #if (Sss) subsurface { method 2 samples 8,8 } #end }
 background { rgb 0 }
 camera { location <0,0.02,-0.06>*S look_at <0,0,0> angle 40 }
 light_source { <0.05,0.08,-0.06>*S rgb 0.4 }
@@ -35,10 +37,19 @@ light_source { <0.05,0.08,-0.06>*S rgb 0.4 }
 #case (3) // closed mesh2 slab
  object { SheetMesh(0.006) Host(Wax) scale S } box { -0.001,0.001 Lamp(1) scale S }
 #break
-#case (4) // open mesh2 (top face removed): cannot enclose
+#case (4) // open mesh2 (top face removed): its inside_vector y finds the light outside, so it hosts nothing
+#case (20) // the same open mesh2 with inside_vector -y, which claims the light: cannot enclose it
  mesh2 { vertex_vectors { 8, <-0.02,-0.003,-0.015>,<0.02,-0.003,-0.015>,<0.02,-0.003,0.015>,<-0.02,-0.003,0.015>,
                            <-0.02,0.003,-0.015>,<0.02,0.003,-0.015>,<0.02,0.003,0.015>,<-0.02,0.003,0.015> }
-  face_indices { 10, <0,2,1>,<0,3,2>,<0,1,5>,<0,5,4>,<1,2,6>,<1,6,5>,<2,3,7>,<2,7,6>,<3,0,4>,<3,4,7> } inside_vector y Host(Wax) scale S }
+  face_indices { 10, <0,2,1>,<0,3,2>,<0,1,5>,<0,5,4>,<1,2,6>,<1,6,5>,<2,3,7>,<2,7,6>,<3,0,4>,<3,4,7> }
+  inside_vector (Case = 20 ? -y : y) Host(Wax) scale S }
+ box { -0.001,0.001 Lamp(1) scale S }
+#break
+#case (22) // a light block on a union holding a disc, which encloses no volume to emit from
+ union { box { -0.001,0.001 } disc { 0, y, 0.001 } Lamp(1) scale S }
+#break
+#case (21) // a subsurface disc beside a volume light whose box it crosses: a disc claims no volume, so it hosts nothing
+ disc { 0, y, 0.02 Host(Wax) scale S }
  box { -0.001,0.001 Lamp(1) scale S }
 #break
 #case (5) // superellipsoid alone

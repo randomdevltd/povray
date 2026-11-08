@@ -7249,7 +7249,7 @@ bool Trace::SubsurfaceSourceOverlaps(const LightSource& light, const Interior* i
             return false;
         const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object);
         if ((compound == nullptr) || compound->children.empty() || (dynamic_cast<const CSGIntersection *>(object) != nullptr))
-            return true;
+            return (compound != nullptr) || !SubsurfaceSheet(object, false, nullptr); // a sheet holds no volume to host in
         for (ConstObjectPtr child : compound->children)
             if (part(child))
                 return true;
