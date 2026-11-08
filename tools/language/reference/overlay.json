@@ -1,6 +1,6 @@
 {
  "format": "pov4-reference-overlay/1",
- "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss — 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
+ "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss — 4.0 statements and literals, colour built-ins, top-level scene blocks and the render options that pair with scene features — and items whose mined sentence is missing or wrong. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
  "blocks": {
   "bicubic_patch": "Bezier patch surface from a 4x4 control-point grid.",
   "box": "Box from two opposite corner vectors.",
@@ -302,6 +302,78 @@
   "scale_lumens": {
    "kind": "function",
    "text": "scale_lumens(Lumens, Metres) returns Lumens / Metres^2, the value for brightness V lumens in a scene whose unit is Metres metres long; both arguments must be finite and Metres positive."
+  },
+  "passes": {
+   "kind": "item",
+   "text": "In a light's bounce block, the number of scattering orders: bounce { passes 3 }, a positive integer; bare bounce is one. Contextual: remains available as an identifier."
+  },
+  "power": {
+   "kind": "item",
+   "text": "In an interior light's attenuation block, the falloff exponent P, greater than 0, default 2 (physical): far away the light falls as 1/d^P. Surface lights accept only cutoff. Contextual: remains available as an identifier."
+  },
+  "povm": {
+   "kind": "item",
+   "text": "First item of a mesh2: mesh2 { povm \"trunk.povm\" pigment { ... } } loads the geometry from a binary .povm file instead of vertex_vectors and face_indices, and caches its bounding tree beside it; the load is deferred and skipped when no remaining object uses the mesh. Format and tools: doc/povm.md."
+  },
+  "memory": {
+   "kind": "item",
+   "text": "A memory ceiling, in two places with different units. global_settings { photons { method 2 memory GB } }: photon storage in gigabytes, method 2 only, default 40% of available memory up to 6 GB; Photon_Memory and POV_PHOTON_MEMORY override it. global_settings { subsurface { memory MB } }: an optional cap in megabytes on the method 2 subsurface clouds, none by default; a render that passes it stops with an error. Contextual: remains available as an identifier."
+  },
+  "target": {
+   "kind": "item",
+   "text": "In an object's photons block, makes it a photon target. Under photon method 1 the number is a spacing multiplier (smaller gives more photons); under method 2 it is a share weight (bare target is 1, larger gives more photons, target 0 removes the target). Ported scenes need their target numbers revisited."
+  },
+  "none": {
+   "kind": "item",
+   "text": "In a tags list, tags { none } clears the object's tags and inherits nothing. In a tag expression (filter_tags, Filter_Tags, tagged) it matches untagged objects: Filter_Tags=\"preview\" | none keeps untagged shared geometry and cameras."
+  },
+  "auto": {
+   "kind": "item",
+   "text": "In a refraction block, detail auto (the same as omitting detail) derives the field's preparation and integration controls from its bounds."
+  },
+  "media_attenuation": {
+   "kind": "item",
+   "text": "Whether media the light passes through attenuate it: media_attenuation on|off. Off by default in a light_source, on by default in a light block."
+  },
+  "light_samples": {
+   "kind": "item",
+   "text": "In a finish or media block, multiplies what that receiver draws from every surface and volume light: with a light's samples N, N x M draws per surface hit and, in prepared method 4 media, sqrt(N) x M samples per cell width of ray. Finite, greater than 0, default 1. A finish takes an optional mode after M: by_contribution (the 4.0 default) or full. Contextual: remains available as an identifier."
+  },
+  "Filter_Tags": {
+   "kind": "option",
+   "text": "Render option: keep only the objects, lights and cameras a tag expression selects, as a hard limit applied after parsing; excluded objects cost nothing and a .povm mesh nothing uses is never built. Views narrow further with filter_tags but cannot bring anything back. Shell: 'Filter_Tags=\"ears\" | \"lighting\" | none'."
+  },
+  "Declare": {
+   "kind": "option",
+   "text": "Render option Declare=Name=Value: a classic scene sees #declare Name; a .pov4 scene receives it only through input Name; or input Name = Default;, and a Declare naming no input is fatal. Quote strings: Declare=Label=\"a b\"."
+  },
+  "Photon_Memory": {
+   "kind": "option",
+   "text": "Render option: photon method 2 storage ceiling in GB, any positive finite number (Photon_Memory=24). The first given applies: this option, then POV_PHOTON_MEMORY, then the scene's photons { memory GB }, then 40% of available memory up to 6 GB."
+  },
+  "Texture_Filter": {
+   "kind": "option",
+   "text": "Render option +TF: filter each texture layer a camera ray hits, pigment and normal, over the area its pixel covers there, and carry the footprint into reflected and refracted rays and the sky; never casts extra rays. Off by default; see Texture_Filter_Pigments, Texture_Filter_Normals, Texture_Filter_Scale, Texture_Filter_Taps."
+  },
+  "Texture_Filter_Pigments": {
+   "kind": "option",
+   "text": "Render option: with +TF, Texture_Filter_Pigments=off leaves pigments unfiltered (default on)."
+  },
+  "Texture_Filter_Normals": {
+   "kind": "option",
+   "text": "Render option: with +TF, Texture_Filter_Normals=off leaves normals unfiltered (default on)."
+  },
+  "Texture_Filter_Scale": {
+   "kind": "option",
+   "text": "Render option: with +TF, scales the filter footprint (default 1.0, at most 64)."
+  },
+  "Texture_Filter_Taps": {
+   "kind": "option",
+   "text": "Render option: with +TF, the taps a filtered pigment or normal starts with: 8 (default), or 3 to start with three and add the rest only where they disagree."
+  },
+  "Eager_Preparation": {
+   "kind": "option",
+   "text": "Render option, on by default (-WE turns it off): build each isosurface_mesh, skein_mesh and mesh2 { povm } on a spare work thread while the parser runs, and start method 4 media density grids; the image is the same either way, and +WT1 has no spare thread."
   }
  }
 }

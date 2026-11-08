@@ -133,4 +133,4 @@ Render with `+GLout.pov`: the classic SDL the scene was lowered to is written to
 
 ## Lookup
 
-Run `node tools/language/reference.mjs <term>` for any block, item or 4.0 word not in the table above.
+Run `node tools/language/reference.mjs <term>` for any block, item or 4.0 word not in the table above, and for the render options that pair with scene features (`Filter_Tags`, `Declare`, `Photon_Memory`, `Texture_Filter_Taps`).

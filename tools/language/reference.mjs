@@ -164,7 +164,7 @@ function lineSnippet(sourceGroups, word, snippets) {
             const lines = src.text.split('\n');
             for (let i = 0; i < lines.length; ++i) {
                 const code = decodeLine(lines[i]);
-                if (code === word || !re.test(code) || !usable(code, 90)) continue;
+                if (code === word || !re.test(code.replace(/"(?:[^"\\]|\\.)*"/g, '""')) || !usable(code, 90)) continue;
                 const rank = (code.includes('{') ? 0 : 1000) + code.length;
                 if (!best || rank < best.rank) best = { rank, code, from: src.noLines ? src.name : `${src.name}:${i + 1}` };
             }
@@ -277,6 +277,15 @@ function itemCard(word) {
     const desc = descriptionOf(word);
     const lines = [`${word}  [item]${kw ? `  token: ${kw.token}  category: ${kw.category}` : ''}`];
     if (desc) lines.push(`  ${desc.text}`);
+    lines.push(...placementLines(word));
+    const snip = loadDescriptions().snippets[word];
+    if (snip) lines.push(`  snippet: ${snip.code}   [${snip.from}]`);
+    if (desc) lines.push(`  ${desc.provenance}`);
+    return lines.join('\n');
+}
+
+function placementLines(word) {
+    const lines = [];
     const inBlocks = Object.keys(blocks).filter((n) => blocks[n].items.includes(word)).sort();
     if (inBlocks.length) lines.push(`  in blocks (${inBlocks.length}): ${inBlocks.join(', ')}`);
     const nestedIn = new Map();
@@ -292,17 +301,16 @@ function itemCard(word) {
         lines.push('  nested in:');
         lines.push(...nestedRows);
     }
-    const snip = loadDescriptions().snippets[word];
-    if (snip) lines.push(`  snippet: ${snip.code}   [${snip.from}]`);
-    if (desc) lines.push(`  ${desc.provenance}`);
-    return lines.join('\n');
+    return lines;
 }
 
 function overlayCard(word) {
     const w = overlay.words[word];
     const kw = kwByWord.get(word);
-    const lines = [`${word}  [${w.kind}]${kw ? `  token: ${kw.token}  category: ${kw.category}` : '  4.0'}`];
+    const tag = kw ? `  token: ${kw.token}  category: ${kw.category}` : w.kind === 'option' ? '' : '  4.0';
+    const lines = [`${word}  [${w.kind}]${tag}`];
     lines.push(`  ${w.text}`);
+    if (w.kind === 'item') lines.push(...placementLines(word));
     const snip = loadDescriptions().snippets[word];
     if (snip) lines.push(`  snippet: ${snip.code}   [${snip.from}]`);
     return lines.join('\n');

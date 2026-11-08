@@ -61,8 +61,18 @@ test('every block, item and overlay word renders a card', () => {
     for (const term of allTerms()) {
         const card = cardFor(term);
         assert.ok(card, `${term} has no card`);
-        assert.match(card, /^.{1,40}  \[(block|item|statement|function|literal)\]/);
+        assert.match(card, /^.{1,40}  \[(block|item|statement|function|literal|option)\]/);
     }
+});
+
+test('a curated item card keeps its placement; a render option card is found by its INI name', () => {
+    const memory = run(['memory']);
+    assert.match(memory, /^memory  \[item\]  4\.0$/m);
+    assert.match(memory, /^    photons \(global_settings\)$/m);
+    assert.match(memory, /^    subsurface \(global_settings\)$/m);
+    const filter = run(['Filter_Tags']);
+    assert.match(filter, /^Filter_Tags  \[option\]$/m);
+    assert.doesNotMatch(filter, /not found/);
 });
 
 
