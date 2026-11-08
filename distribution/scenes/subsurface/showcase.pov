@@ -17,7 +17,7 @@
 #ifndef (LanternLumens) #declare LanternLumens=6; #end
 #ifndef (EggLumens) #declare EggLumens=1.2; #end
 #ifndef (HandLumens) #declare HandLumens=0.03; #end
-#ifndef (PanelLumens) #declare PanelLumens=0.3; #end
+#ifndef (PanelLumens) #declare PanelLumens=0.6; #end
 #ifndef (RuneLumens) #declare RuneLumens=0.1; #end
 #declare Lm=Exposure*Sources;
 
@@ -31,7 +31,7 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 #case (1) camera { location <0.12,0.15,-0.22> look_at <0.0,0.05,0.04> angle 36 right x*image_width/image_height } #break // egg
 #case (2) camera { location <0.22,0.24,-0.42> look_at <0.16,0.015,-0.07> angle 36 right x*image_width/image_height } #break // hand
 #case (3) camera { location <0.09,0.12,-0.06> look_at <0.13,0.095,0.17> angle 30 right x*image_width/image_height } #break // ear
-#case (4) camera { location <-0.08,0.15,-0.12> look_at <-0.12,0.08,0.16> angle 40 right x*image_width/image_height } #break // candle
+#case (4) camera { location <-0.06,0.15,-0.14> look_at <-0.095,0.08,0.14> angle 40 right x*image_width/image_height } #break // candle
 #case (5) camera { location <0.10,0.18,-0.12> look_at <0.20,0.10,0.26> angle 40 right x*image_width/image_height } #break // lantern
 #case (6) camera { location <0.17,0.12,-0.12> look_at <0.21,0.02,0.07> angle 30 right x*image_width/image_height } #break // grapes
 #case (7) camera { location <-0.17,0.15,-0.05> look_at <-0.21,0.06,0.24> angle 36 right x*image_width/image_height } #break // panel
@@ -255,7 +255,7 @@ union {
  lathe { linear_spline 7, <0,0>,<0.040,0>,<0.044,0.004>,<0.042,0.007>,<0.016,0.008>,<0.016,0.014>,<0,0.014> texture { Brass } }
  torus { 0.042,0.0022 translate y*0.0055 texture { Brass } }
  difference { torus { 0.010,0.0022 rotate x*90 } box { <-1,-1,-1>,<1,0,1> } translate <0.051,0.004,0> texture { Brass } }
- translate <-0.12,0,0.16>
+ translate <-0.095,0,0.14>
  tags { "candle" }
 }
 
@@ -337,12 +337,12 @@ union {
  #end
 };
 #declare TraceField=function { pattern { object { Traces } } };
-#declare Pads=union { #for (I,0,15,3) cylinder { PadEnds[I]-z*0.01,PadEnds[I]+z*0.01,0.0017 } #end };
+#declare Pads=union { #for (I,0,15,3) cylinder { PadEnds[I]-z*0.01,PadEnds[I]+z*0.01,0.0019 } #end };
 union {
  superellipsoid { <0.12,0.12> scale <0.034,0.044,PanelHD>
-  texture { pigment { granite turbulence 0.4 scale 0.015 colour_map { [0 rgb <0.92,0.82,0.58>] [1 rgb <0.86,0.74,0.50>] } }
+  texture { pigment { granite turbulence 0.6 scale 0.012 colour_map { [0 rgb <0.20,0.42,0.30>] [0.5 rgb <0.14,0.34,0.25>] [1 rgb <0.30,0.50,0.36>] } }
    #if (Normals) normal { average normal_map { [1 bumps 0.15 scale 0.0003] [1 granite 0.1 scale 0.004] } } #end
-   finish { diffuse 0.7 specular 0.45 roughness 0.015 subsurface { method 2 translucency <5,4,3> colour rgb 0.95 thickness 0.4 } } }
+   finish { diffuse 0.7 specular 0.5 roughness 0.012 subsurface { method 2 translucency <1.5,4,3.5> colour rgb 0.95 thickness 0.4 } } }
   #if (Pigments)
   texture { pigment { object { Pads rgbt 1 rgb <0.62,0.42,0.12> } } finish { diffuse 0.3 metallic specular 0.8 roughness 0.01 } }
   #end
