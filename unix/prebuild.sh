@@ -628,6 +628,7 @@ CONFIG_CLEAN_FILES =
 check: check-heavy
 check-quick: all
 	+sh "\$(top_srcdir)/tools/bench/check-sphere-intersection.sh" "\$(top_builddir)" "\$(top_builddir)/tests/sphere-intersection"
+	+sh "\$(top_srcdir)/tools/bench/check-shadow-segment.sh" "\$(top_builddir)" "\$(top_builddir)/tests/shadow-segment"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-prepared-transfer.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-transfer"
 	+sh "\$(top_srcdir)/tools/bench/check-physical-phase.sh" "\$(top_builddir)" "\$(top_builddir)/tests/physical-phase"
 	sh "\$(top_srcdir)/tests/render/physical_media_phase.sh" "\$(top_builddir)/unix/povray" "\$(top_srcdir)"
