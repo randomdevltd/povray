@@ -41,6 +41,10 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -52,10 +56,13 @@
 #include "core/math/matrix.h"
 #include "core/math/halfspacebounds.h"
 #include "core/render/ray.h"
+#include "core/lighting/lightsource.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/heightfield.h"
+#include "core/shape/mesh.h"
 #include "core/shape/plane.h"
 #include "core/shape/quadric.h"
+#include "core/shape/skein.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -112,6 +119,229 @@ inline bool Test_Ray_Flags_Shadow(const Ray& ray, ConstObjectPtr obj)
              ( ray.IsShadowTestRay() && !Test_Flag(obj, NO_SHADOW_FLAG) ) );
 }
 
+/// A CSG's children indexed by their padded world boxes, so a ray or a point asks only the children it can reach.
+/// Built once on one thread after the scene's geometry is final and read-only afterwards; a geometry change drops it.
+struct CSGChildTree final
+{
+    struct Box final
+    {
+        double lo[3], hi[3];
+    };
+    /// A leaf holds entries[first, first + count); an inner node (count 0) has its two children at nodes first and first + 1.
+    struct Node final
+    {
+        Box box;
+        std::uint32_t first, count;
+    };
+    struct Tree final
+    {
+        std::vector<Node> nodes;
+        std::vector<std::uint32_t> entries;
+        bool Built() const { return !nodes.empty(); }
+    };
+    /// What Inside_Object answers for a point outside a child's box.
+    enum InsideKind : std::uint8_t { kInsideUnknown, kOutsideNotInside, kOutsideInside };
+
+    static const unsigned kLeafSize = 4;
+    static const unsigned kStackSize = 64;
+
+    std::vector<Box> boxes;
+    std::vector<std::uint8_t> insideKind;
+    /// children whose every hit lies in their box; the rest are always asked
+    Tree ray;
+    std::vector<std::uint32_t> rayRest;
+    /// unions and merges: the kOutsideNotInside children; intersections: the kOutsideInside ones; the rest in order
+    Tree inside;
+    std::vector<std::uint32_t> insideRest;
+
+    static bool Contains(const Box& b, const Vector3d& p)
+    {
+        return (p[X] >= b.lo[X]) && (p[X] <= b.hi[X]) && (p[Y] >= b.lo[Y]) && (p[Y] <= b.hi[Y]) && (p[Z] >= b.lo[Z]) && (p[Z] <= b.hi[Z]);
+    }
+
+    /// Calls `leaf` on the entries of every leaf whose node passes `test`, until `leaf` returns true; returns whether it did.
+    template <typename Test, typename Leaf>
+    static bool Visit(const Tree& tree, const Test& test, const Leaf& leaf)
+    {
+        std::uint32_t stack[kStackSize];
+        unsigned top = 0;
+        stack[top++] = 0;
+        while (top > 0)
+        {
+            const Node& node = tree.nodes[stack[--top]];
+            if (!test(node.box))
+                continue;
+            if (node.count > 0)
+            {
+                for (std::uint32_t k = node.first; k < node.first + node.count; ++k)
+                    if (leaf(tree.entries[k]))
+                        return true;
+            }
+            else
+            {
+                stack[top++] = node.first;
+                stack[top++] = node.first + 1;
+            }
+        }
+        return false;
+    }
+};
+
+namespace
+{
+
+/// A ray against child boxes: slabs in double, the inverse direction kept finite so an axis-parallel ray needs no special case.
+class ChildBoxRay final
+{
+    public:
+        ChildBoxRay() : valid(false) {}
+
+        explicit ChildBoxRay(const Ray& ray) : valid(true)
+        {
+            for (int d = X; d <= Z; ++d)
+            {
+                origin[d] = ray.Origin[d];
+                const DBL r = 1.0 / ray.Direction[d];
+                inv[d] = (std::fabs(r) < 1.0e30) ? r : std::copysign(1.0e30, ray.Direction[d]);
+                valid = valid && std::isfinite(ray.Origin[d]) && std::isfinite(ray.Direction[d]);
+            }
+        }
+
+        /// Whether the ray, forward of its origin, may cross the box.
+        bool Hits(const CSGChildTree::Box& b) const
+        {
+            DBL tn = -HUGE_VAL, tf = HUGE_VAL;
+            for (int d = X; d <= Z; ++d)
+            {
+                const DBL t1 = (b.lo[d] - origin[d]) * inv[d], t2 = (b.hi[d] - origin[d]) * inv[d];
+                tn = max(tn, min(t1, t2));
+                tf = min(tf, max(t1, t2));
+            }
+            return (tn <= tf) && (tf >= 0.0);
+        }
+
+        bool valid;
+
+    private:
+        DBL origin[3], inv[3];
+};
+
+inline bool FinitePoint(const Vector3d& p)
+{
+    return std::isfinite(p[X]) && std::isfinite(p[Y]) && std::isfinite(p[Z]);
+}
+
+/// A light source without a shape takes no part in inside tests.
+inline bool HasInside(ConstObjectPtr child)
+{
+    return !(child->Type & LIGHT_SOURCE_OBJECT) || !(reinterpret_cast<const LightSource *>(child))->children.empty();
+}
+
+/// Restores the candidate stack to its size on entry, so a nested CSG's candidates sit above this one's.
+class CandidateScope final
+{
+    public:
+        explicit CandidateScope(std::vector<unsigned int>& l) : list(l), base(l.size()) {}
+        ~CandidateScope() { list.resize(base); }
+        std::vector<unsigned int>& list;
+        const size_t base;
+};
+
+/// Calls `visit` on every child a ray may hit, in the children's order: all of them without a tree, else the children whose box
+/// the ray crosses and those the tree cannot hold.
+template <typename Visit>
+inline void ForEachRayChild(const CSG& csg, const Ray& ray, TraceThreadData *thread, const Visit& visit)
+{
+    const CSGChildTree *tree = csg.childTree.get();
+    const bool indexed = (tree != nullptr) && tree->ray.Built();
+    // set up only for a tree: most CSGs are small, and their rays should pay nothing for it
+    const ChildBoxRay boxRay = indexed ? ChildBoxRay(ray) : ChildBoxRay();
+    if (!boxRay.valid)
+    {
+        for (vector<ObjectPtr>::const_iterator child = csg.children.begin(); child != csg.children.end(); ++child)
+            visit(child);
+        return;
+    }
+    const CandidateScope scope(thread->csgCandidates);
+    std::vector<unsigned int>& list = scope.list;
+    CSGChildTree::Visit(tree->ray, [&boxRay](const CSGChildTree::Box& b) { return boxRay.Hits(b); },
+                        [&](std::uint32_t k) { if (boxRay.Hits(tree->boxes[k])) list.push_back(k); return false; });
+    // the children's order decides ties between equal depths, so the tree's hits merge with the rest in that order
+    const size_t end = list.size();
+    std::sort(list.begin() + scope.base, list.end());
+    const std::vector<std::uint32_t>& rest = tree->rayRest;
+    size_t i = scope.base, r = 0;
+    while ((i < end) || (r < rest.size()))
+    {
+        // by index: a nested CSG may grow the list
+        const unsigned int k = ((r < rest.size()) && ((i >= end) || (rest[r] < list[i]))) ? rest[r++] : list[i++];
+        visit(csg.children.begin() + k);
+    }
+}
+
+/// Whether `p` is inside a child other than `skip` that `asked` admits: the inside test of unions, and of merges per hit.
+template <typename Asked>
+inline bool AnyChildInside(const CSG& csg, const Vector3d& p, TraceThreadData *thread, ConstObjectPtr skip, const Asked& asked)
+{
+    const CSGChildTree *tree = csg.childTree.get();
+    if ((tree == nullptr) || !tree->inside.Built() || !FinitePoint(p))
+    {
+        for (ObjectPtr child : csg.children)
+            if ((child != skip) && HasInside(child) && asked(child) && Inside_Object(p, child, thread))
+                return true;
+        return false;
+    }
+    for (std::uint32_t k : tree->insideRest)
+    {
+        ObjectPtr child = csg.children[k];
+        if ((child == skip) || !HasInside(child) || !asked(child))
+            continue;
+        if ((tree->insideKind[k] == CSGChildTree::kOutsideInside) && !CSGChildTree::Contains(tree->boxes[k], p))
+            return true;
+        if (Inside_Object(p, child, thread))
+            return true;
+    }
+    return CSGChildTree::Visit(tree->inside, [&p](const CSGChildTree::Box& b) { return CSGChildTree::Contains(b, p); },
+                               [&](std::uint32_t k)
+                               {
+                                   ObjectPtr child = csg.children[k];
+                                   return (child != skip) && CSGChildTree::Contains(tree->boxes[k], p) && asked(child) &&
+                                          Inside_Object(p, child, thread);
+                               });
+}
+
+/// Whether `p` is inside every child other than `skip`: the inside test of intersections and differences, and theirs per hit.
+inline bool AllChildrenInside(const CSG& csg, const Vector3d& p, TraceThreadData *thread, ConstObjectPtr skip)
+{
+    const CSGChildTree *tree = csg.childTree.get();
+    if ((tree == nullptr) || !tree->inside.Built() || !FinitePoint(p))
+    {
+        for (ObjectPtr child : csg.children)
+            if ((child != skip) && HasInside(child) && !Inside_Object(p, child, thread))
+                return false;
+        return true;
+    }
+    for (std::uint32_t k : tree->insideRest)
+    {
+        ObjectPtr child = csg.children[k];
+        if ((child == skip) || !HasInside(child))
+            continue;
+        if ((tree->insideKind[k] == CSGChildTree::kOutsideNotInside) && !CSGChildTree::Contains(tree->boxes[k], p))
+            return false;
+        if (!Inside_Object(p, child, thread))
+            return false;
+    }
+    // the tree holds inverted children, inside everywhere outside their boxes
+    return !CSGChildTree::Visit(tree->inside, [&p](const CSGChildTree::Box& b) { return CSGChildTree::Contains(b, p); },
+                                [&](std::uint32_t k)
+                                {
+                                    ObjectPtr child = csg.children[k];
+                                    return (child != skip) && CSGChildTree::Contains(tree->boxes[k], p) && !Inside_Object(p, child, thread);
+                                });
+}
+
+}
+
 /*****************************************************************************
 *
 * FUNCTION
@@ -151,7 +381,7 @@ bool CSGUnion::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
 
     if(Clip.empty())
     {
-        for(vector<ObjectPtr>::const_iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
+        ForEachRayChild(*this, ray, Thread, [&](vector<ObjectPtr>::const_iterator Current_Sib)
         {
             if(Test_Ray_Flags(ray, (*Current_Sib))) // TODO CLARIFY - why does CSGUnion use Test_Ray_Flags(), while CSGMerge uses Test_Ray_Flags_Shadow(), and CSGIntersection uses neither?
             {
@@ -161,14 +391,14 @@ bool CSGUnion::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
                         Found = true;
                 }
             }
-        }
+        });
     }
     else
     {
         IStack Local_Stack(Thread->stackPool);
         POV_REFPOOL_ASSERT(Local_Stack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
 
-        for(vector<ObjectPtr>::const_iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
+        ForEachRayChild(*this, ray, Thread, [&](vector<ObjectPtr>::const_iterator Current_Sib)
         {
             if(Test_Ray_Flags(ray, (*Current_Sib))) // TODO CLARIFY - why does CSGUnion use Test_Ray_Flags(), while CSGMerge uses Test_Ray_Flags_Shadow(), and CSGIntersection uses neither?
             {
@@ -192,7 +422,7 @@ bool CSGUnion::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
                     }
                 }
             }
-        }
+        });
         POV_REFPOOL_ASSERT(Local_Stack->empty()); // verify that the IStack is in a cleaned-up condition (again)
     }
 
@@ -241,7 +471,7 @@ bool CSGIntersection::All_Intersections(const Ray& ray, IStack& Depth_Stack, Tra
 
     Found = false;
 
-    for(vector<ObjectPtr>::const_iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
+    ForEachRayChild(*this, ray, Thread, [&](vector<ObjectPtr>::const_iterator Current_Sib)
     {
         if ((*Current_Sib)->Bound.empty() == true || Ray_In_Bound(ray, (*Current_Sib)->Bound, Thread))
         {
@@ -249,22 +479,7 @@ bool CSGIntersection::All_Intersections(const Ray& ray, IStack& Depth_Stack, Tra
             {
                 while(Local_Stack->size() > 0)
                 {
-                    Maybe_Found = true;
-
-                    for(vector<ObjectPtr>::const_iterator Inside_Sib = children.begin(); Inside_Sib != children.end(); Inside_Sib++)
-                    {
-                        if(*Inside_Sib != *Current_Sib)
-                        {
-                            if(!((*Inside_Sib)->Type & LIGHT_SOURCE_OBJECT) || (!(reinterpret_cast<LightSource *>(*Inside_Sib))->children.empty()))
-                            {
-                                if(!Inside_Object(Local_Stack->top().IPoint, *Inside_Sib, Thread))
-                                {
-                                    Maybe_Found = false;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    Maybe_Found = AllChildrenInside(*this, Local_Stack->top().IPoint, Thread, *Current_Sib);
 
                     if(Maybe_Found)
                     {
@@ -282,7 +497,7 @@ bool CSGIntersection::All_Intersections(const Ray& ray, IStack& Depth_Stack, Tra
                 }
             }
         }
-    }
+    });
 
     if(Found)
         Thread->Stats()[Ray_CSG_Intersection_Tests_Succeeded]++;
@@ -337,7 +552,7 @@ bool CSGMerge::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
     // us if it is primary, reflection, refraction, shadow, primary photon, photon refleciton, or photon refraction ray.
     int shadow_flag = ray.IsShadowTestRay(); // TODO FIXME - why is this flag not used?!
 
-    for(vector<ObjectPtr>::const_iterator Sib1 = children.begin(); Sib1 != children.end(); Sib1++)
+    ForEachRayChild(*this, ray, Thread, [&](vector<ObjectPtr>::const_iterator Sib1)
     {
         if ( Test_Ray_Flags_Shadow(ray, (*Sib1)) )// TODO CLARIFY - why does CSGUnion use Test_Ray_Flags(), while CSGMerge uses Test_Ray_Flags_Shadow(), and CSGIntersection uses neither?
         {
@@ -349,22 +564,9 @@ bool CSGMerge::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
                     {
                         if (Clip.empty() || Point_In_Clip(Local_Stack->top().IPoint, Clip, Thread))
                         {
-                            inside_flag = true;
-
-                            for(vector<ObjectPtr>::const_iterator Sib2 = children.begin(); (Sib2 != children.end()) && (inside_flag == true); Sib2++)
-                            {
-                                if (*Sib1 != *Sib2)
-                                {
-                                    if (!((*Sib2)->Type & LIGHT_SOURCE_OBJECT) || (!(reinterpret_cast<LightSource *>(*Sib2))->children.empty()))
-                                    {
-                                        if ( Test_Ray_Flags_Shadow(ray, (*Sib2)) )// TODO CLARIFY - why does CSGUnion use Test_Ray_Flags(), while CSGMerge uses Test_Ray_Flags_Shadow(), and CSGIntersection uses neither?
-                                        {
-                                            if (Inside_Object(Local_Stack->top().IPoint, *Sib2, Thread))
-                                                inside_flag = false;
-                                        }
-                                    }
-                                }
-                            }
+                            // a hit inside another child is not on the merge's surface
+                            inside_flag = !AnyChildInside(*this, Local_Stack->top().IPoint, Thread, *Sib1,
+                                                          [&ray](ConstObjectPtr Sib2) { return Test_Ray_Flags_Shadow(ray, Sib2); });
 
                             if (inside_flag == true)
                             {
@@ -381,7 +583,7 @@ bool CSGMerge::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
                 }
             }
         }
-    }
+    });
 
     if (Found)
         Thread->Stats()[Ray_CSG_Merge_Tests_Succeeded]++;
@@ -420,16 +622,7 @@ bool CSGMerge::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
 
 bool CSGUnion::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 {
-    for(vector<ObjectPtr>::const_iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
-    {
-        if(!((*Current_Sib)->Type & LIGHT_SOURCE_OBJECT) || (!(reinterpret_cast<LightSource *>(*Current_Sib))->children.empty()))
-        {
-            if(Inside_Object(IPoint, *Current_Sib, Thread))
-                return (true);
-        }
-    }
-
-    return (false);
+    return AnyChildInside(*this, IPoint, Thread, nullptr, [](ConstObjectPtr) { return true; });
 }
 
 
@@ -462,11 +655,7 @@ bool CSGUnion::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
 bool CSGIntersection::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 {
-    for(vector<ObjectPtr>::const_iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
-        if(!((*Current_Sib)->Type & LIGHT_SOURCE_OBJECT) || (!(reinterpret_cast<LightSource *>(*Current_Sib))->children.empty()))
-            if(!Inside_Object(IPoint, (*Current_Sib), Thread))
-                return (false);
-    return (true);
+    return AllChildrenInside(*this, IPoint, Thread, nullptr);
 }
 
 
@@ -504,6 +693,7 @@ void CSG::Translate(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Translate_Object (*Current_Sib, Vector, tr) ;
 
+    childTree.reset();
     RecomputeCSGBounds(this, tr);
 }
 
@@ -541,6 +731,7 @@ void CSG::Rotate(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Rotate_Object (*Current_Sib, Vector, tr) ;
 
+    childTree.reset();
     RecomputeCSGBounds(this, tr);
 }
 
@@ -578,6 +769,7 @@ void CSG::Scale(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Scale_Object (*Current_Sib, Vector, tr) ;
 
+    childTree.reset();
     RecomputeCSGBounds(this, tr);
 }
 
@@ -615,6 +807,7 @@ void CSG::Transform(const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Transform_Object(*Current_Sib, tr);
 
+    childTree.reset();
     RecomputeCSGBounds(this, tr);
 }
 
@@ -804,6 +997,7 @@ ObjectPtr CSGUnion::Copy()
     CSGUnion *New = new CSGUnion();
     Destroy_Transform(New->Trans);
     *New = *this;
+    New->childTree.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -825,6 +1019,7 @@ ObjectPtr CSGMerge::Copy()
     CSGMerge *New = new CSGMerge();
     Destroy_Transform(New->Trans);
     *New = *this;
+    New->childTree.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -846,6 +1041,7 @@ ObjectPtr CSGIntersection::Copy()
     CSGIntersection *New = new CSGIntersection(false);
     Destroy_Transform(New->Trans);
     *New = *this;
+    New->childTree.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1085,6 +1281,203 @@ void CSG::Compute_BBox()
     }
 }
 
+
+
+namespace
+{
+
+/// The child box padded out, wide enough for any hit or inside point a solver puts just past the certified box.
+CSGChildTree::Box Padded_Box(const BoundingBox& box)
+{
+    CSGChildTree::Box b;
+    for (int d = X; d <= Z; ++d)
+    {
+        const DBL lo = box.lowerLeft[d], hi = lo + DBL(box.size[d]);
+        const DBL pad = 2.0e-4 + 4.0e-6 * (std::fabs(lo) + std::fabs(hi));
+        b.lo[d] = lo - pad;
+        b.hi[d] = hi + pad;
+    }
+    return b;
+}
+
+/// Whether the object's inside test turns its base domain inside out under INVERTED_FLAG. Shapes with no inside (patches,
+/// meshes without inside_vector, open skeins, polygons) answer no inside however inverted, and a CSG inverts through its
+/// children, so it holds only if each of them does, unclipped.
+bool Honours_Inversion(ConstObjectPtr o)
+{
+    if (o->Type & (PATCH_OBJECT | NO_INSIDE_OBJECT))
+        return false;
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(o))
+        return mesh->has_inside_vector;
+    if (const Skein *skein = dynamic_cast<const Skein *>(o))
+        return skein->data && skein->data->closed;
+    if (const CompoundObject *compound = dynamic_cast<const CompoundObject *>(o))
+        for (ConstObjectPtr child : compound->children)
+            if (HasInside(child) && (!child->Clip.empty() || !Honours_Inversion(child)))
+                return false;
+    return true;
+}
+
+bool Usable_Box(const BoundingBox& box)
+{
+    if (!box.finite || box.isEmpty())
+        return false;
+    for (int d = X; d <= Z; ++d)
+    {
+        const DBL lo = box.lowerLeft[d], hi = lo + DBL(box.size[d]);
+        if (!std::isfinite(lo) || !std::isfinite(hi) || (std::fabs(lo) > 1.0e15) || (std::fabs(hi) > 1.0e15))
+            return false;
+    }
+    return true;
+}
+
+/// Splits items[first, first + count) at the median centroid of its longest axis; returns the depth reached.
+unsigned Build_Node(CSGChildTree::Tree& tree, std::uint32_t index, std::uint32_t first, std::uint32_t count,
+                    const std::vector<CSGChildTree::Box>& boxes)
+{
+    CSGChildTree::Box bounds = boxes[tree.entries[first]];
+    DBL clo[3], chi[3];
+    for (int d = X; d <= Z; ++d)
+        clo[d] = chi[d] = bounds.lo[d] + bounds.hi[d];
+    for (std::uint32_t k = first; k < first + count; ++k)
+    {
+        const CSGChildTree::Box& b = boxes[tree.entries[k]];
+        for (int d = X; d <= Z; ++d)
+        {
+            bounds.lo[d] = min(bounds.lo[d], b.lo[d]);
+            bounds.hi[d] = max(bounds.hi[d], b.hi[d]);
+            clo[d] = min(clo[d], b.lo[d] + b.hi[d]);
+            chi[d] = max(chi[d], b.lo[d] + b.hi[d]);
+        }
+    }
+    tree.nodes[index].box = bounds;
+    if (count <= CSGChildTree::kLeafSize)
+    {
+        std::sort(tree.entries.begin() + first, tree.entries.begin() + first + count);
+        tree.nodes[index].first = first;
+        tree.nodes[index].count = count;
+        return 1;
+    }
+    int axis = X;
+    for (int d = Y; d <= Z; ++d)
+        if (chi[d] - clo[d] > chi[axis] - clo[axis])
+            axis = d;
+    const std::uint32_t half = count / 2;
+    // ties broken by child index, so the tree is the same on every run
+    std::nth_element(tree.entries.begin() + first, tree.entries.begin() + first + half, tree.entries.begin() + first + count,
+                     [&boxes, axis](std::uint32_t a, std::uint32_t b)
+                     {
+                         const DBL ca = boxes[a].lo[axis] + boxes[a].hi[axis], cb = boxes[b].lo[axis] + boxes[b].hi[axis];
+                         return (ca < cb) || ((ca == cb) && (a < b));
+                     });
+    const std::uint32_t left = std::uint32_t(tree.nodes.size());
+    tree.nodes.resize(tree.nodes.size() + 2);
+    tree.nodes[index].first = left;
+    tree.nodes[index].count = 0;
+    const unsigned depth = max(Build_Node(tree, left, first, half, boxes),
+                               Build_Node(tree, left + 1, first + half, count - half, boxes));
+    return depth + 1;
+}
+
+bool Build_Tree(CSGChildTree::Tree& tree, std::vector<std::uint32_t>&& items, const std::vector<CSGChildTree::Box>& boxes)
+{
+    tree.entries = std::move(items);
+    tree.nodes.reserve(2 * (tree.entries.size() / CSGChildTree::kLeafSize) + 1);
+    tree.nodes.resize(1);
+    // a walk keeps at most one pending node per level plus the one in hand
+    if (Build_Node(tree, 0, 0, std::uint32_t(tree.entries.size()), boxes) + 1 < CSGChildTree::kStackSize)
+        return true;
+    tree = CSGChildTree::Tree();
+    return false;
+}
+
+}
+
+unsigned CSG_Child_Tree_Minimum()
+{
+    // measured crossover: from 8 children the walk costs less than the scan for every leaf shape and arrangement measured;
+    // at 4 it breaks even on spheres and boxes, and at 2 it costs a little more
+    const unsigned kDefault = 8;
+    const char *text = std::getenv("POV_CSG_CHILD_TREE");
+    if ((text == nullptr) || (*text == '\0'))
+        return kDefault;
+    char *end = nullptr;
+    const unsigned long value = std::strtoul(text, &end, 10);
+    if ((end == nullptr) || (*end != '\0'))
+        return kDefault;
+    return (value == 0) ? 0 : unsigned(max<unsigned long>(value, 2));
+}
+
+bool CSG::Prepare_Child_Tree(unsigned minimum)
+{
+    childTree.reset();
+    if ((minimum == 0) || (children.size() < minimum) || (children.size() >= std::numeric_limits<std::uint32_t>::max() / 2))
+        return false;
+    const bool intersection = (dynamic_cast<const CSGIntersection *>(this) != nullptr);
+    std::shared_ptr<CSGChildTree> tree = std::make_shared<CSGChildTree>();
+    tree->boxes.resize(children.size());
+    tree->insideKind.resize(children.size(), CSGChildTree::kInsideUnknown);
+    std::vector<std::uint32_t> rayItems, insideItems;
+    for (std::uint32_t k = 0; k < std::uint32_t(children.size()); ++k)
+    {
+        ConstObjectPtr child = children[k];
+        const bool usable = !(child->Type & LIGHT_SOURCE_OBJECT) && Usable_Box(child->BBox);
+        if (usable)
+            tree->boxes[k] = Padded_Box(child->BBox);
+        // the box holds every hit unless it is a bounded_by object's stand-in for a shape it does not enclose
+        if (usable && (child->Bound.empty() || child->BBox.finiteInterior))
+            rayItems.push_back(k);
+        else
+            tree->rayRest.push_back(k);
+        // the box encloses the base inside domain (and a clipped child's clips); inversion turns outside into inside
+        // only without clips, which still say no outside their own boxes, and only for shapes that honour it
+        std::uint8_t& kind = tree->insideKind[k];
+        if (usable && child->BBox.finiteInterior)
+        {
+            if (!Test_Flag(child, INVERTED_FLAG))
+                kind = CSGChildTree::kOutsideNotInside;
+            else if (child->Clip.empty() && Honours_Inversion(child))
+                kind = CSGChildTree::kOutsideInside;
+        }
+        const std::uint8_t indexed = intersection ? CSGChildTree::kOutsideInside : CSGChildTree::kOutsideNotInside;
+        if (kind == indexed)
+            insideItems.push_back(k);
+        else
+            tree->insideRest.push_back(k);
+    }
+    bool any = false;
+    if (rayItems.size() >= minimum)
+        any = Build_Tree(tree->ray, std::move(rayItems), tree->boxes) || any;
+    if (!tree->ray.Built())
+        tree->rayRest.clear();
+    if (insideItems.size() >= minimum)
+        any = Build_Tree(tree->inside, std::move(insideItems), tree->boxes) || any;
+    if (!tree->inside.Built())
+        tree->insideRest.clear();
+    if (any)
+        childTree = std::move(tree);
+    return any;
+}
+
+void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_set<ConstObjectPtr>& visited, unsigned& built)
+{
+    // a leaf without clips or bounds holds no CSG: the common case, and cheap to pass over
+    if ((object == nullptr) || (!(object->Type & IS_COMPOUND_OBJECT) && object->Clip.empty() && object->Bound.empty()))
+        return;
+    if (!visited.insert(object).second)
+        return;
+    for (ObjectPtr o : object->Clip)
+        Prepare_CSG_Child_Trees(o, minimum, visited, built);
+    for (ObjectPtr o : object->Bound)
+        Prepare_CSG_Child_Trees(o, minimum, visited, built);
+    if (LightSource *light = dynamic_cast<LightSource *>(object))
+        Prepare_CSG_Child_Trees(light->Projected_Through_Object, minimum, visited, built);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            Prepare_CSG_Child_Trees(child, minimum, visited, built);
+    if (CSG *csg = dynamic_cast<CSG *>(object))
+        built += csg->Prepare_Child_Tree(minimum) ? 1 : 0;
+}
 
 /*****************************************************************************
 *

@@ -3238,6 +3238,15 @@ bounding box hierarchy. Some CSG combinations of finite and infinite objects
 are also automatically bound. The end result is that you will rarely need to
 add manual bounding objects as was necessary in earlier versions of POV-Ray
 unless you use many infinite objects.</p>
+<p>
+A union, merge, intersection or difference of 8 or more children that is not split into the hierarchy (one inside
+another CSG, one with <code>split_union off</code>, a merge, a difference, a <code>clipped_by</code> or
+<code>bounded_by</code> object) keeps its own box tree over its children, so a ray or an inside test asks only the
+children it can reach. Children without a finite box are asked every time. The trees change no image.
+<code>Bounding=off</code> (<code>-MB</code>) turns them off along with the scene's hierarchy;
+<code>Bounding_Threshold</code> does not affect them. The <code>POV_CSG_CHILD_TREE</code> environment variable sets the
+child count from which a CSG builds one (default 8, at least 2), and <code>POV_CSG_CHILD_TREE=0</code> turns them off.
+When any are built, the preparation messages report how many.</p>
 <p class="Note"><strong>Note:</strong>
 As of version 3.7 the <code>Vista_Buffer</code> and <code>Light_Buffer</code> options have been deprecated.</p>
 

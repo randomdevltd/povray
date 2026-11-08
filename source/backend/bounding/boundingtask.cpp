@@ -541,6 +541,18 @@ void MeshBuildTask::Run()
     for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
         for (ObjectPtr object : set->objects)
             rebound(object);
+    // the geometry is final, so CSGs may index their children's boxes; Bounding=off leaves them linear with the scene tree
+    if (sceneData->boundingMethod != 0)
+    {
+        const unsigned minimum = CSG_Child_Tree_Minimum();
+        std::unordered_set<ConstObjectPtr> indexed;
+        unsigned built = 0;
+        for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+            for (ObjectPtr object : set->objects)
+                Prepare_CSG_Child_Trees(object, minimum, indexed, built);
+        if (built > 0)
+            mpMessageFactory->Info("CSG child trees: %u CSG(s) of %u or more children index them by their boxes.", built, minimum);
+    }
 
     TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
     finalFields.preparationProgress = &progress;
