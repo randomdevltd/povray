@@ -1457,8 +1457,9 @@ class Trace
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
         SubsurfaceInternalBoundary SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
             ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket);
+        /// face: the surface normal when point lies on the material's surface, zero for a start inside it.
         bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
-            double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket);
+            double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket, const Vector3d& face);
         bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
         /// The placed objects that carry a material, whose union ContainsSubsurfaceMaterial tests; `whole` always among them.
         const std::vector<ObjectPtr>& SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);

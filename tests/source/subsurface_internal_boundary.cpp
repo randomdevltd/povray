@@ -2,6 +2,8 @@
 #include "core/shape/superellipsoid.h"
 #include "core/shape/sphere.h"
 #include "core/shape/cone.h"
+#include "core/shape/box.h"
+#include "core/shape/plane.h"
 #include "core/shape/csg.h"
 #include "core/material/noise.h"
 #include "core/material/interior.h"
@@ -15,6 +17,7 @@
 #include <array>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 using namespace pov;
 
@@ -675,6 +678,116 @@ int main()
             failed = true;
         }
         assert(failed && !thread.preciseInside && outer.GetRootQuery() == &previous);
+    }
+    {
+        // Coincident and coplanar faces inside CSG: equal spheres, halves cut on one plane, boxes sharing a face and a
+        // cutter flush with the host. Each exit, from points on the seams as well as off them, must be where the solid ends.
+        const double r = 0.01;
+        auto child = [&](ObjectPtr object, CSG &csg) {
+            object->Type |= IS_CHILD_OBJECT;
+            object->interior = csg.interior;
+            object->Compute_BBox();
+            csg.children.push_back(object);
+        };
+        auto sphere = [&]() {
+            auto *s = new Sphere;
+            s->Center = translation;
+            s->Radius = r;
+            return s;
+        };
+        auto box = [&](const Vector3d &low, const Vector3d &high) {
+            auto *b = new Box;
+            b->bounds[0] = translation + low;
+            b->bounds[1] = translation + high;
+            return b;
+        };
+        auto half = [&](double side) {
+            auto *cut = new CSGIntersection(false);
+            cut->children = {sphere()};
+            auto *plane = new Plane;
+            plane->Normal_Vector = Vector3d(side, 0.0, 0.0);
+            plane->Distance = -side * translation[X];
+            cut->children.push_back(plane);
+            for (auto *c : cut->children)
+            {
+                c->Type |= IS_CHILD_OBJECT;
+                c->Compute_BBox();
+            }
+            cut->Compute_BBox();
+            return cut;
+        };
+        auto inSphere = [&](const Vector3d &q) { return (q - translation).lengthSqr() < r * r; };
+        auto inBox = [&](const Vector3d &q, const Vector3d &low, const Vector3d &high) {
+            const Vector3d l = q - translation;
+            return l[X] > low[X] && l[X] < high[X] && l[Y] > low[Y] && l[Y] < high[Y] && l[Z] > low[Z] && l[Z] < high[Z];
+        };
+        const Vector3d slotLow(-0.004, 0.004, -0.02), slotHigh(0.004, r, 0.02);
+        std::uint64_t state = 0x9e3779b97f4a7c15ULL;
+        auto uniform = [&]() {
+            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            return double(state >> 11) * (1.0 / 9007199254740992.0);
+        };
+        for (int shape = 0; shape < 4; ++shape)
+        {
+            CSG *csg = (shape == 3) ? static_cast<CSG *>(new CSGIntersection(true)) : static_cast<CSG *>(new CSGMerge);
+            csg->interior = std::make_shared<Interior>();
+            csg->interior->boundsLow = translation - Vector3d(r);
+            csg->interior->boundsHigh = translation + Vector3d(r);
+            std::function<bool(const Vector3d &)> member;
+            switch (shape)
+            {
+            case 0: // two equal spheres on one centre
+                child(sphere(), *csg);
+                child(sphere(), *csg);
+                member = inSphere;
+                break;
+            case 1: // a sphere's halves cut on the plane x = 0
+                child(half(1.0), *csg);
+                child(half(-1.0), *csg);
+                for (auto *c : csg->children)
+                    for (auto *g : static_cast<CSG *>(c)->children)
+                        g->interior = csg->interior;
+                member = inSphere;
+                break;
+            case 2: // a box's halves sharing the face x = 0
+                child(box(Vector3d(-r), Vector3d(0.0, r, r)), *csg);
+                child(box(Vector3d(0.0, -r, -r), Vector3d(r)), *csg);
+                member = [&](const Vector3d &q) { return inBox(q, Vector3d(-r), Vector3d(r)); };
+                break;
+            default: // a box less a slot whose top is flush with the box's top
+                child(box(Vector3d(-r), Vector3d(r)), *csg);
+                child(box(slotLow, slotHigh), *csg);
+                Set_Flag(csg->children.back(), INVERTED_FLAG);
+                member = [&](const Vector3d &q) { return inBox(q, Vector3d(-r), Vector3d(r)) && !inBox(q, slotLow, slotHigh); };
+                break;
+            }
+            csg->Compute_BBox();
+            scene->preparedSets.front()->objects = {csg};
+            for (int k = 0; k < 400; ++k)
+            {
+                Vector3d p;
+                do
+                {
+                    p = translation + Vector3d(2.0 * uniform() - 1.0, 2.0 * uniform() - 1.0, 2.0 * uniform() - 1.0) * r;
+                    if (k % 2 == 0)
+                        p[X] = translation[X]; // on the seam plane
+                } while (!member(p));
+                const double zc = 2.0 * uniform() - 1.0, ring = std::sqrt(std::max(0.0, 1.0 - zc * zc)), phi = 2.0 * M_PI * uniform();
+                const Vector3d d(ring * std::cos(phi), ring * std::sin(phi), zc);
+                ObjectPtr part = csg->children[(k / 2) % 2 == 0 || shape == 3 ? 0 : 1];
+                while (dynamic_cast<CSG *>(part) != nullptr)
+                    part = static_cast<CSG *>(part)->children.front();
+                const auto hit = trace.SubsurfaceInternalBoundaryAt(p, d, part, csg, ticket);
+                double low = 0.0, high = 0.0;
+                for (double t = 0.0; t < 0.05; t += 2e-5)
+                    if (!member(p + d * t)) { high = t; break; } else low = t;
+                for (int i = 0; i < 80; ++i)
+                    (member(p + d * (0.5 * (low + high))) ? low : high) = 0.5 * (low + high);
+                assert(std::abs(hit.distance - low) < 1e-12 && dot(hit.normal, d) > 0.0);
+                ++checked;
+            }
+            scene->preparedSets.front()->objects = {&junction};
+        }
     }
     assert(!thread.preciseInside);
     assert(checked > 1000);
