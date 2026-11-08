@@ -1,6 +1,6 @@
 // Hosts of a buried volume light under method 2 subsurface: every Case must render, and the exit search must find where
 // each path leaves the material whatever the host's shape. S scales the whole scene with mm_per_unit, so the image is
-// the same at any S. Case 4 is an open mesh, which cannot enclose a source.
+// the same at any S. Case 4 is an open mesh, which cannot enclose a source: the parse must stop and name it.
 #version 4.0;
 #ifndef (Case) #declare Case=0; #end
 #ifndef (S) #declare S=1; #end
