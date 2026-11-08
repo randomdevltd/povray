@@ -30,7 +30,7 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 #case (0) camera { location <0.02,0.30,-0.60> look_at <0.02,0.06,0.08> angle 42 right x*image_width/image_height } #break
 #case (1) camera { location <0.12,0.15,-0.22> look_at <0.0,0.05,0.04> angle 36 right x*image_width/image_height } #break // egg
 #case (2) camera { location <0.22,0.24,-0.42> look_at <0.16,0.015,-0.07> angle 36 right x*image_width/image_height } #break // hand
-#case (3) camera { location <0.07,0.13,-0.10> look_at <0.13,0.09,0.17> angle 34 right x*image_width/image_height } #break // ear
+#case (3) camera { location <0.09,0.12,-0.06> look_at <0.13,0.095,0.17> angle 30 right x*image_width/image_height } #break // ear
 #case (4) camera { location <-0.08,0.15,-0.12> look_at <-0.12,0.08,0.16> angle 40 right x*image_width/image_height } #break // candle
 #case (5) camera { location <0.10,0.18,-0.12> look_at <0.20,0.10,0.26> angle 40 right x*image_width/image_height } #break // lantern
 #case (6) camera { location <0.17,0.12,-0.12> look_at <0.21,0.02,0.07> angle 30 right x*image_width/image_height } #break // grapes
@@ -189,26 +189,25 @@ union {
 }
 
 // ================================================================ ear specimen on a brass pin (pointed, backlit by the lantern)
+// thin cartilage plate with a rolled rim along its edge; front faces -z
+#declare EarRim=array[14] {<-0.0085,0.004,0>,<-0.007,0.016,0>,<-0.002,0.025,0>,<0.006,0.030,0>,<0.013,0.034,0>,<0.021,0.046,0>,<0.019,0.028,0>,
+ <0.020,0.016,0>,<0.019,0.004,0>,<0.016,-0.008,0>,<0.012,-0.016,0>,<0.010,-0.023,0>,<0.006,-0.030,0>,<0.000,-0.033,0>};
+#declare EarRimR=array[14] {0.0016,0.0021,0.0024,0.0025,0.0022,0.0009,0.0022,0.0025,0.0025,0.0024,0.0022,0.0028,0.0045,0.0050};
 #macro EarShape()
  difference {
   merge {
-   sphere { 0,1 scale <0.0165,0.026,0.0024> translate <0.003,0.005,0.0015> }
-   sphere_sweep { linear_spline 16,
-    #for (J,0,15)
-     #local A=radians(-70+J*250/15);
-     #local P=<0.016*cos(A)+0.002,0.027*sin(A)+0.005,0.0005>;
-     #if (J=8) #local P=P+<0.005,0.013,0.001>; #end
-     #if (J=7 | J=9) #local P=P+<0.002,0.005,0>; #end
-     P,(J=8?0.0018:0.0032-0.001*abs(J-6)/9),
-    #end
-   }
-   sphere_sweep { linear_spline 3, <0.002,-0.016,-0.0015>,0.0024, <0.008,0.003,-0.0015>,0.0026, <0.004,0.020,-0.0005>,0.0018 }
-   sphere_sweep { linear_spline 2, <0.008,0.003,-0.0015>,0.0022, <-0.006,0.015,-0.0005>,0.0016 }
-   sphere { <-0.0125,-0.009,-0.002>,0.0042 }
-   sphere { <0.003,-0.019,-0.0018>,0.003 }
-   sphere { 0,1 scale <0.0105,0.0105,0.0040> translate <-0.002,-0.030,0.0005> }
+   sphere { 0,1 scale <0.012,0.017,0.0012> translate <0.007,0.014,0> }
+   sphere { 0,1 scale <0.011,0.014,0.0012> translate <0.006,-0.004,0> }
+   sphere { 0,1 scale <0.0055,0.008,0.0012> rotate z*-30 translate <0.015,0.033,0> }
+   sphere { 0,1 scale <0.0095,0.011,0.0045> translate <0.0,-0.004,0.0035> }
+   sphere_sweep { linear_spline 14, #for (J,0,13) EarRim[J]+<0,0,-0.0009>,EarRimR[J], #end }
+   sphere_sweep { linear_spline 3, <0.004,-0.015,-0.0006>,0.0017, <0.010,0.003,-0.0006>,0.0019, <0.007,0.020,-0.0004>,0.0014 }
+   sphere_sweep { linear_spline 2, <0.010,0.003,-0.0006>,0.0015, <-0.002,0.016,-0.0004>,0.0012 }
+   sphere { 0,1 scale <0.003,0.0042,0.0026> translate <-0.0105,-0.007,-0.0018> }
+   sphere { 0,1 scale <0.0028,0.0024,0.0018> translate <0.004,-0.016,-0.0012> }
+   sphere { 0,1 scale <0.0088,0.0085,0.0028> translate <0.003,-0.027,0> }
   }
-  sphere { 0,1 scale <0.0085,0.010,0.004> translate <-0.0045,-0.007,-0.0035> }
+  sphere { 0,1 scale <0.0075,0.0085,0.006> translate <0.0,-0.004,-0.0045> }
  }
 #end
 union {
@@ -221,10 +220,10 @@ union {
   interior { ior 1.4 }
   #if (Export) light { bounce samples LightSamples } #end
  }
- cylinder { <-0.002,-0.075,0.004>,<-0.002,-0.020,0.004>,0.0012 texture { Brass } }
- cylinder { <-0.002,-0.088,0.004>,<-0.002,-0.081,0.004>,0.016 texture { DarkIron } }
- cylinder { <-0.002,-0.081,0.004>,<-0.002,-0.076,0.004>,0.009 texture { Brass } }
- rotate y*20
+ cylinder { <0.002,-0.075,0.002>,<0.002,-0.028,0.002>,0.0012 texture { Brass } }
+ cylinder { <0.002,-0.088,0.002>,<0.002,-0.081,0.002>,0.016 texture { DarkIron } }
+ cylinder { <0.002,-0.081,0.002>,<0.002,-0.076,0.002>,0.009 texture { Brass } }
+ rotate y*24
  translate <0.115,0.088,0.165>
  tags { "ear" }
 }
