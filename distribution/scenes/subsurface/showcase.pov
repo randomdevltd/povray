@@ -16,7 +16,7 @@
 #ifndef (CandleLumens) #declare CandleLumens=12; #end
 #ifndef (LanternLumens) #declare LanternLumens=6; #end
 #ifndef (EggLumens) #declare EggLumens=1.2; #end
-#ifndef (HandLumens) #declare HandLumens=0.1; #end
+#ifndef (HandLumens) #declare HandLumens=0.03; #end
 #ifndef (PanelLumens) #declare PanelLumens=0.3; #end
 #ifndef (RuneLumens) #declare RuneLumens=0.1; #end
 #declare Lm=Exposure*Sources;
@@ -29,7 +29,7 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 #switch (View)
 #case (0) camera { location <0.02,0.30,-0.60> look_at <0.02,0.06,0.08> angle 42 right x*image_width/image_height } #break
 #case (1) camera { location <0.12,0.15,-0.22> look_at <0.0,0.05,0.04> angle 36 right x*image_width/image_height } #break // egg
-#case (2) camera { location <0.20,0.20,-0.38> look_at <0.20,0.015,-0.07> angle 36 right x*image_width/image_height } #break // hand
+#case (2) camera { location <0.22,0.24,-0.42> look_at <0.16,0.015,-0.07> angle 36 right x*image_width/image_height } #break // hand
 #case (3) camera { location <0.07,0.13,-0.10> look_at <0.13,0.09,0.17> angle 34 right x*image_width/image_height } #break // ear
 #case (4) camera { location <-0.08,0.15,-0.12> look_at <-0.12,0.08,0.16> angle 40 right x*image_width/image_height } #break // candle
 #case (5) camera { location <0.10,0.18,-0.12> look_at <0.20,0.10,0.26> angle 40 right x*image_width/image_height } #break // lantern
@@ -155,8 +155,8 @@ union {
  finish { diffuse 0.7 specular 0.22 roughness 0.035 subsurface { method 2 translucency <2.2,1.0,0.55> colour rgb 0.95 thickness 0.4 } }
 };
 #declare CapillaryDensity=density {
- crackle form <-1,1,0> metric 2 turbulence 0.6 octaves 5 omega 0.58 lambda 2.2 scale <0.018,1000,0.006>
- colour_map { [0 rgb 1] [0.025 rgb 1] [0.07 rgb 0] [1 rgb 0] }
+ crackle form <-1,1,0> metric 2 turbulence 0.45 octaves 4 omega 0.55 lambda 2.2 scale <0.030,1000,0.011>
+ colour_map { [0 rgb 1] [0.012 rgb 1] [0.035 rgb 0] [1 rgb 0] }
 };
 union {
  object { HandShape(0) texture { SkinTex } interior { ior 1.4 }
@@ -169,7 +169,7 @@ union {
    pigment { rgb <0.86,0.62,0.55> } finish { diffuse 0.6 specular 0.5 roughness 0.01 } }
  #end
  #if (Sources)
- intersection { HandShape(0.0004) object { HandShape(0.0011) inverse } box { <-0.14,-0.001,-0.08>,<0.06,0.036,0.04> }
+ intersection { HandShape(0.0004) object { HandShape(0.0011) inverse } box { <-0.14,0.011,-0.08>,<0.06,0.036,0.04> }
   pigment { rgbt 1 }
   interior { ior off media { mix add method 4 resolution 0.0005 emission <0.45,0.35,1.0> density { CapillaryDensity } }
    light { emission brightness HandLumens*Lm lumens samples LightSamples domain_cells 2000000 } }

@@ -27,7 +27,7 @@ povray +Ishowcase.pov +W1200 +H800 -A +WT8
 
 Source fluxes are real-world lumens before exposure: `CandleLumens` 12,
 `LanternLumens` 6, `EggLumens` 1.2, `PanelLumens` 0.3, `RuneLumens` 0.1,
-`HandLumens` 0.1.
+`HandLumens` 0.03.
 
 Every object carries a tag (`egg`, `hand`, `ear`, `candle`, `lantern`,
 `grapes`, `panel`, `scroll`, plus `room` and `fill`), so a study keeps one
