@@ -2054,6 +2054,7 @@
         "normal_vectors",
         "photons",
         "pigment",
+        "povm",
         "radiosity",
         "rotate",
         "scale",

@@ -77,7 +77,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `media` | 23 | Participating medium: scattering, emission, absorption, intervals. |
 | `merge` | 75 | CSG union that removes inner surfaces, for transparent children. |
 | `mesh` | 35 | One object collecting explicit triangle components. |
-| `mesh2` | 40 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
+| `mesh2` | 41 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
 | `normal` | 102 | Perturbed surface normals: bump pattern, bump map, slope. |
 | `object` | 75 | Copies or wraps an already-declared object with new modifiers. |
 | `output` | 3 | Camera item that renders this camera as its own view: the scene parses once, each camera with one renders its own image in order, cameras without one are not rendered. Bare output keeps the command line's size, window and file; the block's parts are optional, and a later output replaces an earlier one. Refused with animation, STDOUT output or photon save_file/load_file. |

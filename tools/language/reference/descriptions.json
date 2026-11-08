@@ -2429,6 +2429,11 @@
    "code": "potential { BLOB | ISOSURFACE }",
    "from": "doc/html/r3_6.html"
   },
+  "povm": {
+   "rank": 59,
+   "code": "mesh2 { povm \"trunk.povm\" pigment { rgb <0.4, 0.3, 0.2> } }",
+   "from": "doc/html/r3_13.html"
+  },
   "power": {
    "rank": 31,
    "code": "attenuation { power 2 scale 1 }",
