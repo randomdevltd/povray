@@ -42,6 +42,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cmath>
 #include <map>
 #include <vector>
 
@@ -2703,7 +2704,7 @@ void TrueType::GetZeroOneHits(const GlyphStruct* glyph, const Vector3d& P, const
  * This is then solved using the quadratic formula.  Any solutions of s that are
  * between 0 and 1 (inclusive) are valid solutions.
  */
-bool TrueType::GlyphIntersect(const Vector3d& P, const Vector3d& D, const GlyphStruct* glyph, DBL glyph_depth, const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread)
+bool TrueType::GlyphIntersect(const Vector3d& P, const Vector3d& D, const GlyphStruct* glyph, DBL glyph_depth, const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread, DBL depthScale)
 {
     Contour *contour;
     int i, j, k, l, n, m;
@@ -2726,10 +2727,10 @@ bool TrueType::GlyphIntersect(const Vector3d& P, const Vector3d& D, const GlyphS
 
     if (t0 > 0.0)
     {
-        Depth = t0 /* / len */;
+        Depth = t0 * depthScale;
         IPoint = ray.Evaluate(Depth);
 
-        if (Depth > TTF_Tolerance && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
+        if (Depth > TTF_Tolerance * depthScale && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
         {
             N = Vector3d(0.0, 0.0, -1.0);
             MTransNormal(N, N, Trans);
@@ -2741,10 +2742,10 @@ bool TrueType::GlyphIntersect(const Vector3d& P, const Vector3d& D, const GlyphS
 
     if (t1 > 0.0)
     {
-        Depth = t1 /* / len */;
+        Depth = t1 * depthScale;
         IPoint = ray.Evaluate(Depth);
 
-        if (Depth > TTF_Tolerance && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
+        if (Depth > TTF_Tolerance * depthScale && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
         {
             N = Vector3d(0.0, 0.0, 1.0);
             MTransNormal(N, N, Trans);
@@ -2825,9 +2826,9 @@ bool TrueType::GlyphIntersect(const Vector3d& P, const Vector3d& D, const GlyphS
 
                 z = P[Z] + t * D[Z];
 
-                Depth = t /* / len */;
+                Depth = t * depthScale;
 
-                if (z >= 0 && z <= glyph_depth && Depth > TTF_Tolerance)
+                if (z >= 0 && z <= glyph_depth && Depth > TTF_Tolerance * depthScale)
                 {
                     IPoint = ray.Evaluate(Depth);
 
@@ -2898,9 +2899,9 @@ bool TrueType::GlyphIntersect(const Vector3d& P, const Vector3d& D, const GlyphS
 
                     z = P[Z] + t * D[Z];
 
-                    Depth = t /* / len */;
+                    Depth = t * depthScale;
 
-                    if (z >= 0 && z <= glyph_depth && Depth > TTF_Tolerance)
+                    if (z >= 0 && z <= glyph_depth && Depth > TTF_Tolerance * depthScale)
                     {
                         IPoint = ray.Evaluate(Depth);
 
@@ -2935,6 +2936,19 @@ bool TrueType::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
     MInvTransPoint(P, ray.Origin, Trans);
     MInvTransDirection(D, ray.Direction, Trans);
 
+    // A precise query walks the glyph along a unit direction in glyph space, so the solver's tolerances are glyph units at
+    // any scene scale; the ray's depth is then the glyph distance times depthScale.
+    DBL depthScale = 1.0;
+    if (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary())
+    {
+        const DBL len = D.length();
+        if (len > 0.0 && std::isfinite(len))
+        {
+            D /= len;
+            depthScale = 1.0 / len;
+        }
+    }
+
     /* Tweak the ray to try to avoid pathalogical intersections */
 /*  DBL len;
 
@@ -2945,7 +2959,7 @@ bool TrueType::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
     D.normalize();
 */
 
-    if (GlyphIntersect(P, D, glyph, depth, ray, Depth_Stack, Thread)) /* tw */
+    if (GlyphIntersect(P, D, glyph, depth, ray, Depth_Stack, Thread, depthScale)) /* tw */
     {
         Thread->Stats()[Ray_TTF_Tests_Succeeded]++;
         return true;
