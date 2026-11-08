@@ -155,8 +155,8 @@ union {
  finish { diffuse 0.7 specular 0.22 roughness 0.035 subsurface { method 2 translucency <2.2,1.0,0.55> colour rgb 0.95 thickness 0.4 } }
 };
 #declare CapillaryDensity=density {
- crackle form <-1,1,0> metric 2 turbulence 0.45 octaves 4 omega 0.55 lambda 2.2 scale <0.030,1000,0.011>
- colour_map { [0 rgb 1] [0.012 rgb 1] [0.035 rgb 0] [1 rgb 0] }
+ crackle form <-1,1,0> metric 2 turbulence 0.35 octaves 3 omega 0.5 lambda 2.2 scale <0.040,1000,0.016>
+ colour_map { [0 rgb 1] [0.03 rgb 1] [0.07 rgb 0] [1 rgb 0] }
 };
 union {
  object { HandShape(0) texture { SkinTex } interior { ior 1.4 }
@@ -171,7 +171,7 @@ union {
  #if (Sources)
  intersection { HandShape(0.0004) object { HandShape(0.0011) inverse } box { <-0.14,0.011,-0.08>,<0.06,0.036,0.04> }
   pigment { rgbt 1 }
-  interior { ior off media { mix add method 4 resolution 0.0005 emission <0.45,0.35,1.0> density { CapillaryDensity } }
+  interior { ior off media { mix add method 4 resolution 0.0004 emission <0.45,0.35,1.0> density { CapillaryDensity } }
    light { emission brightness HandLumens*Lm lumens samples LightSamples domain_cells 2000000 } }
  }
  #end
