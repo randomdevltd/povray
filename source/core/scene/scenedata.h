@@ -44,11 +44,13 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <unordered_set>
 
@@ -107,6 +109,17 @@ struct PreparedSet final
     std::vector<ObjectPtr> objects;
     /// compounds rebuilt for this set with only the children it selects; they share those children
     std::vector<ObjectPtr> views;
+    /// sorted by part: the outermost compound with a `bounded_by` above each part beneath one; null where a part has two
+    std::vector<std::pair<ConstObjectPtr, ConstObjectPtr>> boundedAncestors;
+    /// The compound a part is tested through for a bound above it, `owner` where it has two, or null where it has none.
+    ConstObjectPtr BoundedAncestor(ConstObjectPtr part, ConstObjectPtr owner) const
+    {
+        const auto at = std::lower_bound(boundedAncestors.begin(), boundedAncestors.end(), part,
+                                         [](const std::pair<ConstObjectPtr, ConstObjectPtr>& e, ConstObjectPtr key) { return e.first < key; });
+        if ((at == boundedAncestors.end()) || (at->first != part))
+            return nullptr;
+        return (at->second != nullptr) ? at->second : owner;
+    }
     std::vector<LightSource*> lights;
     /// indices into SceneData::lightSources (and each thread's copies) of the global lights in this set
     std::vector<unsigned int> globalLights;
