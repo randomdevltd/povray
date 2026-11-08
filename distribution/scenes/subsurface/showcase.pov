@@ -376,42 +376,19 @@ union {
 }
 
 // ================================================================ paper scroll with runes
-// profile: lifted curl at the right, flat run, spiral roll at the left; curl and roll are closed mesh2 solids
+// one CSG solid: flat run, a lifted curl at the right and a two-centre spiral roll at the left
 #declare PaperT=0.00035; #declare PaperW=0.085; #declare FlatL=0.16;
-#declare RollR=0.0085; #declare RollK=0.00022; #declare RollTurns=17.0; #declare CurlR=0.03; #declare CurlA=radians(55);
-#declare NC=12; #declare NR=int(RollTurns/0.09);
-#declare NP=NC+2+NR;
-#declare Prof=array[NP]; #declare PNorm=array[NP];
-#for (I,0,NC-1) // curl: x>FlatL rising
- #local A=CurlA*(NC-I)/NC;
- #declare Prof[I]=<FlatL+CurlR*sin(A),PaperT/2+CurlR*(1-cos(A)),0>;
- #declare PNorm[I]=<-sin(A),cos(A),0>;
-#end
-#declare Prof[NC]=<FlatL,PaperT/2,0>; #declare PNorm[NC]=y;
-#declare Prof[NC+1]=<0.0,PaperT/2,0>; #declare PNorm[NC+1]=y;
-#for (I,0,NR-1) // roll: spiral going -x then up and back over the top
- #local A=I*0.09+0.09;
- #local R=RollR-RollK*A;
- #declare Prof[NC+2+I]=<-R*sin(A),PaperT/2+RollR-R*cos(A),0>;
- #declare PNorm[NC+2+I]=<sin(A),cos(A),0>;
-#end
-#macro PaperMesh(I0,I1)
- #local N=I1-I0+1;
- mesh2 {
-  vertex_vectors { N*4
-   #for (I,I0,I1) Prof[I]+PNorm[I]*PaperT/2, Prof[I]+PNorm[I]*PaperT/2+z*PaperW, Prof[I]-PNorm[I]*PaperT/2, Prof[I]-PNorm[I]*PaperT/2+z*PaperW, #end
-  }
-  face_indices { (N-1)*8+4
-   #for (I,0,N-2)
-    #local A=I*4; #local B=I*4+4;
-    <A,B,A+1>,<B,B+1,A+1>, <A+2,A+3,B+2>,<B+2,A+3,B+3>,
-    <A,A+2,B>,<B,A+2,B+2>, <A+1,B+1,A+3>,<B+1,B+3,A+3>,
-   #end
-   <0,1,2>,<1,3,2>, <(N-1)*4,(N-1)*4+2,(N-1)*4+1>,<(N-1)*4+1,(N-1)*4+2,(N-1)*4+3>
-  }
-  inside_vector y
- }
-#end
+#declare RollR=0.0085; #declare RollP=0.0014; #declare RollHalfTurns=6; #declare CurlR=0.03; #declare CurlA=55;
+#macro Shell(C,R) difference { cylinder { C,C+z*PaperW,R+PaperT/2 } cylinder { C-z,C+z*(PaperW+1),R-PaperT/2 } } #end
+#declare Paper=merge {
+ box { <0,0,0>,<FlatL,PaperT,PaperW> }
+ #for (K,0,RollHalfTurns-1)
+  #local R=RollR-K*RollP/2;
+  #local C=<0,PaperT/2+(mod(K,2)=0?RollR:RollR+RollP/2),0>;
+  intersection { Shell(C,R) plane { (mod(K,2)=0?x:-x),0 } }
+ #end
+ intersection { Shell(<FlatL,PaperT/2+CurlR,0>,CurlR) plane { -x,-FlatL } plane { x,0 rotate z*CurlA translate <FlatL,PaperT/2+CurlR,0> } plane { y,PaperT/2+CurlR } }
+};
 #macro PaperTex()
  texture { pigment { granite turbulence 0.4 scale 0.02 colour_map { [0 rgb <0.93,0.85,0.66>] [0.6 rgb <0.90,0.80,0.60>] [1 rgb <0.80,0.66,0.44>] } }
   #if (Normals) normal { average normal_map { [1 wrinkles 0.35 scale <0.0004,0.0004,0.004>] [1 bumps 0.2 scale 0.00025] } } #end
@@ -424,9 +401,7 @@ union {
 #macro TitleGlyphs(Depth,Y0) text { ttf "timrom.ttf" "X-|<>|-X" 1,0 scale <0.011,0.011,Depth> rotate x*90 translate <0.035,Y0,0.066> } #end
 #declare InkTitle=TitleGlyphs(0.003,PaperT+0.001);
 union {
- object { PaperMesh(0,NC) PaperTex() interior { ior 1.45 } }
- object { PaperMesh(NC+1,NP-1) PaperTex() interior { ior 1.45 } }
- box { <0,0,0>,<FlatL,PaperT,PaperW>
+ object { Paper
   PaperTex()
   #if (Pigments)
   // ink: the title line is painted opaque over a buried glyph source

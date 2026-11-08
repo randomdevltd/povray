@@ -44,4 +44,4 @@ query. Spheres, boxes, cylinders, linear sphere sweeps, `sor` and CSG of these
 work. Blob, mesh2 and isosurface hosts, and a superellipsoid merged with other
 shapes, stop with `Internal subsurface light requires an enclosing material
 boundary`, so the hand and ear are built from linear sphere sweeps and the
-scroll's rune area is a box between two mesh ends that carry no source.
+scroll is one CSG solid (a box, a two-centre spiral of half-cylinder shells and a curl arc).
