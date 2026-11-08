@@ -1461,6 +1461,9 @@ class Trace
         /// The placed objects that carry a material, whose union ContainsSubsurfaceMaterial tests; `whole` always among them.
         const std::vector<ObjectPtr>& SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
         std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr>, std::vector<ObjectPtr>> ssltMaterialBodies;
+        /// Whether a volume light's container and a material share a volume, at bounding box resolution; see doc/PERF.md.
+        bool SubsurfaceSourceOverlaps(const LightSource& light, const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
+        std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr, const LightSource*>, bool> ssltSourceOverlaps;
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
             const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous);
