@@ -921,8 +921,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
             while(depthstack->size() > 0)
             {
                 tmpDepth = depthstack->top().Depth;
-                // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || tmpDepth >= MIN_ISECT_DEPTH))
+                if(tmpDepth < closest && ray.AcceptsDepth(depthstack->top().Object, tmpDepth))
                 {
                     isect = depthstack->top();
                     closest = tmpDepth;
@@ -976,8 +975,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
             while(depthstack->size() > 0)
             {
                 tmpDepth = depthstack->top().Depth;
-                // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
+                if(tmpDepth < closest && ray.AcceptsDepth(depthstack->top().Object, tmpDepth) && postcondition(ray, object, tmpDepth))
                 {
                     isect = depthstack->top();
                     closest = tmpDepth;
@@ -1645,6 +1643,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     const Vector3d *fold = hitFold;
     hitFold = nullptr;
     struct FoldRestore { const Vector3d *&slot, *value; ~FoldRestore() { slot = value; } } foldRestore{ hitFold, fold };
+    struct ObjectRestore { ConstObjectPtr &slot, value; ~ObjectRestore() { slot = value; } } objectRestore{ hitObject, hitObject };
+    hitObject = isect.Object;
     if (ssltBridge != nullptr)
     {
         SubsurfaceLayers layers;
@@ -2527,6 +2527,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
 
     nray.Direction.normalize();
     nray.Origin = ipoint;
+    const RayLeavingScope leaving(nray, hitObject);
     threadData->Stats()[Reflected_Rays_Traced]++;
 
     // Trace reflected ray.
@@ -2590,6 +2591,7 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
         // unbent, it keeps the arriving ray's footprint and so its fold; a bent ray's footprint is no longer bounded by it
         colour.Clear();
         transm = 0.0;
+        const RayLeavingScope leaving(nray, hitObject);
         TraceRay(nray, colour, transm, weight, true, 0.0, false, fold);
     }
     else
@@ -2713,6 +2715,7 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
     colour.Clear();
     transm = 0.0;
     nray.Origin = ipoint + leave * nray.Direction;
+    const RayLeavingScope leaving(nray, hitObject);
     TraceRay(nray, colour, transm, weight, false);
 
     return false;
@@ -8773,7 +8776,7 @@ bool Trace::FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& r
         return false;
     double closest = HUGE_VAL;
     for (; depthstack->size() > 0; depthstack->pop())
-        if ((depthstack->top().Depth < closest) && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || (depthstack->top().Depth >= MIN_ISECT_DEPTH)))
+        if ((depthstack->top().Depth < closest) && ray.AcceptsDepth(depthstack->top().Object, depthstack->top().Depth))
         {
             isect = depthstack->top();
             closest = isect.Depth;

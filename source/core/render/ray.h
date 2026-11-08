@@ -88,6 +88,16 @@ struct RayRootQuerySlot final
     void Set(const Ray* r, const RayRootQuery* q, ConstObjectPtr o) { ray = r; query = q; owner = o; }
 };
 
+/// The object whose surface one ray of a ticket starts on; like the root query, a ticket copy has none.
+struct RayLeavingSlot final
+{
+    const Ray* ray = nullptr;
+    ConstObjectPtr object = nullptr;
+    RayLeavingSlot() = default;
+    RayLeavingSlot(const RayLeavingSlot&) {}
+    RayLeavingSlot& operator=(const RayLeavingSlot&) { return *this; }
+};
+
 struct TraceTicket final
 {
     /// trace recursion level
@@ -128,6 +138,8 @@ struct TraceTicket final
     bool keyRead = false;
     /// Filters the roots that intersection tests of one ray on this ticket return (Ray::AdmitRoot).
     RayRootQuerySlot rootQuery;
+    /// The object a reflected or refracted ray of this ticket leaves (Ray::AcceptsDepth).
+    RayLeavingSlot leaving;
 
     TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
                 float riq = -1.0, float rq = 1.0):
@@ -201,6 +213,14 @@ class Ray final : public BasicRay
         void SetRootQuery(const RayRootQuery* query) const { ticket.rootQuery.Set(this, query, nullptr); }
         void SetRootOwner(ConstObjectPtr owner) const { if (ticket.rootQuery.ray == this) ticket.rootQuery.owner = owner; }
         RayRootQuerySlot& RootQuerySlot() const { return ticket.rootQuery; }
+
+        /// Whether a hit on `object` this deep counts. Nearer than MIN_ISECT_DEPTH it is the surface the ray starts on,
+        /// or one interface with it, unless the ray leaves another object (@ref RayLeavingScope) and `object` is opaque.
+        bool AcceptsDepth(ConstObjectPtr object, double depth) const
+        {
+            return (depth >= MIN_ISECT_DEPTH) || subsurfaceRay || exactShadowWindow || ((ticket.leaving.ray == this) && MeetsNear(object));
+        }
+        bool MeetsNear(ConstObjectPtr object) const;
 
         void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface = nullptr);
         void ClearSurfaceOrigin() { surfaceOrigin.object = nullptr; }
@@ -329,6 +349,17 @@ struct RayRootQueryDisabled final
     explicit RayRootQueryDisabled(const Ray& r) : slot(r.RootQuerySlot()), ray(slot.ray), query(slot.query), owner(slot.owner)
     { if (slot.ray == &r) slot.Set(nullptr, nullptr, nullptr); }
     ~RayRootQueryDisabled() { slot.Set(ray, query, owner); }
+};
+
+/// While in scope, `r` starts on `object`'s surface: only that object's hits nearer than MIN_ISECT_DEPTH are self-hits.
+struct RayLeavingScope final
+{
+    RayLeavingSlot& slot;
+    const Ray* ray;
+    ConstObjectPtr object;
+    RayLeavingScope(const Ray& r, ConstObjectPtr o) : slot(const_cast<Ray&>(r).GetTicket().leaving), ray(slot.ray), object(slot.object)
+    { slot.ray = &r; slot.object = o; }
+    ~RayLeavingScope() { slot.ray = ray; slot.object = object; }
 };
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))

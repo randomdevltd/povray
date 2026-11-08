@@ -87,6 +87,12 @@ static double SurfaceErrorScale(ConstObjectPtr object)
     return scale;
 }
 
+// A clear surface that near is crossed with the one left: liquid sharing its glass's wall is one interface, not two.
+bool Ray::MeetsNear(ConstObjectPtr object) const
+{
+    return (ticket.leaving.object != nullptr) && (ticket.leaving.object != object) && Test_Flag(object, OPAQUE_FLAG);
+}
+
 void Ray::SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface)
 {
     const ConstObjectPtr part = surface ? surface : object;
