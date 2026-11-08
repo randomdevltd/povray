@@ -714,6 +714,7 @@ if test x"$enable_debug" = x"yes"; then
   AC_MSG_RESULT([yes])
   AX_TEST_COMPILER_FLAGS([-g], [], [AC_MSG_WARN([Cannot set debugging mode])])
   AC_DEFINE([UNIX_DEBUG], [], [Unix-specific debug messages.])
+  AC_DEFINE([POV_RENDER_STATS], [1], [Render statistics counters.])
 else
   AC_MSG_RESULT([no])
 fi

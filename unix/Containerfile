@@ -15,7 +15,7 @@ ARG PGO_SCENE=distribution/scenes/advanced/benchmark/benchmark.pov
 ARG PGO_ARGS="+W256 +H256"
 COPY . /src
 WORKDIR /src
-RUN FLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -flto=auto -fno-finite-math-only" \
+RUN FLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -flto=auto -fno-finite-math-only -DPOV_RENDER_STATS=0" \
  && if [ "${HARDENING}" = 0 ]; then \
       FLAGS="$FLAGS -fno-stack-protector -fno-stack-clash-protection -fcf-protection=none -U_FORTIFY_SOURCE"; \
     fi \

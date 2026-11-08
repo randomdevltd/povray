@@ -53,6 +53,7 @@ namespace pov
 
 const unsigned int kMaxReadAttempts = 10;
 
+#if POV_RENDER_STATS
 template <typename T>
 bool Counter<T>::SafeRead(unsigned int maxattempts, T *result) const
 {
@@ -76,6 +77,7 @@ bool Counter<T>::SafeRead(unsigned int maxattempts, T *result) const
 
     return false;
 }
+#endif
 
 template <typename T, int numElem>
 void StatisticsBase<T, numElem>::operator+=(const StatisticsBase<T, numElem>& other)
