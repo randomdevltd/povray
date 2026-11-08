@@ -2124,6 +2124,13 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     normalSpread = laySpread;
                     normalSpread.eyeExit = EyeExitTaps(layer->Finish, laySpread, ray.Direction, relativeIor);
                     shadowFootprint = litFootprint;
+                    // light_samples by_contribution: the layer's share of the pixel is the ray's weight times what reaches it through
+                    // the layers above; its own opacity is left out, so a clear surface seen directly keeps every sample
+                    struct WeightRestore { double& slot; double value; ~WeightRestore() { slot = value; } } weightRestore{ lightingWeight, lightingWeight };
+                    const int mode = layer->Finish->LightSamplesMode;
+                    const bool byContribution = (mode == kLightSamplesByContribution) ||
+                                                ((mode == kLightSamplesDefault) && sceneData->lightSamplesByContribution);
+                    lightingWeight = (byContribution && !ray.IsRadiosityRay()) ? std::min(1.0, double(weight) * filCol.WeightMaxAbs()) : 1.0;
                     ComputeDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, layCol.colour(), classicContribution, att, isect.Object, relativeIor, rawnormal);
                     normalSpread = NormalSpread();
                     shadowFootprint = ShadowFootprint();
@@ -3433,12 +3440,15 @@ void Trace::TestOneLightShadow(const LightSource &lightsource, double lightsourc
             return;
         if (lightColorCacheIndex != -1 && light_index != -1)
         {
-            if (lightColorCache[lightColorCacheIndex][light_index].tested == false)
+            // a layer weighing more than the one an area light's shadow was sampled for samples it again on its finer grid
+            if ((lightColorCache[lightColorCacheIndex][light_index].tested == false) ||
+                (lightsource.Area_Light && (lightColorCache[lightColorCacheIndex][light_index].weight < lightingWeight)))
             {
                 // note that lightColorCache may be re-sized during trace, so we don't store a reference to it across the call
                 TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour);
                 lightColorCache[lightColorCacheIndex][light_index].tested = true;
                 lightColorCache[lightColorCacheIndex][light_index].colour = lightcolour;
+                lightColorCache[lightColorCacheIndex][light_index].weight = lightingWeight;
             }
             else
                 lightcolour = lightColorCache[lightColorCacheIndex][light_index].colour;
@@ -3509,7 +3519,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         if (Light_Below_Cutoff(&lightsource, ipoint))
             return;
         // The light's samples, scaled by the receiving finish's light_samples.
-        const int count = max(1, int(std::lround(lightsource.Area_Size1 * (finish ? finish->LightSamples : 1.0))));
+        const int count = WeightedLightSamples(lightsource.Area_Size1 * (finish ? finish->LightSamples : 1.0));
         threadData->Stats()[Emitter_Surface_Draws] += count;
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
         const PhotonSobol sequence(DeriveKey(key, kDrawAreaLight, 0));
@@ -3586,15 +3596,16 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         axis2Temp *= axis1_Length;
     }
 
-    MathColour sampleLightcolour = lightcolour / (lightsource.Area_Size1 * lightsource.Area_Size2);
+    const int size1 = WeightedAreaSize(lightsource.Area_Size1), size2 = WeightedAreaSize(lightsource.Area_Size2);
+    MathColour sampleLightcolour = lightcolour / (size1 * size2);
     MathColour attenuatedLightcolour;
     const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
     if(lightsource.Jitter)
         MarkGrain();
 
-    for(int v = 0; v < lightsource.Area_Size2; ++v)
+    for(int v = 0; v < size2; ++v)
     {
-        for(int u = 0; u < lightsource.Area_Size1; ++u)
+        for(int u = 0; u < size1; ++u)
         {
             Vector3d jitterAxis1, jitterAxis2;
             Ray lsr(lightsourceray);
@@ -3603,7 +3614,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             bool backside = false;
             MathColour tmpCol;
 
-            const std::uint64_t cell = std::uint64_t(v) * lightsource.Area_Size1 + u;
+            const std::uint64_t cell = std::uint64_t(v) * size1 + u;
             if(lightsource.Jitter)
             {
                 jitter_u += Draw(key, kDrawFullAreaLight, 2 * cell) - 0.5;
@@ -3620,8 +3631,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             // Finally scale Axis1 by jitter_u & Axis2 by jitter_v
             if(lightsource.Circular == true)
             {
-                jitter_u = jitter_u / (lightsource.Area_Size1 - 1) - 0.5 + 0.001;
-                jitter_v = jitter_v / (lightsource.Area_Size2 - 1) - 0.5 + 0.001;
+                jitter_u = jitter_u / (size1 - 1) - 0.5 + 0.001;
+                jitter_v = jitter_v / (size2 - 1) - 0.5 + 0.001;
                 double scaleFactor = ((fabs(jitter_u) > fabs(jitter_v)) ? fabs(jitter_u) : fabs(jitter_v));
                 scaleFactor /= sqrt(jitter_u * jitter_u + jitter_v * jitter_v);
                 jitter_u *= scaleFactor;
@@ -3631,17 +3642,17 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             }
             else
             {
-                if(lightsource.Area_Size1 > 1)
+                if(size1 > 1)
                 {
-                    double scaleFactor = jitter_u / (double)(lightsource.Area_Size1 - 1) - 0.5;
+                    double scaleFactor = jitter_u / (double)(size1 - 1) - 0.5;
                     jitterAxis1 = axis1Temp * scaleFactor;
                 }
                 else
                     jitterAxis1 = Vector3d(0.0, 0.0, 0.0);
 
-                if(lightsource.Area_Size2 > 1)
+                if(size2 > 1)
                 {
-                    double scaleFactor = jitter_v / (double)(lightsource.Area_Size2 - 1) - 0.5;
+                    double scaleFactor = jitter_v / (double)(size2 - 1) - 0.5;
                     jitterAxis2 = axis2Temp * scaleFactor;
                 }
                 else
@@ -4027,9 +4038,9 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
 {
     Vector3d axis1Temp, axis2Temp;
 
-
-
-    lightGrid.resize(lightsource.Area_Size1 * lightsource.Area_Size2);
+    areaSize1 = WeightedAreaSize(lightsource.Area_Size1);
+    areaSize2 = WeightedAreaSize(lightsource.Area_Size2);
+    lightGrid.resize(areaSize1 * areaSize2);
 
     // Flag uncalculated points with a negative value for Red
     /*
@@ -4044,7 +4055,7 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
 
     ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1Temp, axis2Temp);
 
-    TraceAreaLightSubsetShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, 0, 0, lightsource.Area_Size1 - 1, lightsource.Area_Size2 - 1, 0, axis1Temp, axis2Temp);
+    TraceAreaLightSubsetShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, 0, 0, areaSize1 - 1, areaSize2 - 1, 0, axis1Temp, axis2Temp);
 
     // Jitter only shapes a shadow the light's points disagree on.
     if(lightsource.Jitter && !grain)
@@ -4124,9 +4135,9 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
             default: u = v = 0;  // Should never happen!
         }
 
-        if(lightGrid[u * lightsource.Area_Size2 + v].IsValid())
+        if(lightGrid[u * areaSize2 + v].IsValid())
             // We've already calculated this point, reuse it
-            sample_Colour[i] = lightGrid[u * lightsource.Area_Size2 + v];
+            sample_Colour[i] = lightGrid[u * areaSize2 + v];
         else
         {
             jitter_u = (double)u;
@@ -4134,13 +4145,13 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
 
             if(lightsource.Jitter)
             {
-                const std::uint64_t cell = std::uint64_t(u) * lightsource.Area_Size2 + v;
+                const std::uint64_t cell = std::uint64_t(u) * areaSize2 + v;
                 jitter_u += Draw(lightsourceray.GetKey(), kDrawAreaLight, 2 * cell) - 0.5;
                 jitter_v += Draw(lightsourceray.GetKey(), kDrawAreaLight, 2 * cell + 1) - 0.5;
             }
 
             // Recalculate the light source ray but not the colour
-            const Vector3d offset = AreaLightOffset(lightsource, jitter_u, jitter_v, axis1, axis2);
+            const Vector3d offset = AreaLightOffset(lightsource, jitter_u, jitter_v, axis1, axis2, areaSize1, areaSize2);
             ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, offset);
 
             sample_Colour[i] = lightcolour;
@@ -4148,7 +4159,7 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
             TraceSampleShadowRay(lightsource, lightsourcedepth, lsr, sample_Colour[i], offset);
             lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
 
-            lightGrid[u * lightsource.Area_Size2 + v] = sample_Colour[i];
+            lightGrid[u * areaSize2 + v] = sample_Colour[i];
         }
     }
 
@@ -4235,7 +4246,7 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
     u = AreaGridCoordinate(sample[U], lightsource.Area_Size1, lightsource.Jitter);
     v = AreaGridCoordinate(sample[V], lightsource.Area_Size2, lightsource.Jitter);
 
-    const Vector3d offset = AreaLightOffset(lightsource, u, v, axis1, axis2);
+    const Vector3d offset = AreaLightOffset(lightsource, u, v, axis1, axis2, lightsource.Area_Size1, lightsource.Area_Size2);
     ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, offset);
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
 }
@@ -4338,7 +4349,8 @@ void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& 
     }
 }
 
-Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2)
+Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2,
+                                int size1, int size2)
 {
     Vector3d jitterAxis1, jitterAxis2;
     double scaleFactor;
@@ -4346,8 +4358,8 @@ Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u,
     // Circular lights squash the square grid onto a disc [ENB 9/97].
     if(lightsource.Circular == true)
     {
-        jitter_u = jitter_u / (lightsource.Area_Size1 - 1) - 0.5 + 0.001;
-        jitter_v = jitter_v / (lightsource.Area_Size2 - 1) - 0.5 + 0.001;
+        jitter_u = jitter_u / (size1 - 1) - 0.5 + 0.001;
+        jitter_v = jitter_v / (size2 - 1) - 0.5 + 0.001;
         scaleFactor = ((fabs(jitter_u) > fabs(jitter_v)) ? fabs(jitter_u) : fabs(jitter_v));
         scaleFactor /= sqrt(jitter_u * jitter_u + jitter_v * jitter_v);
         jitter_u *= scaleFactor;
@@ -4357,17 +4369,17 @@ Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u,
     }
     else
     {
-        if(lightsource.Area_Size1 > 1)
+        if(size1 > 1)
         {
-            scaleFactor = jitter_u / (double)(lightsource.Area_Size1 - 1) - 0.5;
+            scaleFactor = jitter_u / (double)(size1 - 1) - 0.5;
             jitterAxis1 = axis1 * scaleFactor;
         }
         else
             jitterAxis1 = Vector3d(0.0, 0.0, 0.0);
 
-        if(lightsource.Area_Size2 > 1)
+        if(size2 > 1)
         {
-            scaleFactor = jitter_v / (double)(lightsource.Area_Size2 - 1) - 0.5;
+            scaleFactor = jitter_v / (double)(size2 - 1) - 0.5;
             jitterAxis2 = axis2 * scaleFactor;
         }
         else
@@ -4375,6 +4387,19 @@ Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u,
     }
 
     return jitterAxis1 + jitterAxis2;
+}
+
+int Trace::WeightedLightSamples(double samples) const
+{
+    return max(1, int(std::lround(lightingWeight < 1.0 ? samples * lightingWeight : samples)));
+}
+
+int Trace::WeightedAreaSize(int size) const
+{
+    // the grid's points fall with the weight, so each axis by its square root
+    if ((lightingWeight >= 1.0) || (size <= 2))
+        return size;
+    return max(2, 1 + int(std::lround((size - 1) * sqrt(lightingWeight))));
 }
 
 // see filter_shadow_ray in v3.6's lighting.cpp

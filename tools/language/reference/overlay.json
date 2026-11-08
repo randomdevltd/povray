@@ -203,6 +203,14 @@
    "kind": "item",
    "text": "Directory where finished isosurface_mesh and skein_mesh meshes are kept between renders."
   },
+  "by_contribution": {
+   "kind": "item",
+   "text": "Value after a finish's light_samples M: each hit's light samples scale with its contribution to the pixel; the default from #version 4.0."
+  },
+  "full": {
+   "kind": "item",
+   "text": "Value after a finish's light_samples M: classic sampling, every hit takes every light's full samples; the default before #version 4.0."
+  },
   "interface_texture": {
    "kind": "item",
    "text": "Texture of the interface where coincident media surfaces merge: the average of its objects' textures."

@@ -1140,7 +1140,7 @@ FINISH_ITEMS:
   reflection { Color_Reflecting_Min [REFLECTION_ITEMS...] } |
   subsurface { translucency COLOR [SUBSURFACE_ITEMS...] } |
   irid { Irid_Amount [IRID_ITEMS...] |
-  use_alpha BOOL | light_samples Multiplier
+  use_alpha BOOL | light_samples Multiplier [full | by_contribution]
   }
 REFLECTION_ITEMS:
   COLOR_REFLECTION_MAX | fresnel BOOL |
@@ -1156,7 +1156,21 @@ IRID_ITEMS:
 
 <p class="Note"><strong>Note:</strong> Transformations are not allowed inside a finish because finish items cover the entire surface uniformly. Each of the <em>FINISH_ITEMS</em> listed above is described in sub-sections below.</p>
 
-<p>The <code>light_samples</code> keyword multiplies the <code>samples</code> of every surface and volume light for this surface. A light block's <code>samples</code> <em>N</em> says how detailed that light is for every receiver, and <code>light_samples</code> <em>M</em> in a finish scales it for this one. A hit on the surface draws round(<em>N</em> &times; <em>M</em>) points from each <a href="r3_12.html#r3_12">surface or volume light</a>, at least 1. <em>M</em> is a multiplier greater than 0, default 1.0, so a surface that needs smoother soft shadows than the rest of the scene can ask for them without changing the light. Point, spot, parallel and <code>area_light</code> sources are not affected.</p>
+<p>The <code>light_samples</code> keyword, <code>light_samples M [full | by_contribution]</code>, multiplies the <code>samples</code> of every surface and volume light for this surface by <em>M</em> and chooses how each hit spends them. A light block's <code>samples</code> <em>N</em> says how detailed that light is for every receiver, and <code>light_samples</code> <em>M</em> in a finish scales it for this one. A hit on the surface draws round(<em>N</em> &times; <em>M</em>) points from each <a href="r3_12.html#r3_12">surface or volume light</a>, at least 1. <em>M</em> is a multiplier greater than 0, default 1.0, so a surface that needs smoother soft shadows than the rest of the scene can ask for them without changing the light. Point, spot, parallel and <code>area_light</code> sources are not affected by <em>M</em>.</p>
+<a name="r3_6_1_3_by_contribution"></a>
+<p><code>light_samples</code> <em>M</em> <code>by_contribution</code> also scales each hit's light samples by the hit's contribution to the pixel, so a hit seen through a faint reflection or several clear layers takes few samples while a surface seen directly takes them all. The contribution <em>w</em> is the weight of the ray that found the hit (the product of the reflection and transmission factors along its path from the camera, the weight that <a href="r3_4.html#r3_4_1_1">adc_bailout</a> tests) times the largest colour channel of the light that reaches the texture layer through the layers above it, capped at 1. Then:</p>
+<ul>
+  <li>A surface or volume light with <code>samples</code> <em>N</em> is drawn round(<em>N</em> &times; <em>M</em> &times; <em>w</em>) times, at least once.</li>
+  <li>A classic <a href="r3_4.html#r3_4_3_1_5">area light</a> of <em>n</em><sub>1</sub> by <em>n</em><sub>2</sub> points is sampled on a grid of 1 + round((<em>n</em> &minus; 1) &times; &radic;<em>w</em>) points along each side, so the number of points falls with <em>w</em>; a side keeps at least 2 points, and a side of 1 or 2 is unchanged. <code>adaptive</code>, <code>jitter</code>, <code>circular</code>, <code>orient</code> and <code>area_illumination</code> work on the smaller grid.</li>
+  <li>No hit takes more samples than it would with <code>full</code>.</li>
+</ul>
+<p>The surface's own opacity is not part of <em>w</em>: a clear surface the camera sees directly has <em>w</em> = 1 and keeps every sample, because the noise in its lighting shows in the pixel even when its lighting is a small part of it. Each layer of a layered texture has its own mode and weight. A classic area light's shadow is shared by the layers of one hit, and it is sampled on the grid of the heaviest layer that uses it.</p>
+<p>Each estimate stays unbiased: fewer samples add noise, not a change in brightness. The weight depends only on the ray's path, so the image is the same for any number of threads. Every camera ray starts at <em>w</em> = 1, anti-aliasing rays included. Adaptive anti-aliasing compares neighbouring samples, so the extra noise in reflections and refractions can make it subdivide more: judge the mode's cost and noise at <code>-A</code>. Only surface lighting is scaled. The lighting of <a href="r3_7.html#r3_7_2_3">media</a> (every method) and <a href="r3_4.html#r3_4_1_12">subsurface scattering</a> (both methods) keeps its full sample counts, as do photons and radiosity gather rays, whose results are cached and reused across many pixels.</p>
+<p><code>by_contribution</code> is the default from <code>#version 4.0</code> and in every <code>.pov4</code> scene; before 4.0 the default is <code>full</code>, the classic sampling in which every hit takes every light's full samples. <code>light_samples</code> <em>M</em> <code>full</code> and <code>light_samples</code> <em>M</em> <code>by_contribution</code> choose a mode at any version, and <code>light_samples</code> <em>M</em> alone keeps the finish's mode. To choose it for a whole scene, set it in the default finish:</p>
+<pre>
+#default { finish { light_samples 1 full } }   // classic sampling in a 4.0 scene; default { finish { ... } } in a .pov4 scene
+</pre>
+<p>The gain is largest where much of the image is seen through reflection or transmission, such as glass, clear filtering layers and mirrors. If the noise it adds to those parts shows, raise the lights' <code>samples</code>, which with <code>by_contribution</code> is still cheaper than classic sampling there and less noisy, or choose <code>full</code> for the finishes whose reflections or refractions carry the look.</p>
 
 <p>In earlier versions of POV-Ray, the <code>refraction</code>, <code>ior</code>, and <code>caustics</code> keywords were part of the <code>finish</code> statement but they are now part of the <code>interior</code> statement. They are still supported under <code>finish</code> for backward compatibility but the results may not be 100% identical to previous versions. See <a href="r3_7.html#r3_7_2_1_1">Why are Interior and Media Necessary?</a> for more details.</p>
 

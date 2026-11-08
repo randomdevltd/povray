@@ -439,7 +439,7 @@
    "doc": "r3_6.html#r3_6_2_5_5_5"
   },
   "light_samples": {
-   "text": "The light_samples keyword multiplies the samples of every surface and volume light for this surface.",
+   "text": "The light_samples keyword, light_samples M [full | by_contribution], multiplies the samples of every surface and volume light for this surface by M and chooses how each hit spends them.",
    "doc": "r3_6.html#r3_6_1_3"
   },
   "linear_spline": {
@@ -1274,6 +1274,11 @@
    "code": "normal { bumps 0.3 }",
    "from": "doc/html/r3_3.html"
   },
+  "by_contribution": {
+   "rank": 1066,
+   "code": "use_alpha BOOL | light_samples Multiplier [full | by_contribution]",
+   "from": "doc/html/r3_6.html"
+  },
   "camera": {
    "code": "camera { location <0, 2, -4> look_at <0, 0, 4> }",
    "from": "tests/pov4/default_media.pov4:4"
@@ -1557,9 +1562,9 @@
    "from": "doc/html/r3_10.html"
   },
   "error": {
-   "rank": 84,
-   "code": "if (max_extent(Scaled).x != 2) { error(\"bare comparison in a block item differs\"); }",
-   "from": "tests/pov4/ok_bare_comparisons.pov4:14"
+   "rank": 61,
+   "code": "if (Local() != 2) { error(\"a local resolved to the input\"); }",
+   "from": "tests/pov4/ok_param_shadows_input.pov4:14"
   },
   "error_bound": {
    "rank": 68,
@@ -1710,6 +1715,11 @@
    "code": "near { filter_tags { \"lobby\" } front_filter_tags { \"service\" } }",
    "from": "doc/html/r3_10.html"
   },
+  "full": {
+   "rank": 1066,
+   "code": "use_alpha BOOL | light_samples Multiplier [full | by_contribution]",
+   "from": "doc/html/r3_6.html"
+  },
   "function": {
    "rank": 42,
    "code": "function { -0.0003*max(0, 1-x*x-y*y-z*z) }",
@@ -1731,9 +1741,9 @@
    "from": "doc/html/r3_5.html"
   },
   "global": {
-   "rank": 59,
-   "code": "fn Bump() { global Counter = Counter + 1; return Counter; }",
-   "from": "tests/pov4/review.pov4:14"
+   "rank": 51,
+   "code": "fn Rename() { global Count = \"renamed\"; return 0; }",
+   "from": "tests/pov4/ok_param_shadows_input.pov4:10"
   },
   "global_settings": {
    "code": "global_settings { assumed_gamma 1.0 }",
@@ -1828,9 +1838,9 @@
    "from": "tests/pov4/tags_inherit.pov4:9"
   },
   "input": {
-   "rank": 1012,
-   "code": "input Label;",
-   "from": "tests/pov4/ok_input.pov4:3"
+   "rank": 61,
+   "code": "if (Local() != 2) { error(\"a local resolved to the input\"); }",
+   "from": "tests/pov4/ok_param_shadows_input.pov4:14"
   },
   "inside_vector": {
    "rank": 1023,

@@ -288,8 +288,9 @@ Changed Behaviour
     them as an identifier needs it renamed. (`depth` and `spread` inside
     `volume_sampling`, `mesh_cache`, `ior_mix`, `interface_texture`,
     `atmospheric_ior`, `atmospheric_dispersion`,
-    `prepared_media_cells` and the `off` and `atmosphere` of `ior` are matched
-    by their text where they apply and stay free.)
+    `prepared_media_cells`, the `full` and `by_contribution` of a finish's
+    `light_samples`, and the `off` and `atmosphere` of `ior` are matched by
+    their text where they apply and stay free.)
   - Random effects (area light jitter, media, `crand`, rainbow jitter,
     subsurface light, photons, radiosity gather directions, stochastic
     anti-aliasing) now draw from a hash of the ray's path instead of
@@ -556,6 +557,16 @@ New Features
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction
     between overlapping and shared surfaces.
+  - `finish { light_samples M by_contribution }` scales each lit hit's light
+    samples by its contribution to the pixel (its ray's weight times the
+    light reaching its texture layer, capped at 1): surface and volume lights
+    draw round(N x M x contribution) points, at least 1, and classic area
+    lights sample a grid whose sides shrink by the square root of it, at
+    least 2 points a side. Hits seen through reflection or clear layers take
+    fewer samples; surfaces seen directly, clear ones included, keep them all.
+    It is the default from `#version 4.0`; `light_samples M full` keeps the
+    classic sampling, and `#default { finish { light_samples 1 full } }` sets
+    it for a scene.
   - `global_settings { mesh_cache "directory" }` keeps finished
     `isosurface_mesh` and `skein_mesh` meshes between renders.
   - Command-line: `Filter_Tags`, `Pov4_Version` (`+ML`),

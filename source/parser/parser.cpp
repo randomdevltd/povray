@@ -769,6 +769,7 @@ void Parser::Run()
     sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->fieldRefraction;
     if (sceneData->interfaceTexture == kInterfaceTextureAuto)
         sceneData->interfaceTexture = (sceneData->EffectiveLanguageVersion() >= 400) ? kInterfaceTextureBlend : kInterfaceTextureFar;
+    sceneData->lightSamplesByContribution = (sceneData->EffectiveLanguageVersion() >= 400);
     if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
         Warning("A non-hollow object carries interior media, which before #version 4.0 is not rendered.\n"
                 "Add 'hollow' to the object, or use #version 4.0.");

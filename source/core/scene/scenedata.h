@@ -296,6 +296,8 @@ class SceneData
         bool crossedNonSurface;
         /// which texture a clear face shared by several objects shows: an InterfaceTexture
         int interfaceTexture;
+        /// whether a finish that states no light_samples mode samples by contribution (from #version 4.0)
+        bool lightSamplesByContribution;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
         /// the scene's prepared media cell limit (global_settings prepared_media_cells)

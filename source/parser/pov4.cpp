@@ -644,6 +644,8 @@ private:
         std::string buf;
         std::string context;
         std::string lastKeyword;
+        /// the keyword whose value was printed last, for a word that may follow that value (light_samples 1 by_contribution)
+        std::string valueOf;
         unsigned line;
         unsigned file;
         bool lastValue = false;
@@ -2777,6 +2779,7 @@ void Pov4Evaluator::TextOutput::Put(const Item& item, bool spliced)
             buf += ',';
             lastValue = false;
             lastKeyword.clear();
+            valueOf.clear();
             return;
         case Item::Keyword:
             if ((context == "photons") && !photonSettingsAllowed &&
@@ -2785,12 +2788,14 @@ void Pov4Evaluator::TextOutput::Put(const Item& item, bool spliced)
             ev.mPrinted.insert(ev.mPrinted.end(), item.refs.begin(), item.refs.end());
             Append(item.text, item.at);
             lastKeyword = item.text;
+            valueOf.clear();
             lastValue = false;
             return;
         default:
             ev.mPrinted.insert(ev.mPrinted.end(), item.refs.begin(), item.refs.end());
             Append(item.text, item.at);
             lastKeyword.clear();
+            valueOf.clear();
             lastValue = false;
             return;
     }
@@ -2821,6 +2826,7 @@ void Pov4Evaluator::TextOutput::PutValue(const PValue& v, const Node* at, bool s
                 Append(h.wrap + " { " + h.name + " }", at);
             lastValue = h.wrap.empty();
             lastKeyword.clear();
+            valueOf.clear();
             return;
         }
         case PValue::Num:
@@ -2838,6 +2844,7 @@ void Pov4Evaluator::TextOutput::PutValue(const PValue& v, const Node* at, bool s
             }
             Append(text, at);
             lastValue = true;
+            valueOf = lastKeyword;
             lastKeyword.clear();
             return;
         }
@@ -3465,6 +3472,8 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
         case NK::Ident:
             // tagged and a bare output are items only when no name of that spelling is bound; a bound name is its value
             if (out.IsBlock() && ((static_cast<TextOutput&>(out).lastKeyword == "mix") ||
+                                  ((static_cast<TextOutput&>(out).valueOf == "light_samples") &&
+                                   ((n->text == "full") || (n->text == "by_contribution"))) ||
                                   (ContextualItem(static_cast<TextOutput&>(out).context, n->text) &&
                                    !(((n->text == "tagged") || (n->text == "output")) && FindBinding(n)))))
             {

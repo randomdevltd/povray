@@ -2654,7 +2654,21 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
 
         OTHERWISE
             if (CurrentTokenText() == "light_samples")
+            {
                 New->LightSamples = Parse_Light_Samples();
+                // the optional mode is a value of light_samples, read from a table so it is not mined as a finish item
+                static const char *const kModes[] = { "full", "by_contribution" };
+                static const int kModeValues[] = { kLightSamplesFull, kLightSamplesByContribution };
+                Get_Token();
+                int mode = -1;
+                for (int m = 0; m < 2; m++)
+                    if (CurrentTokenText() == kModes[m])
+                        mode = kModeValues[m];
+                if (mode < 0)
+                    UNGET
+                else
+                    New->LightSamplesMode = mode;
+            }
             else
             {
                 Reject_Nested_Item("finish", "a finish");

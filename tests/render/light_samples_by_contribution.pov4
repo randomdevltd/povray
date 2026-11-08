@@ -1,0 +1,11 @@
+// The floor, mirror and lights of light_samples_by_contribution.pov in the 4.0 language, which samples by contribution
+// without stating it.
+global_settings { assumed_gamma 1 }
+camera { location <0, 2.5, -4> look_at <0, 0.3, 0> angle 40 }
+box { <-3, -0.1, -3>, <3, 0, 3> texture { pigment { rgb 0.8 } finish { ambient 0 diffuse 0.9 } } }
+box { <-2, 0, 1.5>, <2, 1.5, 1.6> pigment { rgb 0.5 } finish { ambient 0 diffuse 0.5 reflection { 0.3 } } }
+box { <-0.6, 2.98, -0.6>, <0.6, 3, 0.6>
+  pigment { rgb 1 } finish { ambient 0 diffuse 0 emission 1 }
+  light { brightness 4 nits samples 16 }
+}
+light_source { <2, 3, -2>, rgb 0.3 area_light x, z, 9, 9 adaptive 1 jitter }

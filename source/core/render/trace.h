@@ -394,6 +394,8 @@ class Trace
         {
             bool        tested;
             MathColour  colour;
+            /// the lighting weight the shadow was sampled at; an area light is sampled again for a heavier layer
+            double      weight = 1.0;
         };
 
         typedef std::vector<LightColorCache> LightColorCacheList;
@@ -458,6 +460,10 @@ class Trace
         BSPTree::Mailbox mailbox;
         /// Area light grid buffer.
         std::vector<MathColour> lightGrid;
+        /// The grid an area light is sampled on at the point being lit, which weighted light sampling can make coarser.
+        int areaSize1 = 0, areaSize2 = 0;
+        /// The lit hit's share of the pixel under weighted light sampling; 1 takes every light's full samples.
+        double lightingWeight = 1.0;
 
         /// Fast stack pool.
         IStackPool stackPool;
@@ -870,7 +876,12 @@ class Trace
                                            const Vector3d& ipoint, MathColour& lightcolour, const Vector2d& sample);
         void ComputeAreaLightAxes(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                   const Vector3d& ipoint, Vector3d& axis1, Vector3d& axis2);
-        Vector3d AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2);
+        Vector3d AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2,
+                                 int size1, int size2);
+        /// The samples a lit hit takes of `samples` under weighted light sampling: scaled by its share of the pixel, at least 1.
+        int WeightedLightSamples(double samples) const;
+        /// An area light's grid along one axis at this hit: `size` points, fewer under weighted light sampling, never below 2.
+        int WeightedAreaSize(int size) const;
         /// One emitter sample's shadow: the walk to it, then the media of the interiors it ends inside.
         void TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                          MathColour& lightcolour, const Vector3d& offset);
