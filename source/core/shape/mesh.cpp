@@ -70,6 +70,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -228,6 +229,8 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
     len = mesh_ray(ray, New_Ray);
 
     found = false;
+    // A boundary query admits roots itself; a fixed mesh-space floor would drop crossings near the origin of a mesh scaled down.
+    const DBL depthTolerance = (query && query->GetRootQuery() && query->GetRootQuery()->PreciseBoundary()) ? std::numeric_limits<DBL>::min() : DEPTH_TOLERANCE;
 
     if (Data->FlatTree == nullptr)
     {
@@ -235,7 +238,7 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
 
         for (i = 0; i < Data->Number_Of_Triangles; i++)
         {
-            if (intersect_mesh_triangle(New_Ray, &Data->Triangles[i], &t))
+            if (intersect_mesh_triangle(New_Ray, &Data->Triangles[i], &t, depthTolerance))
             {
                 if ((!query || query->AdmitRoot(this, t / len)) && test_hit(&Data->Triangles[i], ray, t, len, Depth_Stack, Thread))
                 {
@@ -306,6 +309,31 @@ bool Mesh::InsideAlong(const Vector3d& IPoint, const Vector3d& direction, TraceT
         return false;
     if ((Data->ClosedTopology == 1) && BBox.finite && !Inside_BBox(IPoint, BBox))
         return Test_Flag(this, INVERTED_FLAG);
+
+    // A precise query on a closed mesh counts crossings exactly. A parity ray through a shared edge or vertex counts that
+    // crossing twice or not at all, so such a ray is cast again along fixed generic directions; any direction gives the
+    // same parity on a closed mesh. A point on the surface, which no direction decides, counts as inside.
+    if (Thread->preciseInside && (Data->ClosedTopology == 1))
+    {
+        static const Vector3d generic[] = { Vector3d(0.3141592653, 0.8414709848, 0.4400396131),
+                                            Vector3d(-0.7071067812, 0.2718281828, 0.6531814856),
+                                            Vector3d(0.5772156649, -0.4142135624, 0.7029461483),
+                                            Vector3d(-0.1234567890, -0.6180339887, -0.7763466591) };
+        for (int attempt = 0; attempt <= int(sizeof(generic) / sizeof(generic[0])); ++attempt)
+        {
+            ray.Origin = IPoint;
+            ray.Direction = (attempt == 0) ? direction : generic[attempt - 1].normalized();
+            if (Trans != nullptr)
+                MInvTransRay(ray, ray, Trans);
+            ray.Direction.normalize();
+            const int parity = exact_parity(ray, Thread->Stats());
+            if (parity >= 0)
+                return ((parity != 0) != Test_Flag(this, INVERTED_FLAG));
+        }
+        // Every ray meets a face within rounding: the point lies on the surface, which counts as inside, as a closed solid's
+        // boundary does for the other shapes.
+        return true;
+    }
 
     ray.Direction = direction;
     ray.Origin = IPoint;
@@ -1687,10 +1715,10 @@ bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Tri
     return intersect_decoded_triangle(ray, P1, P2, P3, S_Normal, S_Normal.lengthSqr(), Triangle->Dominant_Axis(), Depth, depthTolerance);
 }
 
-bool Mesh::intersect_mesh_triangle(const BasicRay &ray, MeshIndex i, TraceThreadData *Thread, DBL *Depth) const
+bool Mesh::intersect_mesh_triangle(const BasicRay &ray, MeshIndex i, TraceThreadData *Thread, DBL *Depth, DBL depthTolerance) const
 {
     const MeshTriangleDecode& d = decoded_triangle(i, Thread);
-    return intersect_decoded_triangle(ray, d.p1, d.p2, d.p3, d.n, d.nn, d.axis, Depth);
+    return intersect_decoded_triangle(ray, d.p1, d.p2, d.p3, d.n, d.nn, d.axis, Depth, depthTolerance);
 }
 
 MeshTriangleDecode& Mesh::decoded_triangle(MeshIndex i, TraceThreadData *Thread) const
@@ -1993,11 +2021,12 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
     bool found = false;
     DBL Best = std::numeric_limits<double>::max();
     std::int32_t nearest = -1;
+    const DBL depthTolerance = (query && query->GetRootQuery() && query->GetRootQuery()->PreciseBoundary()) ? std::numeric_limits<DBL>::min() : DEPTH_TOLERANCE;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, nearestOnly || !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
         const MESH_TRIANGLE *triangle = &Data->Triangles[leaf];
         DBL hit;
-        if (intersect_mesh_triangle(ray, leaf, Thread, &hit) && (!query || query->AdmitRoot(this, hit / len)) &&
+        if (intersect_mesh_triangle(ray, leaf, Thread, &hit, depthTolerance) && (!query || query->AdmitRoot(this, hit / len)) &&
             test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
         {
             found = true;
@@ -2890,6 +2919,57 @@ bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats, DBL de
         return false;
     });
     return ((found & 1) != 0);
+}
+
+int Mesh::exact_parity(const BasicRay& ray, RenderStatistics& stats) const
+{
+    const Vector3d& d = ray.Direction;
+    const DBL slack = 64.0 * std::numeric_limits<DBL>::epsilon();
+    bool clear = true;
+    unsigned int found = 0;
+    // Signed volumes of the ray against each edge: all one sign means the line crosses the face's interior, a value
+    // within rounding of zero means it runs through an edge or a vertex, where the parity is not decided.
+    auto crossing = [&](const MESH_TRIANGLE *triangle)
+    {
+        Vector3d P1, P2, P3;
+        get_triangle_vertices(triangle, P1, P2, P3);
+        const Vector3d a = P1 - ray.Origin, b = P2 - ray.Origin, c = P3 - ray.Origin;
+        const Vector3d n = cross(b - a, c - a);
+        const DBL nd = dot(n, d), na = dot(n, a);
+        const DBL plane = slack * n.length() * a.length();
+        if (fabs(nd) <= slack * n.length())
+        {
+            if (fabs(na) <= plane) clear = false; // the ray lies in the face's plane
+            return;
+        }
+        if (na / nd < 0.0 && fabs(na) > plane) return; // the face's plane lies behind the origin
+        const DBL e1 = dot(d, cross(a, b)), e2 = dot(d, cross(b, c)), e3 = dot(d, cross(c, a));
+        const bool n1 = fabs(e1) <= slack * a.length() * b.length(), n2 = fabs(e2) <= slack * b.length() * c.length(),
+                   n3 = fabs(e3) <= slack * c.length() * a.length();
+        const bool inside = ((e1 > 0.0) && (e2 > 0.0) && (e3 > 0.0)) || ((e1 < 0.0) && (e2 < 0.0) && (e3 < 0.0));
+        if (n1 || n2 || n3 || (fabs(na) <= plane))
+        {
+            // near an edge or with the origin on the plane: undecided unless the line clearly misses the face
+            const bool misses = (!n1 && !n2 && !n3) && !inside;
+            if (!misses) clear = false;
+            return;
+        }
+        if (inside) found++;
+    };
+    if (Data->FlatTree == nullptr)
+    {
+        for (MeshIndex i = 0; i < Data->Number_Of_Triangles; i++)
+            crossing(&Data->Triangles[i]);
+    }
+    else
+    {
+        DBL best = std::numeric_limits<DBL>::max();
+        Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, best, false, stats, [&](std::int32_t leaf) {
+            crossing(&Data->Triangles[leaf]);
+            return false;
+        });
+    }
+    return clear ? int(found & 1) : -1;
 }
 
 void Mesh::Determine_Textures(Intersection *isect, bool hitinside, WeightedTextureVector& textures, TraceThreadData *Threaddata)
