@@ -315,6 +315,7 @@ typedef enum INTSTATS
     Subsurface_Photon_Boundaries_Reused,
     Subsurface_Walls,
     Subsurface_Thin_Walls,
+    Subsurface_Cloud_Emitter_Draws,
     Subsurface_Cloud_Attempts,
     Subsurface_Cloud_Served,
     Subsurface_Cloud_Unserved, ///< shading points the cloud could not serve, left without diffuse subsurface light
