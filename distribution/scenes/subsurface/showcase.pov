@@ -30,7 +30,7 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 #case (0) camera { location <0.02,0.30,-0.60> look_at <0.02,0.06,0.08> angle 42 right x*image_width/image_height } #break
 #case (1) camera { location <0.12,0.15,-0.22> look_at <0.0,0.05,0.04> angle 36 right x*image_width/image_height } #break // egg
 #case (2) camera { location <0.22,0.24,-0.42> look_at <0.16,0.015,-0.07> angle 36 right x*image_width/image_height } #break // hand
-#case (3) camera { location <0.09,0.12,-0.06> look_at <0.13,0.095,0.17> angle 30 right x*image_width/image_height } #break // ear
+#case (3) camera { location <-0.10,0.13,-0.12> look_at <-0.12,0.10,0.08> angle 32 right x*image_width/image_height } #break // ear
 #case (4) camera { location <-0.06,0.15,-0.14> look_at <-0.095,0.08,0.14> angle 40 right x*image_width/image_height } #break // candle
 #case (5) camera { location <0.10,0.18,-0.12> look_at <0.20,0.10,0.26> angle 40 right x*image_width/image_height } #break // lantern
 #case (6) camera { location <0.17,0.11,-0.04> look_at <0.225,0.03,0.17> angle 30 right x*image_width/image_height } #break // grapes
@@ -188,7 +188,7 @@ union {
  tags { "hand" }
 }
 
-// ================================================================ ear specimen on a brass pin (pointed, backlit by the lantern)
+// ================================================================ ear specimen on a brass pin (pointed, backlit by the candle)
 // thin cartilage plate with a rolled rim along its edge; front faces -z
 #declare EarRim=array[14] {<-0.0085,0.004,0>,<-0.007,0.016,0>,<-0.002,0.025,0>,<0.006,0.030,0>,<0.013,0.034,0>,<0.021,0.046,0>,<0.019,0.028,0>,
  <0.020,0.016,0>,<0.019,0.004,0>,<0.016,-0.008,0>,<0.012,-0.016,0>,<0.010,-0.023,0>,<0.006,-0.030,0>,<0.000,-0.033,0>};
@@ -223,8 +223,8 @@ union {
  cylinder { <0.002,-0.075,0.002>,<0.002,-0.028,0.002>,0.0012 texture { Brass } }
  cylinder { <0.002,-0.088,0.002>,<0.002,-0.081,0.002>,0.016 texture { DarkIron } }
  cylinder { <0.002,-0.081,0.002>,<0.002,-0.076,0.002>,0.009 texture { Brass } }
- rotate y*24
- translate <0.115,0.088,0.165>
+ rotate y*-12
+ translate <-0.125,0.088,0.075>
  tags { "ear" }
 }
 
