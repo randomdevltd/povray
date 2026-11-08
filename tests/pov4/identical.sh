@@ -66,6 +66,8 @@ accepts ok_negate
 accepts ok_string_compare
 accepts ok_debug_statement "pov4 debug statement"
 accepts ok_bare_comparisons "pov4 bare comparisons"
+accepts ok_param_shadows_input "pov4 parameters shadow outer 7 renamed"
+accepts ok_param_shadows_input "pov4 parameters shadow hi 7 renamed" "Declare=Panel=hi"
 accepts ok_input "pov4 input hi early" "Declare=Label=hi"
 accepts ok_input "pov4 input C:.work early" 'Declare=Label="C:\work"'
 accepts ok_input "Declare=Spare supplies input 'Spare', which the scene never uses." 'Declare=Label="ab" Declare=Spare=1'

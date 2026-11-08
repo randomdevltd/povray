@@ -814,6 +814,7 @@ private:
         std::vector<std::unordered_map<int, unsigned>> scopes;
         std::unordered_map<int, CheckFn>* fns = nullptr;
         std::vector<CheckFn*> stack;
+        std::vector<size_t> frames; // scope index holding each stack entry's parameters
         std::unordered_set<int> rebound;
         bool checking = false;
         std::string block;
@@ -1592,9 +1593,6 @@ Pov4Evaluator::InputData* Pov4Evaluator::InputOf(const Node* n, CheckCtx& ctx)
     for (size_t s = 1; s < ctx.scopes.size(); ++s)
         if (ctx.scopes[s].count(n->sym) != 0)
             return nullptr;
-    for (const CheckFn* f : ctx.stack)
-        if (std::find(f->params.begin(), f->params.end(), n->sym) != f->params.end())
-            return nullptr;
     return &in->second;
 }
 
@@ -1712,14 +1710,19 @@ void Pov4Evaluator::Constrain(const Node* n, unsigned mask, CheckCtx& ctx)
     }
     if (ctx.stack.empty() || (n->kind != NK::Ident))
         return;
-    bool found = false;
-    LookupTy(n->sym, ctx, found);
-    if (found)
+    // only the innermost binding counts: a parameter shadowed by a local is not constrained
+    for (size_t s = ctx.scopes.size(); s-- > 0; )
+    {
+        if (ctx.scopes[s].count(n->sym) == 0)
+            continue;
+        if (s != ctx.frames.back())
+            return;
+        CheckFn* f = ctx.stack.back();
+        for (size_t i = 0; i < f->params.size(); ++i)
+            if (f->params[i] == n->sym)
+                f->use[i] |= mask;
         return;
-    CheckFn* f = ctx.stack.back();
-    for (size_t i = 0; i < f->params.size(); ++i)
-        if (f->params[i] == n->sym)
-            f->use[i] |= mask;
+    }
 }
 
 unsigned Pov4Evaluator::OperandTy(const Node* n, unsigned mask, CheckCtx& ctx)
@@ -1769,6 +1772,19 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                     ctx.scopes.back()[n->c->sym] = ty;
                 }
             }
+            else if ((n->kind == NK::Global) && (ctx.scopes.size() > 1))
+            {
+                // binds at file scope, as at runtime; when it runs is unknown, so it widens the file binding
+                if (mInputs.count(n->sym) != 0)
+                    ctx.rebound.insert(n->sym);
+                auto file = ctx.scopes.front().find(n->sym);
+                if (file == ctx.scopes.front().end())
+                    ctx.scopes.front()[n->sym] = ty;
+                else if ((file->second == TY_NONE) || (ty == TY_NONE))
+                    file->second = TY_NONE;
+                else
+                    file->second |= ty;
+            }
             else
             {
                 if ((mInputs.count(n->sym) != 0) && ctx.stack.empty() && (ctx.scopes.size() == 1))
@@ -1783,11 +1799,13 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
             if (fi != ctx.fns->end())
             {
                 CheckFn& f = fi->second;
+                // parameters are bound in both passes, so they shadow inputs and globals of the same name
                 ctx.scopes.emplace_back();
                 ctx.stack.push_back(&f);
-                if (ctx.checking)
-                    for (size_t i = 0; i < f.params.size(); ++i)
-                        ctx.scopes.back()[f.params[i]] = f.use[i] | f.args[i];
+                ctx.frames.push_back(ctx.scopes.size() - 1);
+                for (size_t i = 0; i < f.params.size(); ++i)
+                    ctx.scopes.back()[f.params[i]] = ctx.checking ? (f.use[i] | f.args[i]) : TY_NONE;
+                ctx.scopes.emplace_back(); // the body's locals shadow the parameters
                 if (n->b != nullptr)
                 {
                     if (n->b->kind == NK::Body)
@@ -1795,6 +1813,8 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                     else
                         (void)TypeOf(n->b, ctx);
                 }
+                ctx.scopes.pop_back();
+                ctx.frames.pop_back();
                 ctx.stack.pop_back();
                 ctx.scopes.pop_back();
             }
