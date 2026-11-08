@@ -17,7 +17,7 @@
 #ifndef (LanternLumens) #declare LanternLumens=6; #end
 #ifndef (EggLumens) #declare EggLumens=1.2; #end
 #ifndef (HandLumens) #declare HandLumens=0.03; #end
-#ifndef (PanelLumens) #declare PanelLumens=0.6; #end
+#ifndef (PanelLumens) #declare PanelLumens=0.12; #end
 #ifndef (RuneLumens) #declare RuneLumens=0.1; #end
 #declare Lm=Exposure*Sources;
 
@@ -345,7 +345,7 @@ union {
  superellipsoid { <0.12,0.12> scale <0.034,0.044,PanelHD>
   texture { pigment { granite turbulence 0.6 scale 0.012 colour_map { [0 rgb <0.20,0.42,0.30>] [0.5 rgb <0.14,0.34,0.25>] [1 rgb <0.30,0.50,0.36>] } }
    #if (Normals) normal { average normal_map { [1 bumps 0.15 scale 0.0003] [1 granite 0.1 scale 0.004] } } #end
-   finish { diffuse 0.7 specular 0.5 roughness 0.012 subsurface { method 2 translucency <1.5,4,3.5> colour rgb 0.95 thickness 0.4 } } }
+   finish { diffuse 0.7 specular 0.5 roughness 0.012 subsurface { method 2 translucency <0.8,1.8,1.5> colour rgb 0.95 thickness 0.4 } } }
   #if (Pigments)
   texture { pigment { object { Pads rgbt 1 rgb <0.62,0.42,0.12> } } finish { diffuse 0.3 metallic specular 0.8 roughness 0.01 } }
   #end
@@ -353,11 +353,11 @@ union {
   #if (Export) light { emission samples LightSamples } #end
  }
  #if (Sources)
- box { <-0.031,-0.041,-0.00045>,<0.031,0.041,0.00045>
+ box { <-0.031,-0.041,-0.00035>,<0.031,0.041,0.00035>
   pigment { rgbt 1 }
   interior { ior off media { mix add method 4 resolution 0.00025 emission <0.15,0.85,1.0> density { function { TraceField(x,y,z) } } }
    light { emission brightness PanelLumens*Lm lumens samples LightSamples domain_cells 1000000 } }
-  translate z*(-PanelHD+0.0014)
+  translate z*(-PanelHD+0.0009)
  }
  #end
  // brass easel prop behind the tablet
