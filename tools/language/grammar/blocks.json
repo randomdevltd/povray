@@ -2183,6 +2183,7 @@
     "normal_vectors",
     "photons",
     "pigment",
+    "povm",
     "radiosity",
     "rotate",
     "scale",
@@ -2211,7 +2212,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:5369 Parse_Mesh2",
+    "parser.cpp:5326 Parse_Mesh2",
     "parser.cpp:8691 Parse_Object_Mods"
    ]
   },

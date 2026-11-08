@@ -3,11 +3,18 @@
 set -e
 POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
-NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media refraction"}
+NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media refraction povm"}
 render() {
-    "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/distribution/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
+    "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/distribution/include" +L. +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"
 }
+# the povm twins load this octahedron, written here so its .povt cache stays out of the source tree
+le32() { printf "\\$(printf %03o $(($1 & 255)))\\$(printf %03o $(($1 >> 8 & 255)))\\$(printf %03o $(($1 >> 16 & 255)))\\$(printf %03o $(($1 >> 24 & 255)))"; }
+{
+    printf POVM; for n in 1 0 6 0 0 8; do le32 $n; done
+    for v in 1065353216 0 0 3212836864 0 0 0 1065353216 0 0 3212836864 0 0 0 1065353216 0 0 3212836864; do le32 $v; done
+    for i in 0 2 4 2 1 4 1 3 4 3 0 4 2 0 5 1 2 5 3 1 5 0 3 5; do le32 $i; done
+} > pov4_octahedron.povm
 for n in $NAMES; do
     render "$DIR/$n.pov" "pov4_${n}_classic"
     render "$DIR/$n.pov4" "pov4_${n}_new" "+GLpov4_${n}_lowered.pov"
@@ -62,4 +69,4 @@ accepts ok_bare_comparisons "pov4 bare comparisons"
 accepts ok_input "pov4 input hi early" "Declare=Label=hi"
 accepts ok_input "pov4 input C:.work early" 'Declare=Label="C:\work"'
 accepts ok_input "Declare=Spare supplies input 'Spare', which the scene never uses." 'Declare=Label="ab" Declare=Spare=1'
-rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov
+rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov pov4_octahedron.povm pov4_octahedron.povt

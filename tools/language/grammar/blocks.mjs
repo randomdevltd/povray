@@ -190,7 +190,21 @@ for (const file of files) {
     const raw = readFileSync(join(parserDir, file), 'utf8').replace(CTX, 'POV4CTX($1)');
     const text = strip(raw);
     for (const fn of functionsOfFile(text)) {
-        inventory.set(fn.name, { name: fn.name, ...mineFunction(fn.name, fn.body), file, line: fn.line });
+        // Overloads share a name (Parse_Mesh2() takes povm, then hands vertex_vectors and the rest
+        // to Parse_Mesh2(Mesh*)): merge them, or the last definition hides the others' items.
+        const mined = mineFunction(fn.name, fn.body);
+        const prior = inventory.get(fn.name);
+        if (prior) {
+            for (const t of mined.top) prior.top.add(t);
+            for (const [p, g] of mined.nested) {
+                if (!prior.nested.has(p)) prior.nested.set(p, { block: false, items: new Set() });
+                const into = prior.nested.get(p);
+                into.block = into.block || g.block;
+                for (const t of g.items) into.items.add(t);
+            }
+        } else {
+            inventory.set(fn.name, { name: fn.name, ...mined, file, line: fn.line });
+        }
     }
 }
 

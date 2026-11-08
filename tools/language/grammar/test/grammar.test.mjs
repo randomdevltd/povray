@@ -67,6 +67,8 @@ test('mined keyword sets match known parser content', () => {
     assert.ok(!blocks.light_source.items.includes('light'), 'a light_source cannot take a light block');
     assert.ok(blocks.light_source.items.includes('shadowless'));
     assert.deepEqual(blocks.attenuation.items, ['cutoff', 'power', 'scale']);
+    // Overloads share a name; each one's items count (povm is read by Parse_Mesh2(), vertex_vectors by Parse_Mesh2(Mesh*)).
+    for (const w of ['povm', 'vertex_vectors']) assert.ok(blocks.mesh2.items.includes(w), `mesh2 item '${w}'`);
 });
 
 test('nested items stay in their sub-block', () => {
