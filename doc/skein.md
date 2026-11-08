@@ -169,15 +169,14 @@ skein {
   closed uv
 }
 ```
-A twisty tapered log with bark cracks; the circle embedding keeps the pattern seamless where `u` wraps:
+A tapered log with bark cracks that turn three quarters along it; the circle embedding keeps the pattern seamless where `u` wraps:
 ```
 #declare Cracks = function { pattern { crackle } }
 skein {
   expressions {
     scale <1, 4, 1>
     extrude { radius function(v) { 0.5 - 0.15*v } }
-    rotate { axis y  angle function(v) { 270*v } }
-    displace function(u, v) { -0.04 * Cracks(3*cos(2*pi*u), 3*sin(2*pi*u), 9*v) }
+    displace function(u, v) { -0.04 * Cracks(3*cos(2*pi*(u - 0.75*v)), 3*sin(2*pi*(u - 0.75*v)), 9*v) }
   }
   closed u
   ends flat
@@ -258,19 +257,19 @@ A double helix is two strands bent along helical paths and a loop of rungs; a li
         axis y
         along function(t) { R*cos(2*pi*Turns*t) }, function(t) { H*t }, function(t) { R*sin(2*pi*Turns*t) }
       }
-      rotate y*Phase
     }
     closed u  ends flat
+    rotate y*Phase
   }
 #end
 #macro Rung(Y)
   skein {
     expressions {
       extrude { radius 0.035 }
-      translate <0, -0.5, 0>  scale <1, 2*(R - 0.1), 1>
-      rotate z*-90  rotate y*(360*Turns*Y/H)  translate <0, Y, 0>
     }
     closed u  ends flat
+    translate <0, -0.5, 0>  scale <1, 2*(R - 0.1), 1>
+    rotate z*-90  rotate y*(360*Turns*Y/H)  translate <0, Y, 0>
   }
 #end
 union {
