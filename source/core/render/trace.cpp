@@ -2860,7 +2860,7 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
         MathColour lightcolour = candidate.colour;
         lightsourceray.Origin = ipoint;
         lightsourceray.Direction = candidate.direction;
-        SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal);
+        SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal, candidate.depth, candidate.light->emitter == nullptr);
         TestOneLightShadow(*candidate.light, candidate.depth, lightsourceray, ipoint, lightcolour, candidate.index);
         MathColour lit;
         if ((lightcolour - candidate.colour).IsZero())
@@ -3133,7 +3133,7 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
     if (!ComputeOneLightReach(lightsource, finish, ipoint, layer_normal, object, lightsourcedepth, lightsourceray, lightcolour, backside))
         return;
 
-    SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal);
+    SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal, lightsourcedepth, lightsource.emitter == nullptr);
     TestOneLightShadow(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, light_index);
 
     ComputeOneLightContribution(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor,
@@ -3995,20 +3995,31 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             break;
     }
 
-    // The stretch past the last boundary lies in the media of the shadowing containers around it, whatever its ends skipped.
     if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && sceneData->interiorMedia &&
         (lightsourcedepth > 0.0) && !lightcolour.IsZero())
-    {
-        RayInteriorVector around;
-        FindContainingInteriors(lightsourceray.Evaluate(0.5 * lightsourcedepth), around, lightsourceray.GetPreparedSetId(), !lightsource.emitter);
-        const bool reach = !sceneData->solidBlocksInteriorMedia || std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
-        Intersection end;
-        end.Depth = lightsourcedepth;
-        end.Object = nullptr;
-        ColourChannel unused = 0.0;
-        if (!around.empty() && reach)
-            media.ComputeMedia(around, lightsourceray, end, lightcolour, unused);
-    }
+        DimShadowLastStretch(lightsource, lightsourcedepth, projectedDepth, lightsourceray, lightcolour);
+}
+
+// The stretch past the last boundary lies in the media of the shadowing containers around it, whatever its ends skipped.
+POV_COLD_PATH void Trace::DimShadowLastStretch(const LightSource& lightsource, double lightsourcedepth, double projectedDepth,
+                                               const Ray& lightsourceray, MathColour& lightcolour)
+{
+    const Vector3d middle = lightsourceray.Evaluate(0.5 * lightsourcedepth);
+    // A shadowing container around the midpoint holds the walked stretch to its far end, so both lie in the media bounds.
+    const Vector3d farEnd = lightsourceray.Evaluate(std::max(0.5 * lightsourcedepth, lightsourcedepth - std::max(SHADOW_TOLERANCE, projectedDepth)));
+    const PreparedSet& set = sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId());
+    if (set.mediaBounded && (set.mediaBounds.isEmpty() || !Inside_BBox(middle, set.mediaBounds) ||
+                             ((lightsource.emitter == nullptr) && !Inside_BBox(farEnd, set.mediaBounds))))
+        return;
+    RayInteriorVector around;
+    FindContainingInteriors(middle, around, lightsourceray.GetPreparedSetId(), !lightsource.emitter);
+    const bool reach = !sceneData->solidBlocksInteriorMedia || std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
+    Intersection end;
+    end.Depth = lightsourcedepth;
+    end.Object = nullptr;
+    ColourChannel unused = 0.0;
+    if (!around.empty() && reach)
+        media.ComputeMedia(around, lightsourceray, end, lightcolour, unused);
 }
 
 void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
@@ -4973,7 +4984,8 @@ bool SurfaceBefore(const SurfaceHit& a, const SurfaceHit& b)
 }
 
 // A light behind the lit surface is reached from the receiver's far side, which is inside the receiver only where it has an inside.
-void Trace::SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal)
+void Trace::SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal,
+                           double reach, bool shadowing)
 {
     const RayInteriorVector& from = eye.GetInteriors();
     const RayInteriorVector& held = shadow.GetInteriors();
@@ -4984,7 +4996,13 @@ void Trace::SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, c
     {
         const Vector3d beyond = point + ((toward > 0.0) ? 1.0 : -1.0) * InterfaceTolerance(point, interior) * geometricNormal->normalized();
         const bool inside = object->Inside(beyond, threadData);
-        if (inside != (std::find(from.begin(), from.end(), interior) != from.end()))
+        // Not entered: a no_shadow receiver's interior, as the walk and the last stretch skip it; and before 4.0 a solid one whose
+        // inside is unbounded (a disc's or plane's half-space) and holds the light, which the ray never leaves and which would hide
+        // every medium. A bounded inside (a closed shape, a CSG part sharing its interior) is entered, as the walk leaves it.
+        const bool enters = inside && !(shadowing && Test_Flag(object, NO_SHADOW_FLAG)) &&
+            (interior->hollow || !sceneData->solidBlocksInteriorMedia || object->BBox.finiteInterior ||
+             !object->Inside(shadow.Evaluate(reach), threadData));
+        if ((inside != (std::find(from.begin(), from.end(), interior) != from.end())) && (!inside || enters))
             change = inside ? 1 : -1;
     }
     if ((change == 0) && (held.size() == from.size()) && std::equal(from.begin(), from.end(), held.begin()))
