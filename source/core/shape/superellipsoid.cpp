@@ -336,19 +336,14 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
                 if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2, precise))
                 {
-                    if (insert_hit(ray, t / len, Depth_Stack, Thread))
+                    const bool inserted = insert_hit(ray, t / len, Depth_Stack, Thread);
+                    if (inserted && !(Type & IS_CHILD_OBJECT))
+                        return(true);
+                    if (inserted)
+                        Found = true;
+                    if (precise)
                     {
-                        if (Type & IS_CHILD_OBJECT)
-                        {
-                            Found = true;
-                        }
-                        else
-                        {
-                            return(true);
-                        }
-                    }
-                    else if (precise)
-                    {
+                        // The ray dips in and out between two outside samples: a boundary query needs the far crossing too.
                         double probe = 0.5 * (t + dists[i]);
                         for (int step = 0; step < 64 && probe > t; ++step, probe = 0.5 * (t + probe))
                         {
@@ -365,7 +360,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                             break;
                         }
                     }
-                    else
+                    else if (!inserted)
                     {
                         break;
                     }

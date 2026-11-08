@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -83,6 +84,7 @@ struct ISO_ThreadData final
     DBL shadowFrom;         // any root between these depths will do; shadowTo zero for the first root
     DBL shadowTo;
     int Inv3;
+    DBL resolution = 0.0;   // narrowest bracket searched; accuracy, or float precision for a boundary query
 };
 
 /*****************************************************************************
@@ -184,13 +186,16 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         }
 
         isoData.Inv3 = 1;
-        const bool startsOutside = Depth1 > accuracy;
+        // A boundary query wants every crossing at full precision: no skip past the start, no root left at accuracy.
+        const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+        const DBL nearDepth = precise ? 0.0 : accuracy;
+        const bool startsOutside = Depth1 > nearDepth;
 
         if(closed != false)
         {
             VTmp = Plocal + Depth1 * Dlocal;
             tmp = EvaluatePolarized (fn, VTmp);
-            if(Depth1 > accuracy)
+            if(Depth1 > nearDepth)
             {
                 if(tmp < 0.0)                   /* The ray hits the bounding shape */
                 {
@@ -206,6 +211,22 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                     }
                     if (ray.GetRootQuery())
                         isoData.Inv3 *= -1;
+                }
+            }
+            else if (precise)
+            {
+                // inside the container from the start: the side at the start sets the polarity
+                if (IsInside(fn, VTmp))
+                    isoData.Inv3 = -1;
+                VTmp = Plocal + Depth2 * Dlocal;
+                if (IsInside(fn, VTmp))
+                {
+                    IPoint = ray.Evaluate(Depth2);
+                    if(ray.AdmitRoot(this, Depth2) && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
+                    {
+                        Depth_Stack->push(Intersection(Depth2, IPoint, this, 1, Side2));
+                        IFound = true;
+                    }
                 }
             }
             else
@@ -234,7 +255,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         /*  METHOD 2   by R. Suzuki */
         tmax = Depth2;
         tmin = Depth1 = min(Depth2, Depth1);
-        if((tmax - tmin) < accuracy)
+        if(precise ? !(tmax > tmin) : ((tmax - tmin) < accuracy))
         {
             if (IFound)
                 Depth_Stack->pop(); // we added an intersection already, so we need to undo that
@@ -254,7 +275,13 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                 }
             }
         }
-        if((Depth1 < accuracy) && (isoData.Inv3 == 1))
+        if (precise && !closed)
+        {
+            VTmp = Plocal + tmin * Dlocal;
+            if (IsInside(fn, VTmp))
+                isoData.Inv3 = -1;
+        }
+        else if(!precise && (Depth1 < accuracy) && (isoData.Inv3 == 1))
         {
             /* IPoint is on the isosurface */
             VTmp = Plocal + tmin * Dlocal;
@@ -272,6 +299,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         const bool anyHit = Test_Flag(this, OPAQUE_FLAG) && Clip.empty() && !eval && (Thread->isoShadowTo > 0.0);
         isoData.shadowFrom = Thread->isoShadowFrom;
         isoData.shadowTo = anyHit ? Thread->isoShadowTo : 0.0;
+        isoData.resolution = precise ? 32.0 * std::numeric_limits<DBL>::epsilon() * (Plocal.length() / Dlocal.length() + fabs(tmax)) : accuracy;
 
         for (; (ray.GetRootQuery() && ray.GetRootQuery()->AllRoots()) || itrace < max_trace;)
         {
@@ -292,9 +320,10 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                 if (anyHit && admitted && (tmin > isoData.shadowFrom) && (tmin < isoData.shadowTo))
                     break;
             }
-            const double next = tmin + accuracy * 5.0;
+            // a precise root already lies on the far side; the classic step skips five accuracies past it
+            const double next = precise ? tmin : tmin + accuracy * 5.0;
             tmin = next > tmin ? next : std::nextafter(tmin, HUGE_VAL);
-            if((tmax - tmin) < accuracy)
+            if(precise ? !(tmax > tmin) : ((tmax - tmin) < accuracy))
                 break;
             isoData.Inv3 *= -1;
         }
@@ -984,7 +1013,7 @@ bool IsoSurface::Function_Find_Root_R(ISO_ThreadData& itd, const ISO_Pair* EP1, 
         dt = maxg * itd.Vlength * t21;
     }
 
-    if(t21 < accuracy)
+    if(t21 < itd.resolution)
     {
         if(EP2->f < 0)
         {

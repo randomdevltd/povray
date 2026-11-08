@@ -1609,7 +1609,9 @@ bool Blob::Inside(const Vector3d& Test_Point, TraceThreadData *Thread) const
         New_Point = Test_Point;
     }
 
-    if (calculate_field_value(New_Point, Thread) > Data->Threshold - INSIDE_TOLERANCE)
+    // A precise query takes the threshold itself, without the tolerance band that reaches past the surface.
+    const DBL band = (Thread != nullptr && Thread->preciseInside) ? 0.0 : INSIDE_TOLERANCE;
+    if (calculate_field_value(New_Point, Thread) > Data->Threshold - band)
     {
         /* We are inside. */
 

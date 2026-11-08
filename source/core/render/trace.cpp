@@ -7206,6 +7206,20 @@ bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* in
     return std::find(containing.begin(), containing.end(), interior) != containing.end();
 }
 
+const std::vector<ObjectPtr>& Trace::SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId)
+{
+    auto& bodies = ssltMaterialBodies[std::make_tuple(preparedSetId, interior, whole)];
+    if (bodies.empty())
+    {
+        // A split union or a text object leaves several placed objects that share one material.
+        bodies.push_back(whole);
+        for (ObjectPtr object : sceneData->GetPreparedSet(preparedSetId).objects)
+            if (object != whole && object->interior.get() == interior)
+                bodies.push_back(object);
+    }
+    return bodies;
+}
+
 SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
     ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket)
 {
@@ -7213,21 +7227,40 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
     const Interior* material = object->interior.get();
     const double extent = (material->boundsHigh - material->boundsLow).length();
     const double shift = std::max(2.0 * MIN_ISECT_DEPTH, std::max(InterfaceTolerance(point, material), 4.0e-6 * extent));
+    const double reach = SubsurfaceBoundsReach(point, direction, material->boundsLow, material->boundsHigh);
+    const std::vector<ObjectPtr>& bodies = SubsurfaceMaterialBodies(material, whole, ticket.preparedSetId);
     auto find = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& query)
     {
         cooperate();
-        return FindIntersection(whole, hit, ray, query);
+        bool f = false;
+        for (ObjectPtr body : bodies)
+        {
+            Intersection candidate;
+            if (FindIntersection(body, candidate, ray, query, f ? hit.Depth : HUGE_VAL) && (!f || candidate.Depth < hit.Depth))
+            {
+                hit = candidate;
+                f = true;
+            }
+        }
+        return f;
     };
-    auto exits = [&](Intersection& hit, Vector3d& outward)
+    auto owns = [&](const Intersection& hit) { return IsSameSSLTObject(hit.Object, object); };
+    auto contains = [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); };
+    auto outward = [&](Intersection& hit, Vector3d& normal)
     {
-        if (!IsSameSSLTObject(hit.Object, object)) return false;
-        hit.Object->Normal(outward, &hit, threadData);
-        outward.normalize();
-        return SubsurfaceBoundaryExit(hit.IPoint, direction, outward, hit.Object->SurfaceTolerance(), extent,
-            [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); },
-            dot(hit.IPoint - point, direction), Test_Flag(hit.Object, INVERTED_FLAG));
+        hit.Object->Normal(normal, &hit, threadData);
+        normal.normalize();
     };
-    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, find, exits);
+    auto fail = [&](SubsurfaceExitFailure reason, double distance)
+    {
+        char text[400];
+        std::snprintf(text, sizeof(text), "%s; the ray from <%.9g, %.9g, %.9g> along <%.9g, %.9g, %.9g> reached %.6g units of the "
+                      "material's %.6g-unit bounds.", SubsurfaceExitFailureText(reason), point[X], point[Y], point[Z],
+                      direction[X], direction[Y], direction[Z], distance, extent);
+        throw POV_EXCEPTION(kUncategorizedError, "Internal subsurface light found no exit from " + DescribeSubsurfaceObject(object) +
+                            ((whole != object) ? " (part of " + DescribeSubsurfaceObject(whole) + ")" : std::string()) + ": " + text);
+    };
+    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, extent, reach, find, owns, contains, outward, fail);
 }
 
 bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
@@ -8846,7 +8879,7 @@ std::string Trace::DescribeSubsurfaceObject(ConstObjectPtr object)
     std::snprintf(text, sizeof(text), "%s%s%s at <%.4g, %.4g, %.4g>", ShapeName(object), object->tags.empty() ? "" : " tagged ",
                   object->tags.empty() ? "" : object->tags[0].c_str(), box.lowerLeft[X] + 0.5 * box.size[X], box.lowerLeft[Y] + 0.5 * box.size[Y],
                   box.lowerLeft[Z] + 0.5 * box.size[Z]);
-    return text;
+    return object->source ? std::string(text) + " (" + *object->source + ")" : std::string(text);
 }
 
 // A part with no inside for light to diffuse through: a disc, unless it cuts an intersection or difference, or a mesh with

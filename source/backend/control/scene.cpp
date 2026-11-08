@@ -494,7 +494,11 @@ void Scene::ParserControlThread()
         if((parserTasks.IsDone() == true) && (parserTasks.Failed() == true) && (sentFailedResult == false))
         {
             StopMeshPool();
-            RenderBackend::SendSceneFailedResult(sceneData->sceneId, parserTasks.FailureCode(kUncategorizedError), sceneData->frontendAddress);
+            const std::string text = parserTasks.FailureText();
+            if (text.empty())
+                RenderBackend::SendSceneFailedResult(sceneData->sceneId, parserTasks.FailureCode(kUncategorizedError), sceneData->frontendAddress);
+            else
+                RenderBackend::SendSceneFailedResult(sceneData->sceneId, POV_EXCEPTION(parserTasks.FailureCode(kUncategorizedError), text), sceneData->frontendAddress);
             sentFailedResult = true;
         }
 

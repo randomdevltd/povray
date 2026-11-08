@@ -2501,7 +2501,11 @@ void View::RenderControlThread()
 
         if((renderTasks.IsDone() == true) && (renderTasks.Failed() == true) && (sentFailedResult == false))
         {
-            RenderBackend::SendViewFailedResult(viewData.viewId, renderTasks.FailureCode(kUncategorizedError), viewData.sceneData->frontendAddress);
+            const std::string text = renderTasks.FailureText();
+            if (text.empty())
+                RenderBackend::SendViewFailedResult(viewData.viewId, renderTasks.FailureCode(kUncategorizedError), viewData.sceneData->frontendAddress);
+            else
+                RenderBackend::SendViewFailedResult(viewData.viewId, POV_EXCEPTION(renderTasks.FailureCode(kUncategorizedError), text), viewData.sceneData->frontendAddress);
             sentFailedResult = true;
         }
     }
