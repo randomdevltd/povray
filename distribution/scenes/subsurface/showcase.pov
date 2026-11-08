@@ -379,7 +379,7 @@ union {
 
 // ================================================================ paper scroll with runes
 // flat run (host of the buried runes), two-centre spiral roll and lifted curl are separate solids 0.1 mm apart
-#declare PaperT=0.00035; #declare PaperW=0.085; #declare FlatL=0.16;
+#declare PaperT=0.0009; #declare PaperW=0.085; #declare FlatL=0.16;
 #declare RollR=0.0085; #declare RollP=0.0014; #declare RollHalfTurns=6; #declare CurlR=0.03; #declare CurlA=55;
 #macro Shell(C,R) difference { cylinder { C,C+z*PaperW,R+PaperT/2 } cylinder { C-z,C+z*(PaperW+1),R-PaperT/2 } } #end
 #declare PaperRoll=merge {
@@ -416,11 +416,11 @@ union {
  }
  #if (Sources)
  #for (J,0,4)
-  object { RuneLine(J,0.00012,PaperT/2+0.00006) pigment { rgbt 1 }
+  object { RuneLine(J,0.0002,PaperT/2+0.0001) pigment { rgbt 1 }
    interior { ior off media { mix add method 4 resolution 0.0002 emission <1,0.55,0.12> }
     light { emission brightness RuneLumens*Lm/6 lumens samples LightSamples } } }
  #end
- object { TitleGlyphs(0.00012,PaperT/2+0.00006) pigment { rgbt 1 }
+ object { TitleGlyphs(0.0002,PaperT/2+0.0001) pigment { rgbt 1 }
   interior { ior off media { mix add method 4 resolution 0.0002 emission <1,0.55,0.12> }
    light { emission brightness RuneLumens*Lm/3 lumens samples LightSamples } } }
  #end
