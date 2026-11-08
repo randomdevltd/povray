@@ -54,10 +54,13 @@ expect() {
 compare media eager_media Declare=Tail=1500000
 expect media_on8 "1 of 1" 0
 test "$(during media_on8)" -gt 0 || { echo "eager preparation: no slab was built during the parse"; exit 1; }
-for late in 1 2 4; do
+for late in 2 4; do
     compare "medialate$late" eager_media Declare=Late=$late Declare=Tail=1500000
     expect "medialate${late}_on8" "0 of 1" 0
 done
+# a later #default domain_cells governs only media parsed after it, so the recorded grid stands
+compare medialate1 eager_media Declare=Late=1 Declare=Tail=1500000
+expect medialate1_on8 "1 of 1" 0
 compare mediatag eager_media Declare=Tagged=1 Declare=Tail=1500000
 expect mediatag_on8 "0 of 1" 0
 compare mediakind1 eager_media Declare=Kind=1 Declare=Tail=1500000

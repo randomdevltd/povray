@@ -140,6 +140,9 @@ union {
   )
 }
 #macro Fish(P, Heading, Pitch, S, Colour)
+  // 0.012-unit cells over the turned body box's bounds
+  #local Body = box { <-0.64, -0.3, -0.12>, <0.62, 0.3, 0.12> scale S rotate z * Pitch rotate y * Heading };
+  #local Span = max_extent(Body) - min_extent(Body);
   union {
     box {
       <-0.64, -0.3, -0.12>, <0.62, 0.3, 0.12>
@@ -147,7 +150,7 @@ union {
       interior {
         ior 1.33
         media {
-          mix add method 4 resolution 0.012
+          mix add method 4 domain_cells ceil(Span.x / 0.012) * ceil(Span.y / 0.012) * ceil(Span.z / 0.012)
           emission Colour * 120
           density { function { max(0, min(1, FishShape(x, y, z))) } }
         }

@@ -27,7 +27,7 @@ box {
   interior {
     media { method #if (ExplicitLight) 4 #else 3 #end emission rgb Glow
       #if (Sigma > 0) scattering { 1, rgb Sigma } #end }
-    #if (Modified) media { mix multiply method 4 resolution 0.1 density { rgb 1 } } #end
+    #if (Modified) media { mix multiply method 4 domain_cells 1120 density { rgb 1 } } #end
     #if (ExplicitLight) light { brightness 10 lumens samples 32 } #end
   }
 }

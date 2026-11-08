@@ -3,6 +3,7 @@
 #ifndef (Wrapped) #declare Wrapped = 0; #end
 #ifndef (Mode) #declare Mode = 0; #end
 #ifndef (Method) #declare Method = 4; #end
+// CellSize is the method 4 cell width; each medium asks for the domain_cells that give it over its 2-unit cube
 #ifndef (CellSize) #declare CellSize = 0.12; #end
 #ifndef (Samples) #declare Samples = 12; #end
 #if (Mode < 0 | Mode > 3) #error "Mode must be 0, 1, 2 or 3." #end
@@ -19,7 +20,7 @@ light_source { <-10, 15, -20> rgb 1 parallel point_at 0 media_attenuation on }
 #macro Variable(Weight, Width, Offset)
   media {
     method Method
-    #if (Method = 4) resolution Width #end
+    #if (Method = 4) domain_cells pow(ceil(2 / Width), 3) #end
     intervals 1 samples Samples jitter 0
     Coefficients(Weight)
     density { function { Field(x,y,z) + Offset } }

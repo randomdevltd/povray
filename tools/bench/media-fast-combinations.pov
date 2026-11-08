@@ -1,6 +1,7 @@
 // Static media with layered densities, emission, absorption, scattering, two parallel lights and several containers.
 #version 3.7;
 #ifndef (Fast) #declare Fast = 0; #end
+// CellSize is the method 4 cell width; each container asks for the domain_cells that give it
 #ifndef (CellSize) #declare CellSize = 0.12; #end
 #ifndef (Area) #declare Area = 0; #end
 #ifndef (Samples) #declare Samples = 12; #end
@@ -19,7 +20,7 @@ plane { y, -0.3 pigment { color rgb <0.22, 0.24, 0.28> } finish { diffuse 0.8 } 
 
 sphere { <-2.1, 0.75, 0>, 1.15 hollow pigment { color rgbt 1 }
   interior { media {
-    #if (Fast) method 4 resolution CellSize #else method 3 #end
+    #if (Fast) method 4 domain_cells pow(ceil(2.3 / CellSize), 3) #else method 3 #end
     scattering { 1, rgb <0.7, 0.8, 1.0> * 0.8 extinction 0.8 }
     absorption rgb <0.05, 0.12, 0.2>
     density { bozo turbulence 0.45 octaves 4 density_map { [0 rgb 0.02] [0.35 rgb 0.08] [0.75 rgb 1.4] [1 rgb 2.5] } scale 0.3 }
@@ -30,7 +31,7 @@ sphere { <-2.1, 0.75, 0>, 1.15 hollow pigment { color rgbt 1 }
 
 sphere { <0, 0.8, 0.2>, 1.1 hollow pigment { color rgbt 1 }
   interior { media {
-    #if (Fast) method 4 resolution CellSize #else method 3 #end
+    #if (Fast) method 4 domain_cells pow(ceil(2.2 / CellSize), 3) #else method 3 #end
     scattering { 2, rgb <0.7, 0.35, 0.15> * 0.7 extinction 0.65 }
     absorption rgb <0.12, 0.05, 0.02>
     emission rgb <0.28, 0.07, 0.015>
@@ -43,7 +44,7 @@ sphere { <0, 0.8, 0.2>, 1.1 hollow pigment { color rgbt 1 }
 
 box { <1.25, 0, -0.65>, <3.05, 1.65, 0.65> hollow pigment { color rgbt 1 }
   interior { media {
-    #if (Fast) method 4 resolution CellSize #else method 3 #end
+    #if (Fast) method 4 domain_cells ceil(1.8 / CellSize) * ceil(1.65 / CellSize) * ceil(1.3 / CellSize) #else method 3 #end
     scattering { 1, rgb <0.25, 0.8, 0.55> * 0.7 extinction 0.9 }
     absorption rgb <0.08, 0.04, 0.1>
     density { wrinkles turbulence 0.2 octaves 4 color_map { [0 rgb 0.1] [0.4 rgb 0.2] [0.7 rgb 1.3] [1 rgb 2.0] } scale 0.2 }

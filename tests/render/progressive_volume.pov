@@ -36,7 +36,7 @@ box {
     interior {
         media { method ReceiverMethod intervals 1 samples 2 scattering { 1, 0.3 } }
         media { method ReceiverMethod intervals 1 samples 2 absorption 0.01
-            #if (ReceiverMethod = 4) resolution 0.08 #end
+            #if (ReceiverMethod = 4) domain_cells 47500 #end
             density { function { 0.5+Variation*x } }
         }
     }

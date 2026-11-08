@@ -5,12 +5,14 @@
 #ifndef (Detail) #declare Detail = 0.01; #end
 #ifndef (Auto) #declare Auto = 0; #end
 #ifndef (Atmosphere) #declare Atmosphere = 0; #end
-#ifndef (Res) #declare Res = 0.028; #end
+// Case 12's medium asks for MediumCells; one cell lays out as 2 x 2 x 1 over the plate, above its limit of two.
+#ifndef (MediumCells) #declare MediumCells = 1; #end
+// Cells sets the scene default domain_cells; twice it caps the refraction fields and the optical-depth tables.
 #ifndef (Cells) #declare Cells = 0; #end
+#if (Cells > 0) #default { media { domain_cells Cells } } #end
 global_settings {
   assumed_gamma 1
   #if (Atmosphere) atmospheric_ior Atmosphere #end
-  #if (Cells > 0) prepared_media_cells Cells #end
 }
 camera { orthographic location <0, 0, (Case = 14 ? -2100 : -10)> look_at <0, 0, 0> right x * 4 up y * 3 }
 plane { z, (Case = 14 ? 2001 : 4) pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 translate -2 * x } finish { ambient 0 emission 1 diffuse 0 } }
@@ -50,9 +52,9 @@ box {
     #if (Case >= 12 & Case <= 14)
       media {
         method 4
-        #if (Case = 12) resolution Res scattering { 1, rgb 0.5 } #end
-        #if (Case = 13) resolution 0.032 scattering { 1, rgb 0.5 } #end
-        #if (Case = 14) resolution 1 scattering { 1, rgb 0.35 } #end
+        #if (Case = 12) domain_cells MediumCells scattering { 1, rgb 0.5 } #end
+        #if (Case = 13) domain_cells 740250 scattering { 1, rgb 0.5 } #end
+        #if (Case = 14) domain_cells 48000 scattering { 1, rgb 0.35 } #end
         density { function { Seams(x, y, z) } }
       }
     #end

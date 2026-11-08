@@ -97,7 +97,7 @@
  #end
  box {<-0.020,0.005,-0.006>,<0.020,0.0062,0.006>}
 }
-global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12 prepared_media_cells 16000000
+global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12
  subsurface {method 2 samples SubsurfaceSamples,InternalSamples spacing 1 error_bound 0.15} }
 #default {finish {ambient 0 diffuse 0.7}}
 #if (!LibraryOnly)
@@ -256,7 +256,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #local FlameVolume=4*pi*FlameAxes.x*FlameAxes.y*FlameAxes.z/3;
   #local FlameEmission=FlameColour*CandleLumens/(pi*FlameVolume*FlameColour.gray);
   sphere {0,1 pigment {rgbt 1}
-   interior {media {mix add method 4 resolution 0.001 emission FlameEmission*Exposure*SourceOn density {spherical}}
+   interior {media {mix add method 4 domain_cells 1664 emission FlameEmission*Exposure*SourceOn density {spherical}}
     #if(SourceOn) light {emission brightness (CandleLumens*Exposure) lumens samples EmitterSamples} #end
    }
    scale FlameAxes translate y*0.058
@@ -349,6 +349,8 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #if (SourceOn & InternalSource & SourceMode=1 & (A=0 | A=6 | A=7))
   #local Glow=(A=7?<1.8,0.32,0.04>:<0.05,0.4,1.7>);
   #local Glow=Glow/max(Glow.x,Glow.y,Glow.z);
+  // 0.25 mm or 1 mm cells: the vein layer's bounds are 0.0707 x 0.1055 x 0.0296, the flat layer and panels 0.0004 deep
+  #local Cells=(A=0?(VeinLayer?(VeinPattern?14211694:225780):(VeinPattern?238852:7526)):(A=7?4608:3450));
   #if (A=0)
    #if (VeinLayer)
     difference {HandBoundary(VeinInset) HandBoundary(VeinInset+VeinThickness)
@@ -359,7 +361,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    box {<-(A=7?0.032:0.025),-(A=7?0.036:0.034),-0.0002>,<(A=7?0.032:0.025),(A=7?0.036:0.035),0.0002>
   #end
   pigment {rgbt 1}
-   interior {ior off media {mix add method 4 resolution ((A=0 & VeinPattern)?0.00025:0.001) emission Glow*Exposure
+   interior {ior off media {mix add method 4 domain_cells Cells emission Glow*Exposure
     density {
      #if(A=0)
       #if(VeinPattern) CapillaryDensity

@@ -2,7 +2,7 @@
 #version 3.8;
 #ifndef (Case) #declare Case=0; #end
 #ifndef (Draws) #declare Draws=256; #end
-#ifndef (Resolution) #declare Resolution=0.05; #end
+#ifndef (Cells) #declare Cells=320; #end
 global_settings { assumed_gamma 1 ambient_light rgb 0 }
 camera { orthographic location <0,0,-1> direction z right x*0.02 up y*0.02 }
 #declare ProbeObject=box { <-2,-2,0.5>,<2,2,2> }
@@ -12,7 +12,7 @@ camera { orthographic location <0,0,-1> direction z right x*0.02 up y*0.02 }
  screen { camera { ProbeView } fallback { rgb 1 } }
 } } }
 box { <-0.1,-0.1,0>,<0.1,0.1,1> pigment { rgbt 1 } hollow
- interior { media { method 4 resolution Resolution
+ interior { media { method 4 domain_cells Cells
   absorption rgb <0.2,0.4,0.6>
   scattering { 1, rgb <0.04,0.03,0.02> extinction 1 }
   #switch(Case)

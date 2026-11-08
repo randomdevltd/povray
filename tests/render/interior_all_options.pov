@@ -27,7 +27,7 @@ sphere {
     }
     media {
       method 4
-      resolution 0.025
+      domain_cells 8000
       scattering { 1, rgb 0.02 }
       absorption rgb 0.005
     }

@@ -4,7 +4,7 @@
 global_settings { assumed_gamma 1 ambient_light rgb 0 }
 camera { orthographic location <0,0,-1> direction z right x*0.02 up y*0.02 }
 box { <-0.1,-0.1,0>,<0.1,0.1,1> pigment { rgbt 1 } hollow
- interior { media { method 4 resolution 0.05
+ interior { media { method 4 domain_cells 320
   absorption rgb <0.2,0.4,0.6>
   scattering { 1, rgb <0.04,0.03,0.02> extinction 1 }
  } }

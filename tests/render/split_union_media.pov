@@ -21,7 +21,7 @@ plane { y, 0 pigment { rgb 0.6 } }
   pigment { rgbt 1 }
   interior {
     media {
-      #if (Version >= 4.0) resolution 0.1 #end
+      #if (Version >= 4.0) domain_cells 15000 #end
       absorption 0.6
       emission 0.4
       #if (!Constant) density { bozo scale 0.4 } #end

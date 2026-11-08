@@ -35,22 +35,22 @@ global_settings { assumed_gamma 1 ambient_light rgb 0 }
 #if (!Surface)
 box { <-1,-1,0>,<1,1,1> pigment { rgbt 1 } hollow
  interior {
-  media { method Method #if (Method=4) resolution 0.02 #end
+  media { method Method #if (Method=4) domain_cells 500000 #end
    scattering { 1, rgb <0.2,0.1,0> extinction 0 }
    #if (Absorb & !Zero) absorption rgb <0.1,0.2,0.3> #end
    density { rgb Density }
   }
-  media { method Method #if (Method=4) resolution 0.02 #end
+  media { method Method #if (Method=4) domain_cells 500000 #end
    scattering { #if (HG) 5 #else 4 #end, rgb <0.1,0.3,0.4> extinction 0 #if (HG) eccentricity Eccentricity #end }
   }
   #if (Zero)
-   media { method Method #if (Method=4) resolution 0.02 #end scattering { 3, rgb 0 } #if (Absorb) absorption rgb <0.1,0.2,0.3> #end }
+   media { method Method #if (Method=4) domain_cells 500000 #end scattering { 3, rgb 0 } #if (Absorb) absorption rgb <0.1,0.2,0.3> #end }
   #end
  }
 }
 #if (Modifier)
 box { <-0.9,-0.9,0.25>,<0.9,0.9,0.75> pigment { rgbt 1 } hollow
- interior { media { method 4 resolution 0.02
+ interior { media { method 4 domain_cells 202500
   #if (Modifier=1)
    mix multiply density { rgb <0.5,0.25,0.75> }
   #else

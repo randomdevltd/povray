@@ -11,7 +11,7 @@ box { -1, 1 hollow no_shadow
   pigment { rgbt 1 }
   interior { media {
     method Method
-    #if (Method = 4) resolution 0.05 #end
+    #if (Method = 4) domain_cells 64000 #end
     absorption rgb 0.4
     scattering { 1, rgb 0.2 }
     density { function { 1 } }
@@ -25,7 +25,7 @@ box { <-2,-2,-5>, <2,2,150> hollow no_shadow
   pigment { rgbt 1 }
   interior { media {
     method Method
-    #if (Method = 4) resolution 4 #end
+    #if (Method = 4) domain_cells 39 #end
     absorption rgb 0.001
     scattering { 1, rgb 0.001 }
     density { function { 1 } }

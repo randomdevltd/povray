@@ -5,6 +5,7 @@
 #ifndef (Samples) #declare Samples = 12; #end
 #ifndef (ClassicOverlap) #declare ClassicOverlap = 1; #end
 #ifndef (SegmentLength) #declare SegmentLength = 160; #end
+// CellSize is the method 4 cell width; each medium asks for the domain_cells that give it over the box
 #ifndef (CellSize)
   #if (Mode = 0) #declare CellSize = 0.005;
   #else #declare CellSize = 0.1; #end
@@ -33,7 +34,7 @@ box { -Extent, Extent hollow pigment { rgbt 1 }
     #if (Mode = 3) ior 1.1 #end
     media {
       method Method
-      #if (Method = 4) resolution CellSize #end
+      #if (Method = 4) domain_cells ceil(2 * Extent.x / CellSize) * ceil(2 * Extent.y / CellSize) * ceil(2 * Extent.z / CellSize) #end
       intervals 1 samples Samples jitter 0
       absorption rgb <0.4,0.2,0.1>*Strength
       emission rgb <0.03,0.05,0.08>*Strength
@@ -45,7 +46,7 @@ box { -Extent, Extent hollow pigment { rgbt 1 }
         #if (ClassicOverlap) method 3
         #else
           method Method
-          #if (Method = 4) resolution CellSize #end
+          #if (Method = 4) domain_cells ceil(2 * Extent.x / CellSize) * ceil(2 * Extent.y / CellSize) * ceil(2 * Extent.z / CellSize) #end
         #end
         intervals 1 samples Samples jitter 0
         absorption rgb <0.1,0.2,0.3>
