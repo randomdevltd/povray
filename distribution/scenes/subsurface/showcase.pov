@@ -375,19 +375,19 @@ union {
 }
 
 // ================================================================ paper scroll with runes
-// one CSG solid: flat run, a lifted curl at the right and a two-centre spiral roll at the left
+// flat run (host of the buried runes), two-centre spiral roll and lifted curl are separate solids 0.1 mm apart
 #declare PaperT=0.00035; #declare PaperW=0.085; #declare FlatL=0.16;
 #declare RollR=0.0085; #declare RollP=0.0014; #declare RollHalfTurns=6; #declare CurlR=0.03; #declare CurlA=55;
 #macro Shell(C,R) difference { cylinder { C,C+z*PaperW,R+PaperT/2 } cylinder { C-z,C+z*(PaperW+1),R-PaperT/2 } } #end
-#declare Paper=merge {
- box { <0,0,0>,<FlatL,PaperT,PaperW> }
+#declare PaperRoll=merge {
  #for (K,0,RollHalfTurns-1)
   #local R=RollR-K*RollP/2;
   #local C=<0,PaperT/2+(mod(K,2)=0?RollR:RollR+RollP/2),0>;
-  intersection { Shell(C,R) plane { (mod(K,2)=0?x:-x),0 } }
+  intersection { Shell(C,R) plane { (mod(K,2)=0?x:-x),0.00005 } }
  #end
- intersection { Shell(<FlatL,PaperT/2+CurlR,0>,CurlR) plane { -x,-FlatL } plane { x,0 rotate z*CurlA translate <FlatL,PaperT/2+CurlR,0> } plane { y,PaperT/2+CurlR } }
 };
+#declare PaperCurl=
+ intersection { Shell(<FlatL,PaperT/2+CurlR,0>,CurlR) plane { -x,-FlatL } plane { x,0 rotate z*CurlA translate <FlatL,PaperT/2+CurlR,0> } plane { y,PaperT/2+CurlR } };
 #macro PaperTex()
  texture { pigment { granite turbulence 0.4 scale 0.02 colour_map { [0 rgb <0.93,0.85,0.66>] [0.6 rgb <0.90,0.80,0.60>] [1 rgb <0.80,0.66,0.44>] } }
   #if (Normals) normal { average normal_map { [1 wrinkles 0.35 scale <0.0004,0.0004,0.004>] [1 bumps 0.2 scale 0.00025] } } #end
@@ -400,7 +400,9 @@ union {
 #macro TitleGlyphs(Depth,Y0) text { ttf "timrom.ttf" "X-|<>|-X" 1,0 scale <0.011,0.011,Depth> rotate x*90 translate <0.035,Y0,0.066> } #end
 #declare InkTitle=TitleGlyphs(0.003,PaperT+0.001);
 union {
- object { Paper
+ object { PaperRoll PaperTex() interior { ior 1.45 } }
+ object { PaperCurl PaperTex() interior { ior 1.45 } }
+ box { <0.0001,0,0>,<FlatL-0.0001,PaperT,PaperW>
   PaperTex()
   #if (Pigments)
   // ink: the title line is painted opaque over a buried glyph source

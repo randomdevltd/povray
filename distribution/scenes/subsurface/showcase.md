@@ -43,5 +43,8 @@ A buried emitter needs its host to answer the renderer's enclosing-boundary
 query. Spheres, boxes, cylinders, linear sphere sweeps, `sor` and CSG of these
 work. Blob, mesh2 and isosurface hosts, and a superellipsoid merged with other
 shapes, stop with `Internal subsurface light requires an enclosing material
-boundary`, so the hand and ear are built from linear sphere sweeps and the
-scroll is one CSG solid (a box, a two-centre spiral of half-cylinder shells and a curl arc).
+boundary`, so the hand and ear are built from linear sphere sweeps. The scroll's
+runes sit in a plain box; its spiral roll and curl are separate solids 0.1 mm
+away, and the roll's half-cylinder shells overlap rather than meet face to face.
+A host merged with the roll and curl, or a roll whose shells only touched,
+failed the same query or stopped the render with `Uncategorized error`.
