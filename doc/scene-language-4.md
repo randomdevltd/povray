@@ -64,10 +64,48 @@ law from the nearest point of the emitter's bounds, so it never depends on the l
 shape or kind. It applies to surface shading, media scattering, subsurface and bounce
 preparation alike; `cutoff 0` turns it off.
 Interior lights also take `domain_cells N` (once, an integer of 1 to 1000000000),
-budgeting that light's prepared source domain in place of the scene's
-`prepared_source_cells`; a surface light block refuses it. The word is contextual.
+the cell count of that light's prepared source domain; without it the light takes
+the scene's light default, `default { light { domain_cells N } }` (classic `#default`),
+500000 by default, never its medium's count. A surface light block refuses it. The word
+is contextual.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
+
+## Prepared grid cell counts
+
+Both syntaxes accept `media { method 4 domain_cells N }`, an integer of 1 to 1000000000
+and method 4 only: the cell count of the medium's prepared grid, spread as cubic cells of
+width `cbrt(V/N)` over its container's bounding box (whole cells per axis round the count
+up by under one layer per axis). The count is scale-invariant: rescaling the scene or
+transforming the container keeps the grid's cells and quality. A grid holds at most twice
+its `domain_cells`, and is coarsened with a warning past that. A constant medium in an
+interior whose grid follows a varying medium, a light block or a refraction field ignores
+its `domain_cells`, with a warning. `default { media { domain_cells N } }` (classic
+`#default`), beside `mix`, sets the count of media parsed after it, 500000 by default;
+its value at the end of the parse also serves refraction fields without `detail`, and, doubled, caps the prepared
+fields that belong to no single medium or light (surface bounce nodes, refraction detail
+fields, optical-depth tables), 1000000 cells by default. For cells about `w` units
+wide, write the product over the axes of `ceil(extent / w)` of the container's box.
+`domain_cells` is contextual.
+
+## Lights inside subsurface materials
+
+A volume `light` whose container overlaps a closed subsurface method 2 solid lights it
+from within, with no new syntax: the transport is the homogeneous isotropic radiative
+transport equation of the material, with exact Fresnel reflection at its boundary, and
+takes emission only from the material along a path. The second count of
+`global_settings { subsurface { samples D, S } }` is the internal paths per shaded point.
+Where the subsurface block gives the flesh its own colour, the texture pigment is a skin
+crossed at the exit, twice at each internal reflection and at the far end of a straight
+path through a thin wall. A surface `light { emission }` on the host exports the flux
+leaving it, and a `bounce` block exports it in its first order; with both it is exported
+once. The host needs homogeneous coefficients (one texture layer, no `volume_sampling`
+flesh). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
+mesh with an open border) stops the parse, and so does one whose container lies inside an
+open subsurface mesh's `inside_vector` volume, naming both lines, with or without
+`subsurface` in `global_settings`; an open part that holds no light hosts nothing.
+Method 2 also averages entry illumination over texture normals across each estimate's
+area; exits and internal paths keep the surface normal.
 
 ## Surface light blocks
 

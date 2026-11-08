@@ -251,7 +251,7 @@
    "doc": "r3_6.html#r3_6_2_1_9"
   },
   "detail": {
-   "text": "Per-field detail D is a finite positive length in scene units; omitted detail or detail auto uses bounds-derived preparation and integration controls.",
+   "text": "Per-field detail D is a finite positive length in scene units; omitted detail or detail auto uses the scene's default domain_cells and bounds-derived integration controls.",
    "doc": "r3_11.html#r3_11_3_2"
   },
   "diffuse": {
@@ -273,6 +273,10 @@
   "distance": {
    "text": "The required distance keyword is the same like the one used with fogs.",
    "doc": "r3_7.html#r3_7_1_5"
+  },
+  "domain_cells": {
+   "text": "The domain_cells item sets the number of cells of a method 4 medium's prepared grid, spread evenly over its container's bounding box.",
+   "doc": "r3_7.html#r3_7_2_3_1"
   },
   "double_illuminate": {
    "text": "When double_illuminate is used, the other side is also illuminated.",
@@ -1549,9 +1553,9 @@
    "from": "doc/html/r3_7.html"
   },
   "domain_cells": {
-   "rank": 1022,
-   "code": "domain_cells Integer |",
-   "from": "doc/html/r3_12.html"
+   "rank": 1017,
+   "code": "domain_cells 8000",
+   "from": "tests/pov4/interior_all_options.pov4:29"
   },
   "double_illuminate": {
    "rank": 1028,
@@ -2201,9 +2205,9 @@
    "from": "doc/html/r3_6.html"
   },
   "no_image": {
-   "rank": 1019,
-   "code": "no_image [ Bool ] |",
-   "from": "doc/html/r3_5.html"
+   "rank": 34,
+   "code": "hollow no_image pigment { rgbt 1 }",
+   "from": "doc/html/r3_12.html"
   },
   "no_lights": {
    "rank": 75,
@@ -2475,11 +2479,6 @@
    "rank": 1019,
    "code": "precompute 10 x,y,z",
    "from": "doc/html/r3_5.html"
-  },
-  "prepared_media_cells": {
-   "rank": 63,
-   "code": "global_settings { assumed_gamma 1.0 prepared_media_cells 4096 }",
-   "from": "tests/pov4/framing_tagged.pov4:3"
   },
   "pretrace_end": {
    "rank": 1019,
