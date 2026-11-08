@@ -7535,6 +7535,7 @@ ObjectPtr Parser::Parse_Object ()
     ObjectPtr Object = nullptr;
 
     Get_Token();
+    const std::string where = CurrentSourceLine();
     if ((CurrentTokenText() == "tagged") && Tagged_Selector_Follows())
         Object = Parse_Tagged(true);
     else
@@ -7745,6 +7746,8 @@ ObjectPtr Parser::Parse_Object ()
 
     if (Object && !Object->Precompute())
         PossibleError("Inconsistent object parameters.");
+    if (Object && !Object->source)
+        Object->source = std::make_shared<const std::string>(where);
 
     return Object;
 }
@@ -9518,7 +9521,9 @@ ObjectPtr Parser::Parse_Object_Id ()
     if (AllowToken(OBJECT_ID_TOKEN))
     {
         Warn_State(OBJECT_TOKEN);
+        const std::string where = "'" + CurrentTokenText() + "', " + CurrentSourceLine();
         Object = Copy_Object(CurrentTokenDataPtr<ObjectPtr>());
+        Object->source = std::make_shared<const std::string>(where);
         Object = Parse_Object_Mods(Object);
     }
 

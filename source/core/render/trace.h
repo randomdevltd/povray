@@ -1430,6 +1430,9 @@ class Trace
         bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
             double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket);
         bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
+        /// The placed objects that carry a material, whose union ContainsSubsurfaceMaterial tests; `whole` always among them.
+        const std::vector<ObjectPtr>& SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
+        std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr>, std::vector<ObjectPtr>> ssltMaterialBodies;
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
             const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous);

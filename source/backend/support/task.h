@@ -79,6 +79,8 @@ class Task
         inline bool Failed() { return IsDone() && (failed.load(std::memory_order_relaxed) != kNoError); }
 
         int FailureCode(int defval = kNoError);
+        /// The failure's message, read once IsDone(); empty when it had none.
+        const std::string& FailureText() const { return failedText; }
 
         POV_LONG ConsumedRealTime() const;
         POV_LONG ConsumedCPUTime() const;
@@ -121,6 +123,8 @@ class Task
         std::atomic<bool> done;
         /// failed code
         std::atomic<int> failed;
+        /// failure message, written before done
+        std::string failedText;
         // pointer to timer or `nullptr`
         Timer *timer;
         // real time spend in task

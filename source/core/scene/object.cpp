@@ -60,6 +60,26 @@
 #include "core/shape/mesh.h"
 #include "core/shape/plane.h"
 #include "core/shape/sphere.h"
+#include "core/shape/bezier.h"
+#include "core/shape/blob.h"
+#include "core/shape/fractal.h"
+#include "core/shape/heightfield.h"
+#include "core/shape/isosurface.h"
+#include "core/shape/lathe.h"
+#include "core/shape/lemon.h"
+#include "core/shape/ovus.h"
+#include "core/shape/parametric.h"
+#include "core/shape/polygon.h"
+#include "core/shape/polynomial.h"
+#include "core/shape/prism.h"
+#include "core/shape/quadric.h"
+#include "core/shape/skein.h"
+#include "core/shape/sor.h"
+#include "core/shape/spheresweep.h"
+#include "core/shape/superellipsoid.h"
+#include "core/shape/torus.h"
+#include "core/shape/triangle.h"
+#include "core/shape/truetype.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -1019,6 +1039,27 @@ const char *ShapeName(ConstObjectPtr object)
     if (dynamic_cast<const CSGMerge *>(object) != nullptr)     return "merge";
     if (dynamic_cast<const CSGUnion *>(object) != nullptr)     return "union";
     if (dynamic_cast<const CSGIntersection *>(object) != nullptr) return "intersection or difference";
+    if (dynamic_cast<const Blob *>(object) != nullptr)                   return "blob";
+    if (dynamic_cast<const IsoSurface *>(object) != nullptr)             return "isosurface";
+    if (dynamic_cast<const Superellipsoid *>(object) != nullptr)         return "superellipsoid";
+    if (dynamic_cast<const SphereSweep *>(object) != nullptr)            return "sphere_sweep";
+    if (dynamic_cast<const TrueType *>(object) != nullptr)               return "text";
+    if (dynamic_cast<const Torus *>(object) != nullptr)                  return "torus";
+    if (dynamic_cast<const Lathe *>(object) != nullptr)                  return "lathe";
+    if (dynamic_cast<const Sor *>(object) != nullptr)                    return "sor";
+    if (dynamic_cast<const Prism *>(object) != nullptr)                  return "prism";
+    if (dynamic_cast<const HField *>(object) != nullptr)                 return "height_field";
+    if (dynamic_cast<const Fractal *>(object) != nullptr)                return "julia_fractal";
+    if (dynamic_cast<const Lemon *>(object) != nullptr)                  return "lemon";
+    if (dynamic_cast<const Ovus *>(object) != nullptr)                   return "ovus";
+    if (dynamic_cast<const Quadric *>(object) != nullptr)                return "quadric";
+    if (dynamic_cast<const Poly *>(object) != nullptr)                   return "polynomial";
+    if (dynamic_cast<const Skein *>(object) != nullptr)                  return "skein";
+    if (dynamic_cast<const Parametric *>(object) != nullptr)             return "parametric";
+    if (dynamic_cast<const BicubicPatch *>(object) != nullptr)           return "bicubic_patch";
+    if (dynamic_cast<const Polygon *>(object) != nullptr)                return "polygon";
+    if (dynamic_cast<const SmoothTriangle *>(object) != nullptr)         return "smooth_triangle";
+    if (dynamic_cast<const Triangle *>(object) != nullptr)               return "triangle";
     return "object";
 }
 

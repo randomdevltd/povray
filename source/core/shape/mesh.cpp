@@ -319,7 +319,8 @@ bool Mesh::InsideAlong(const Vector3d& IPoint, const Vector3d& direction, TraceT
     }
 
     found = 0;
-    DBL depthTolerance = Thread->subsurfacePhotonBoundaryProbe ? std::numeric_limits<DBL>::min() : DEPTH_TOLERANCE;
+    // A precise query counts a face however close: a fixed mesh-space cut would misplace points near a thin sheet.
+    DBL depthTolerance = (Thread->subsurfacePhotonBoundaryProbe || Thread->preciseInside) ? std::numeric_limits<DBL>::min() : DEPTH_TOLERANCE;
 
     if (Data->FlatTree == nullptr)
     {

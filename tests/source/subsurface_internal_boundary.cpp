@@ -174,12 +174,14 @@ int main()
         auto find = [&](Intersection &hit, const Ray &ray, const RayObjectCondition &condition) {
             return Find_Intersection(&hit, &body, ray, condition, &thread);
         };
-        auto exits = [&](Intersection &hit, Vector3d &normal) {
-            body.Normal(normal, &hit, &thread);
+        auto owns = [](const Intersection &) { return true; };
+        auto outward = [&](Intersection &hit, Vector3d &normal) {
+            hit.Object->Normal(normal, &hit, &thread);
             normal.normalize();
-            return dot(normal, direction) > 0.0;
         };
-        const auto boundary = FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, find, exits);
+        auto fail = [](SubsurfaceExitFailure reason, double) { throw std::runtime_error(SubsurfaceExitFailureText(reason)); };
+        auto inBody = [&](const Vector3d &p) { return body.Inside(p, &thread); };
+        const auto boundary = FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, 0.1, 0.1, find, owns, inBody, outward, fail);
         auto implicit = [&](double distance) {
             const Vector3d q = point + direction * distance;
             double sum = 0.0;
@@ -215,25 +217,21 @@ int main()
         auto findDifference = [&](Intersection &hit, const Ray &ray, const RayObjectCondition &condition) {
             return Find_Intersection(&hit, &difference, ray, condition, &thread);
         };
-        auto leaveDifference = [&](Intersection &hit, Vector3d &normal) {
-            hit.Object->Normal(normal, &hit, &thread);
-            normal.normalize();
-            if (difference.Inside(hit.IPoint + normal * 1e-9, &thread))
-                normal.invert();
-            return dot(normal, direction) > 0.0;
-        };
-        const auto cut = FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, findDifference, leaveDifference);
+        auto inDifference = [&](const Vector3d &p) { return difference.Inside(p, &thread); };
+        const auto cut =
+            FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, 0.1, 0.1, findDifference, owns, inDifference, outward, fail);
         assert(std::abs(cut.distance - 0.0007) < 1e-10);
         const auto afterCut =
-            FindSubsurfaceInternalBoundary(point + direction * 0.0015, direction, ticket, 0.0002, findDifference, leaveDifference);
+            FindSubsurfaceInternalBoundary(point + direction * 0.0015, direction, ticket, 0.0002, 0.1, 0.1, findDifference, owns, inDifference, outward, fail);
         assert(std::abs(afterCut.distance - boundary.distance + 0.0015) < 1e-9);
         assert(outer.GetRootQuery() == &previous);
         bool caught = false;
         try
         {
             FindSubsurfaceInternalBoundary(
-                point, direction, ticket, 0.0002,
-                [](Intersection &, const Ray &, const RayObjectCondition &) -> bool { throw std::runtime_error("query failure"); }, exits);
+                point, direction, ticket, 0.0002, 0.1, 0.1,
+                [](Intersection &, const Ray &, const RayObjectCondition &) -> bool { throw std::runtime_error("query failure"); }, owns, inBody,
+                outward, fail);
         }
         catch (const std::runtime_error &)
         {
@@ -243,8 +241,8 @@ int main()
         caught = false;
         try
         {
-            FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, find,
-                                           [](Intersection &, Vector3d &) -> bool { throw std::runtime_error("boundary failure"); });
+            FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, 0.1, 0.1, find, owns, inBody,
+                                           [](Intersection &, Vector3d &) { throw std::runtime_error("boundary failure"); }, fail);
         }
         catch (const std::runtime_error &)
         {
@@ -252,36 +250,103 @@ int main()
         }
         assert(caught && outer.GetRootQuery() == &previous);
     }
-    for (double gap : {0.0, 1.0e-12, 1.0e-9})
     {
-        const Vector3d point(0.0), direction = Vector3d(1.0, 2.0, 0.0).normalized();
-        auto contains = [&](const Vector3d &p) { return p[0] < 0.0 || p[1] - p[0] < -gap; };
-        Vector3d normal(1.0, 0.0, 0.0);
-        assert(SubsurfaceBoundaryExit(point, direction, normal, 0.0, 1.0, contains));
-        assert(dot(normal, direction) > 0.0);
-        normal.invert();
-        assert(SubsurfaceBoundaryExit(point, direction, normal, 0.0, 1.0, contains));
-        assert(dot(normal, direction) > 0.0);
-        assert(!SubsurfaceBoundaryExit(point, -direction, normal, 0.0, 1.0, contains));
+        // Synthetic crossings along +x from the origin: only the material test between crossings decides the exit.
+        struct Crossings
+        {
+            std::vector<double> roots;
+            Sphere marker;
+            bool operator()(Intersection &hit, const Ray &ray, const RayObjectCondition &condition) const
+            {
+                for (double root : roots)
+                    if (condition(ray, &marker, root + 0.0002))
+                    {
+                        hit = Intersection(root + 0.0002, Vector3d(root, 0.0, 0.0), const_cast<Sphere *>(&marker));
+                        return true;
+                    }
+                return false;
+            }
+        };
+        const Vector3d origin(0.0), along(1.0, 0.0, 0.0);
+        auto owns = [](const Intersection &) { return true; };
+        auto outward = [&](Intersection &, Vector3d &normal) { normal = -along; };
+        SubsurfaceExitFailure failure = SubsurfaceExitFailure::NoMaterial;
+        auto fail = [&](SubsurfaceExitFailure reason, double) {
+            failure = reason;
+            throw std::runtime_error(SubsurfaceExitFailureText(reason));
+        };
+        auto exitOf = [&](std::vector<double> roots, auto contains) {
+            Crossings crossings{roots, {}};
+            return FindSubsurfaceInternalBoundary(origin, along, ticket, 0.0002, 1.0, 1.0, crossings, owns, contains, outward, fail);
+        };
+        // An inside test with a tolerance band past the surface (blob style) still exits at the root, normal turned outward.
+        auto near = [](double a, double b) { return std::abs(a - b) < 1e-15; };
+        auto banded = exitOf({0.5}, [](const Vector3d &p) { return p[0] < 0.5 + 1e-7; });
+        assert(near(banded.distance, 0.5) && dot(banded.normal, along) == 1.0);
+        // Seams inside merged material and a disjoint second part are walked past and ignored.
+        assert(near(exitOf({0.2, 0.2, 0.3, 0.6, 0.8}, [](const Vector3d &p) { return p[0] < 0.3 || (p[0] > 0.6 && p[0] < 0.8); }).distance, 0.3));
+        // A gap far thinner than any shape tolerance, and a sheet 1e-12 thick, are both resolved.
+        for (double gap : {1.0e-9, 1.0e-12})
+        {
+            assert(near(exitOf({0.4, 0.4 + gap}, [&](const Vector3d &p) { return p[0] < 0.4 || p[0] > 0.4 + gap; }).distance, 0.4));
+            assert(near(exitOf({0.0, gap}, [&](const Vector3d &p) { return p[0] >= 0.0 && p[0] < gap; }).distance, gap));
+        }
+        // A crossing at the origin with no material after it is a contact exit at the start.
+        assert(near(exitOf({0.0, 0.7, 0.9}, [](const Vector3d &p) { return p[0] > 0.7 && p[0] < 0.9; }).distance, 0.0));
+        // A start just outside the material walks in through the entry gap.
+        assert(near(exitOf({1.0e-6, 0.5}, [](const Vector3d &p) { return p[0] > 1.0e-6 && p[0] < 0.5; }).distance, 0.5));
+        // Material past the last reported crossing is a missed root, and a ray with no material says so.
+        bool thrown = false;
+        try { exitOf({0.3}, [](const Vector3d &p) { return p[0] < 0.9; }); } catch (const std::runtime_error &) { thrown = true; }
+        assert(thrown && failure == SubsurfaceExitFailure::MissedCrossing);
+        thrown = false;
+        try { exitOf({}, [](const Vector3d &) { return false; }); } catch (const std::runtime_error &) { thrown = true; }
+        assert(thrown && failure == SubsurfaceExitFailure::NoMaterial);
     }
-    for (double gap : {0.0, 1.0e-12, 1.0e-9})
     {
-        const Vector3d point(0.0), direction(1.0, 0.0, 0.0);
-        auto contains = [&](const Vector3d &p) { return p[0] < 0.0 || p[0] > gap; };
-        Vector3d normal = direction;
-        assert(SubsurfaceBoundaryExit(point, direction, normal, 0.0, 1.0, contains) == (gap > 0.0));
-    }
-    {
-        Vector3d normal(1.0, 0.0, 0.0);
-        assert(SubsurfaceBoundaryExit(Vector3d(1.0e-7, 0.0, 0.0), normal, normal, 0.0, 1.0, [](const Vector3d &p) { return p[0] < 0.0; }));
-    }
-    for (double thickness : {1.0e-3, 1.0e-9, 1.0e-12})
-    {
-        const Vector3d point(0.0), direction = Vector3d(1.0, 2.0, 0.0).normalized();
-        Vector3d normal(1.0, 0.0, 0.0);
-        auto contains = [&](const Vector3d &p) { return p[0] < 0.0 && p[0] > -thickness && p[1] < p[0]; };
-        assert(SubsurfaceBoundaryExit(point, direction, normal, 0.0, 1.0, contains));
-        assert(dot(normal, direction) > 0.0);
+        // A ray leaving a sphere inside a merged superellipsoid: the superellipsoid crosses in and out between two plane
+        // samples that both lie outside it, and both crossings must be reported for the merged exit to exist.
+        auto *slab = new Superellipsoid;
+        slab->Power = Vector3d(2.0 / 0.3, 1.0, 2.0 / 0.3);
+        const Vector3d slabScale(0.015, 0.008, 0.01);
+        Compute_Scaling_Transform(&transform, slabScale);
+        slab->Scale(slabScale, &transform);
+        auto *knob = new Sphere;
+        knob->Center = Vector3d(0.012, 0.004, 0.0);
+        knob->Radius = 0.006;
+        CSGMerge merged;
+        merged.children = {slab, knob};
+        for (auto *child : merged.children)
+        {
+            child->Type |= IS_CHILD_OBJECT;
+            child->Compute_BBox();
+        }
+        merged.Compute_BBox();
+        const Vector3d p(0.0152969118, 0.004842223, -0.0044575201), d = Vector3d(-0.536230093, 0.808588993, -0.242159301).normalized();
+        auto find = [&](Intersection &hit, const Ray &ray, const RayObjectCondition &condition) {
+            return Find_Intersection(&hit, &merged, ray, condition, &thread);
+        };
+        auto inMerged = [&](const Vector3d &q) { return merged.Inside(q, &thread); };
+        auto owns = [](const Intersection &) { return true; };
+        auto outward = [&](Intersection &hit, Vector3d &normal) {
+            hit.Object->Normal(normal, &hit, &thread);
+            normal.normalize();
+        };
+        auto fail = [](SubsurfaceExitFailure reason, double) { throw std::runtime_error(SubsurfaceExitFailureText(reason)); };
+        const PreciseInsideScope precision(&thread);
+        const auto exit = FindSubsurfaceInternalBoundary(p, d, ticket, 0.0002, 0.05, 0.05, find, owns, inMerged, outward, fail);
+        // independent: the union of the implicit superellipsoid and the sphere, bisected from the last inside sample
+        auto member = [&](double t) {
+            const Vector3d q = p + d * t;
+            const double a = std::pow(std::abs(q[0] / 0.015), 2.0 / 0.3) + std::pow(std::abs(q[2] / 0.01), 2.0 / 0.3);
+            return a + std::pow(std::abs(q[1] / 0.008), 2.0 / 0.3) < 1.0 || (q - knob->Center).length() < 0.006;
+        };
+        double low = 0.0, high = 0.0;
+        for (double t = 0.0; t < 0.05; t += 1e-5)
+            if (!member(t)) { high = t; break; } else low = t;
+        for (int i = 0; i < 80; ++i)
+            (member(0.5 * (low + high)) ? low : high) = 0.5 * (low + high);
+        assert(std::abs(exit.distance - low) < 1e-9 && dot(exit.normal, d) > 0.0);
     }
     CSGMerge junction;
     auto *palm = new Sphere;

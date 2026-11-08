@@ -204,6 +204,8 @@ class ObjectBase
         bool inheritTags = true;
         /// Shared by the members of a split union that was one photon target, so method 2 keeps them one target.
         std::shared_ptr<const PhotonTargetGroup> photonTargetGroup;
+        /// Where the scene wrote it ("line N of file", with its declared name if placed by name), for messages; may be null.
+        std::shared_ptr<const std::string> source;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -230,7 +232,7 @@ class ObjectBase
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
-            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup)
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup), source(o.source)
         {
             if (transplant)
             {

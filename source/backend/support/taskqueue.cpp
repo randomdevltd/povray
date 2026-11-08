@@ -162,6 +162,13 @@ int TaskQueue::FailureCode(int defval)
         return failed;
 }
 
+std::string TaskQueue::FailureText()
+{
+    std::lock_guard<std::recursive_mutex> lock(queueMutex);
+
+    return failedText;
+}
+
 void TaskQueue::Fail(int code)
 {
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
@@ -180,6 +187,7 @@ ThreadData *TaskQueue::AppendTask(const shared_ptr<Task>& task)
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
 
     failed = false;
+    failedText.clear();
 
     queuedTasks.push(TaskEntry(task));
 
@@ -236,6 +244,8 @@ bool TaskQueue::Process()
         const bool done = i->GetTask()->IsDone();
         if(failed == kNoError)
             failed = i->GetTask()->FailureCode();
+        if(done && failedText.empty() && (i->GetTask()->FailureCode() != kNoError))
+            failedText = i->GetTask()->FailureText();
 
         if(done)
         {

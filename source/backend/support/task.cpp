@@ -231,11 +231,13 @@ void Task::TaskThread(const boost::function0<void>& completion)
         catch(pov_base::Exception& e)
         {
             FatalErrorHandler(e);
+            failedText = e.what();
             failed = e.code(kUncategorizedError);
         }
         catch(std::exception& e)
         {
             FatalErrorHandler(POV_EXCEPTION_STRING(e.what()));
+            failedText = e.what();
             failed = kUncategorizedError;
         }
         catch(...)
@@ -259,11 +261,13 @@ void Task::TaskThread(const boost::function0<void>& completion)
     catch(pov_base::Exception& e)
     {
         FatalErrorHandler(e);
+        failedText = e.what();
         failed = e.code(kUncategorizedError);
     }
     catch(std::exception& e)
     {
         FatalErrorHandler(POV_EXCEPTION_STRING(e.what()));
+        failedText = e.what();
         failed = kUncategorizedError;
     }
     catch(...)
