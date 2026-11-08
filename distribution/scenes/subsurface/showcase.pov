@@ -33,7 +33,7 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 #case (3) camera { location <0.09,0.12,-0.06> look_at <0.13,0.095,0.17> angle 30 right x*image_width/image_height } #break // ear
 #case (4) camera { location <-0.06,0.15,-0.14> look_at <-0.095,0.08,0.14> angle 40 right x*image_width/image_height } #break // candle
 #case (5) camera { location <0.10,0.18,-0.12> look_at <0.20,0.10,0.26> angle 40 right x*image_width/image_height } #break // lantern
-#case (6) camera { location <0.17,0.12,-0.12> look_at <0.21,0.02,0.07> angle 30 right x*image_width/image_height } #break // grapes
+#case (6) camera { location <0.17,0.11,-0.04> look_at <0.225,0.03,0.17> angle 30 right x*image_width/image_height } #break // grapes
 #case (7) camera { location <-0.17,0.15,-0.05> look_at <-0.21,0.06,0.24> angle 36 right x*image_width/image_height } #break // panel
 #case (8) camera { location <-0.10,0.22,-0.30> look_at <-0.12,0.0,-0.07> angle 38 right x*image_width/image_height } #break // scroll
 #end
@@ -296,11 +296,11 @@ union {
 
 // ================================================================ grapes
 #macro GrapeTex()
- texture { pigment { granite turbulence 0.3 scale 0.01 colour_map { [0 rgb <0.62,0.66,0.16>] [1 rgb <0.72,0.64,0.20>] } }
+ texture { pigment { granite turbulence 0.3 scale 0.01 colour_map { [0 rgb <0.74,0.72,0.16>] [1 rgb <0.82,0.66,0.18>] } }
   #if (Normals) normal { bumps 0.06 scale 0.0015 } #end
   finish { diffuse 0.7 specular 0.55 roughness 0.012 subsurface { method 2 translucency <9,8,2.4> colour rgb 0.95 thickness 0.4 } } }
  #if (Pigments)
- texture { pigment { granite scale 0.0007 colour_map { [0 rgbt <0.85,0.88,0.80,0.55>] [0.5 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>] } } finish { diffuse 0.8 specular 0 } }
+ texture { pigment { granite scale 0.0004 colour_map { [0 rgbt <0.9,0.9,0.85,0.82>] [0.35 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>] } } finish { diffuse 0.8 specular 0 } }
  #end
 #end
 union {
@@ -311,10 +311,13 @@ union {
   #local P=GP[J]+<rand(S)-0.5,0,rand(S)-0.5>*0.002;
   #local R=0.0095+rand(S)*0.0015;
   sphere { 0,1 scale <R,R*1.12,R> rotate <rand(S)*360,0,rand(S)*360> translate P GrapeTex() interior { ior 1.35 } }
-  cylinder { P+y*R*0.9,P+<0,R+0.006,0>,0.0007 pigment { rgb <0.25,0.20,0.07> } }
+  #local D=vnormalize(<0.003,0.032,0>-P);
+  cylinder { P+D*R*0.9,P+D*(R+0.005),0.0007 pigment { rgb <0.30,0.24,0.08> } }
+  sphere { P+D*R*0.98,0.0012 pigment { rgb <0.30,0.24,0.08> } }
  #end
  sphere_sweep { linear_spline 4, <0.002,0.031,0.0>,0.0012, <0.004,0.034,0.004>,0.0012, <0.012,0.038,0.012>,0.0011, <0.024,0.040,0.020>,0.001 pigment { rgb <0.28,0.22,0.08> } }
- translate <0.215,0,0.065>
+ rotate y*-30
+ translate <0.225,0,0.17>
  tags { "grapes" }
 }
 
