@@ -122,9 +122,12 @@ Changed Behaviour
     medium's own emission lights it as before. The container is told apart
     by identity, not position. A scalar or RGB vector self share retains
     any fraction from 0 to 1 per channel; all channels must be finite.
-    Default `self on` (1), `off` is 0; a surface light refuses any explicit
-    self setting. `self` is contextual and remains a free identifier
-    elsewhere.
+    Default `self on` (1), `off` is 0. A surface light takes the same
+    setting: its object receives its own emission and the self share of
+    its bounce, on camera rays, beneath the surface (subsurface method 2),
+    through progressive photons and in its next pass, while other objects
+    receive the whole bounce. `self` is contextual and remains a free
+    identifier elsewhere.
     Progressive photon maps now use format version 4 to retain each
     source's self share; older saved maps must be regenerated.
 

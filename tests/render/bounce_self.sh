@@ -1,6 +1,7 @@
 #!/bin/sh
 # bounce_self.sh <povray> <srcdir>: with bounce { self off } a lone cloud, glowing or not, renders as without bounce while
-# its bounce lights a second cloud and a floor, alike on any thread count; surface lights refuse it, 4.0 scenes take it.
+# its bounce lights a second cloud and a floor, alike on any thread count; an open box with a surface light keeps
+# its own bounce off itself in the same way, beneath the surface and through photons too; 4.0 scenes take it.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -75,12 +76,68 @@ echo "$(regions sceneoff) $(regions sceneon)" | awk '{ if (!($5 > $2)) exit 1 }'
 render one Declare=Scene=1 Declare=Bounce=2 Declare=Self=0 +wt1
 render four Declare=Scene=1 Declare=Bounce=2 Declare=Self=0 +wt4
 same one four "a scene without self bounce differs on four threads"
-cat > surface.pov <<'EOF'
-box { 0, 1 pigment { rgb 1 } light { bounce { self off } } }
+# Surface lights: an open box lit inside faces itself, so its own bounce reaches it.
+surface() {
+    name=$1; shift
+    "$POVRAY" +i"$SRCDIR/tests/render/bounce_self_surface.pov" +w$W +h$H +pr -a -d -p -v -gp +fp16 File_Gamma=1 \
+        +o"$name.ppm" "$@" > "$name.log" 2>&1 || { cat "$name.log"; exit 1; }
+    tail -c $(( 6 * W * H )) "$name.ppm" > "$name.pixels"
+}
+surface snone +wt3
+surface soff Declare=Bounce=2 Declare=Self=0 +wt3
+surface son Declare=Bounce=2 +wt3
+same snone soff "a lone surface without self bounce differs from one without bounce"
+[ "$(sum son)" -gt "$(sum snone)" ] || { echo "bounce_self: self bounce does not brighten a lone surface" >&2; exit 1; }
+surface shalf Declare=Bounce=1 Declare=Self=0.5 +wt3
+surface sfull Declare=Bounce=1 +wt3
+surface stint Declare=Bounce=1 Declare=Tint=1 +wt3
+midpoint snone shalf sfull "a surface's scalar self share does not scale its bounce on itself"
+echo "$(sum snone) $(sum stint) $(sum sfull)" | awk '{ if (!($2 > $1 && $2 < $3)) exit 1 }' ||
+    { echo "bounce_self: an RGB surface self share does not scale its bounce" >&2; exit 1; }
+surface shalf2 Declare=Bounce=2 Declare=Self=0.5 +wt3
+[ "$(sum shalf2)" -gt "$(sum shalf)" ] && [ "$(sum shalf2)" -lt "$(sum son)" ] ||
+    { echo "bounce_self: a surface's fractional share did not scale its later orders" >&2; exit 1; }
+surface sglow Declare=Emit=1 +wt3
+surface sglowoff Declare=Emit=1 Declare=Bounce=1 Declare=Self=0 +wt3
+surface sglowon Declare=Emit=1 Declare=Bounce=1 +wt3
+echo "$(sum sglow) $(sum sglowoff) $(sum sglowon)" | awk '
+    { d=$2-$1; if (d<0) d=-d; if (d>0.02*$1 || !($3>$2)) exit 1 }' ||
+    { echo "bounce_self: a glowing surface without self bounce lost or gained its own emission" >&2; exit 1; }
+surface smask Declare=Scene=1 Declare=Mask=1 +wt3
+# Per region, the summed pixels: the floor, then the box.
+sregions() {
+    values smask > smask.values; values "$1" > "$1.values"
+    paste smask.values "$1.values" | awk '{ r = $1 > 0 ? 1 : 0; s[r] += $2 } END { print s[0], s[1] }'
+}
+surface sscene Declare=Scene=1 +wt3
+surface ssceneoff Declare=Scene=1 Declare=Bounce=1 Declare=Self=0 +wt3
+surface ssceneon Declare=Scene=1 Declare=Bounce=1 +wt3
+echo "$(sregions sscene) $(sregions ssceneoff) $(sregions ssceneon)" |
+    awk '{ if (!($3 > $1) || $4 != $2 || $5 != $3 || !($6 > $4)) exit 1 }' ||
+    { sregions sscene; sregions ssceneoff; sregions ssceneon
+      echo "bounce_self: without self bounce a surface must keep its look and light the floor in full" >&2; exit 1; }
+surface sone Declare=Scene=1 Declare=Bounce=2 Declare=Self=0.5 +wt1
+surface sfour Declare=Scene=1 Declare=Bounce=2 Declare=Self=0.5 +wt4
+same sone sfour "a surface with a self share differs on four threads"
+surface ssubnone Declare=Subsurface=1 +wt3
+surface ssuboff Declare=Subsurface=1 Declare=Bounce=1 Declare=Self=0 +wt3
+surface ssubon Declare=Subsurface=1 Declare=Bounce=1 +wt3
+same ssubnone ssuboff "a subsurface surface without self bounce differs from one without bounce"
+[ "$(sum ssubon)" -gt "$(sum ssubnone)" ] || { echo "bounce_self: self bounce does not reach beneath a surface" >&2; exit 1; }
+surface sphnone Declare=Photons=1 Declare=Emit=1 +wt2
+surface sphoff Declare=Photons=1 Declare=Emit=1 Declare=Bounce=1 Declare=Self=0 +wt2
+surface sphon Declare=Photons=1 Declare=Emit=1 Declare=Bounce=1 +wt2
+echo "$(sum sphnone) $(sum sphoff) $(sum sphon)" | awk '
+    { d=$2-$1; if (d<0) d=-d; if (d>0.02*$1 || !($3>$2)) exit 1 }' ||
+    { echo "$(sum sphnone) $(sum sphoff) $(sum sphon)"
+      echo "bounce_self: photons returning a surface's own bounce ignored its self share" >&2; exit 1; }
+cat > surface.pov4 <<'EOF'
+light_source { <0.3, 0.6, -0.6>, rgb 3 }
+difference { box { -1, 1 } box { <-0.9, -0.9, -1.1>, <0.9, 0.9, 0.9> }
+  pigment { rgb 0.8 } finish { diffuse 0.8 } light { samples 2 bounce { passes 1 self off } } }
 EOF
-"$POVRAY" +isurface.pov +w8 +h8 -d -p -f > surface.log 2>&1 && { cat surface.log; echo "bounce_self: a surface light took self off" >&2; exit 1; }
-tr -s '\n ' '  ' < surface.log | grep -q 'Bounce self is for interior lights, not surface lights' ||
-    { cat surface.log; exit 1; }
+"$POVRAY" +isurface.pov4 +w8 +h8 -d -p -f > surface.log 2>&1 ||
+    { cat surface.log; echo "bounce_self: a 4.0 surface refused self off" >&2; exit 1; }
 cat > scene.pov4 <<'EOF'
 light_source { <0, 3, -3>, rgb 1 }
 box { -1, 1 pigment { rgbt 1 } hollow
@@ -95,11 +152,6 @@ for scale in '-0.1' '1.1' '<0,1.1,0>' 'rgb <0,-0.1,0>' '1e300*1e300' '' 'passes 
     sed "s/self off/self $scale/" scene.pov4 > invalid.pov4
     "$POVRAY" +iinvalid.pov4 +w8 +h8 -d -p -f > invalid.log 2>&1 &&
         { echo "bounce_self: invalid share $scale was accepted" >&2; exit 1; }
-done
-for scale in 'on' '0.5' 'rgb <0,0.5,1>'; do
-    sed "s/self off/self $scale/" surface.pov > invalid.pov
-    "$POVRAY" +iinvalid.pov +w8 +h8 -d -p -f > invalid.log 2>&1 &&
-        { echo "bounce_self: surface self $scale was accepted" >&2; exit 1; }
 done
 for photons in 0 1; do
     "$POVRAY" +i"$SRCDIR/tests/render/bounce_self_photons.pov" +w$W +h$H +pr -a -d -p -v -gp +fp16 File_Gamma=1 \

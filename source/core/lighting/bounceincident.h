@@ -27,10 +27,21 @@ struct BounceIncidentBeam final
 
 // Source emitters and the supplied Trace's shadow-media evaluator must read the immutable previous order. A receiver
 // with a radius stands for the region about it: a light nearer than that is seen from all of it (Ray::ReceiverRadius).
+// Lights a bounce receiver gathers, each with its multiplier; no scales for all 1.
+struct Sources final
+{
+    std::vector<LightSource*> lights;
+    std::vector<MathColour> scales;
+    bool operator==(const Sources& other) const { return lights == other.lights && scales.size() == other.scales.size() &&
+        std::equal(scales.begin(), scales.end(), other.scales.begin(),
+                   [](const MathColour& a, const MathColour& b) { return (a - b).IsZero(); }); }
+};
+
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     Trace& trace, const Vector3d& point, const std::vector<LightSource*>& sources,
     unsigned int samplesPerSource, std::uint64_t key, TraceTicket& ticket,
-    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0)
+    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0,
+    const std::vector<MathColour>* scales = nullptr)
 {
     std::vector<BounceIncidentBeam> beams;
     if (samplesPerSource == 0)
@@ -51,7 +62,7 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     }
     for (std::size_t source = 0; source < sources.size(); ++source)
     {
-        if (sources[source] == nullptr)
+        if (sources[source] == nullptr || (scales && (*scales)[source].IsZero()))
             continue;
         const LightSource& light = *sources[source];
         for (unsigned int sample = 0; sample < samplesPerSource; ++sample)
@@ -103,6 +114,8 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             // side; an emitter's draws already spread over its own extent.
             const double directed = !light.emitter && depth < receiverRadius ? depth / receiverRadius : 1.0;
             const double distance = depth > 0.0 ? depth : HUGE_VAL;
+            if (scales)
+                incoming *= (*scales)[source];
             if (positive && directed > 0.0)
                 beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * (share * directed), distance});
             if (positive && directed < 1.0)
@@ -117,11 +130,12 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     Trace& trace, const Vector3d& point, const std::vector<LightSource*>& sources,
     unsigned int samplesPerSource, std::uint64_t key,
-    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0)
+    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0,
+    const std::vector<MathColour>* scales = nullptr)
 {
     TraceTicket ticket(256, 0.0);
     return CollectBounceIncident(trace, point, sources, samplesPerSource, key, ticket, receiverHit, receiverNormal,
-                                 receiverRadius);
+                                 receiverRadius, scales);
 }
 
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(

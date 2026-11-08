@@ -402,15 +402,6 @@ inline bool EmitsPreparedSource(const LightSource& light)
     return !light.emitter || light.emitter->IsSurface() || light.emitter->HasVolumeEmission();
 }
 
-struct Sources final
-{
-    std::vector<LightSource*> lights;
-    std::vector<MathColour> scales;
-    bool operator==(const Sources& other) const { return lights == other.lights && scales.size() == other.scales.size() &&
-        std::equal(scales.begin(), scales.end(), other.scales.begin(),
-                   [](const MathColour& a, const MathColour& b) { return (a - b).IsZero(); }); }
-};
-
 // The previous order's lights a volume target gathers, its own bounced light scaled by its self share.
 inline Sources VolumeSources(const Target& target, unsigned int order,
                              const std::vector<std::shared_ptr<LightSource>>& previous,
@@ -558,17 +549,23 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         std::vector<SharedGroup> groups;
         std::vector<std::size_t> active, activeTarget(targets.size(), SIZE_MAX);
         std::vector<double> activeGain;
-        std::vector<std::vector<LightSource*>> activeSources;
+        std::vector<Sources> activeSources;
         for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex)
         {
             const Target& target = targets[targetIndex];
             if (!target.surface || order > target.passes)
                 continue;
-            std::vector<LightSource*> sources;
+            // Its own bounced light is gathered at its self share; a zero share keeps its place so others draw alike.
+            Sources sources;
+            const bool scaled = !(target.self - MathColour(1.0)).IsZero();
             for (size_t source = 0; source < previous.size(); ++source)
                 if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
                     Receives(target.light->emitterContainer, previousOriginal[source]))
-                    sources.push_back(previous[source].get());
+                {
+                    sources.lights.push_back(previous[source].get());
+                    if (scaled)
+                        sources.scales.push_back(order > 1 && previousOriginal[source] == target.light ? target.self : MathColour(1.0));
+                }
             activeTarget[targetIndex] = active.size();
             active.push_back(target.part);
             activeGain.push_back(target.gain);
@@ -815,10 +812,24 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     {
         if (target.surface)
         {
+            const auto owner = const_cast<ObjectPtr>(target.light->emitterContainer);
             const auto field =
                 std::make_shared<const SumSurfaceBounceRadiance>(std::move(target.surfaceOrders));
-            target.light->emitter = MakeBouncedSurfaceEmitter(
-                target.primary, const_cast<ObjectPtr>(target.light->emitterContainer), field, true);
+            // Its own surface receives the light as it was before bouncing and the self share of the bounce.
+            if (!(target.self - MathColour(1.0)).IsZero())
+            {
+                if (!target.primary->Intensity().IsZero() || !target.self.IsZero())
+                {
+                    target.light->ownLight = Clone(target.light);
+                    target.light->ownLight->emitter = MakeBouncedSurfaceEmitter(
+                        target.primary, owner, std::make_shared<const TintedSurfaceBounceRadiance>(field, target.self), true);
+                    target.light->ownLight->colour = target.light->ownLight->emitter->Intensity() / M_PI;
+                    target.light->ownLight->Center = target.light->ownLight->emitter->Centre();
+                    target.light->ownLight->lawRadius = target.light->ownLight->emitter->Radius();
+                }
+                target.light->ownSurface = owner;
+            }
+            target.light->emitter = MakeBouncedSurfaceEmitter(target.primary, owner, field, true);
         }
         else
         {

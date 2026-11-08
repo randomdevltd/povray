@@ -1169,6 +1169,8 @@ class Trace
         /// @return                         True if `object` is part of, or identical to, `parent`.
         ///
         bool IsObjectInCSG(ConstObjectPtr object, ConstObjectPtr parent);
+        /// The light as the object receives it: a surface bounce light's own object receives its ownLight; null for none.
+        const LightSource* LightOnObject(const LightSource& light, ConstObjectPtr object);
 
 
     ///

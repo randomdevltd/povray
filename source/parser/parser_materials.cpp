@@ -3981,7 +3981,7 @@ double Parser::Parse_Light_Samples()
     return multiplier;
 }
 
-void Parser::Parse_Light_Bounce(MediaLight& light, bool surface)
+void Parser::Parse_Light_Bounce(MediaLight& light)
 {
     light.bouncePasses = 1;
     if (!Peek_Token(LEFT_CURLY_TOKEN))
@@ -4007,8 +4007,6 @@ void Parser::Parse_Light_Bounce(MediaLight& light, bool surface)
                 if (haveSelf)
                     Error("A bounce block accepts only one self setting.");
                 haveSelf = true;
-                if (surface)
-                    Error("Bounce self is for interior lights, not surface lights.");
                 Get_Token();
                 switch (CurrentCategorizedTokenId())
                 {
@@ -4115,7 +4113,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             {
                 if (light->bouncePasses != 0)
                     Error("A light block accepts only one bounce setting.");
-                Parse_Light_Bounce(*light, surface);
+                Parse_Light_Bounce(*light);
             }
             else if (CurrentTokenText() == "attenuation")
             {

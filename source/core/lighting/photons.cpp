@@ -476,6 +476,9 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             else if (dot(photon.normal, ray.Direction) > 0.0)
                 photon.normal.invert();
             photon.flux = LightCol * PhotonPathWeight(threadData->photonSourceLight, threadData->photonDepth);
+            if (threadData->photonSourceLight->ownSurface != nullptr &&
+                IsObjectInCSG(isect.Object, threadData->photonSourceLight->ownSurface))
+                photon.flux *= threadData->photonSelfShare;
             photon.physicalFlux = threadData->photonSourceLight->emitter != nullptr;
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();

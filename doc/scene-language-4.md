@@ -134,8 +134,10 @@ are errors. The default is `on` (1); `off` is 0. `self` may appear at most once.
 `bounce { self off }` keeps an interior light's
 bounced light off its own container's media, at the camera and in its own next
 pass, while it still lights surfaces and other media; the medium's own emission
-lights it as before. A surface light refuses it: `Bounce self is for
-interior lights, not surface lights.`
+lights it as before. A surface light takes the same setting: its own object
+receives its own emission and the self share of its bounce, which matters only
+where it faces itself (a concave or composite shape), while every other object
+receives the whole bounce.
 
 A light block emits light of its own only from an explicit `pigment` or `emission`
 input. Without one, a block without `bounce` is a solid white pigment light, and a
