@@ -288,6 +288,8 @@ typedef enum INTSTATS
     Shadow_Cache_Hits,
     Shadow_Rays_Succeeded,
     Shadow_Ray_Tests,
+    Shadow_Walks,       ///< shadow walks that reached the scene hierarchy
+    Shadow_Crossings,   ///< see-through boundaries those walks filtered
 
     nChecked,
     nEnqueued,

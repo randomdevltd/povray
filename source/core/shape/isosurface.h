@@ -132,6 +132,8 @@ class IsoSurface final : public ObjectBase
         virtual ObjectPtr Copy() override;
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
+        /// Past max_trace only for a root query that asks for all roots (RayRootQuery::AllRoots()), as a gathering shadow walk does.
+        virtual bool ReturnsAllRoots() const override { return true; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual double GetPotential (const Vector3d&, bool subtractThreshold, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;

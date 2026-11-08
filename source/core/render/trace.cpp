@@ -3813,28 +3813,26 @@ struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
 {
     ConstObjectPtr missed = nullptr; // already found not to cross the ray within its reach
     bool includeMedia = false;
+    void Miss(ConstObjectPtr object) { missed = object; }
     virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override
     {
         return (object != missed) && ((!Test_Flag(object, NO_SHADOW_FLAG)) || (includeMedia && object->interior));
     }
 };
 
-// Any opaque hit in the shadow window blacks the light out, whether or not it is the nearest.
-struct OpaqueShadowStopCondition final : public IntersectionStopCondition
+const std::vector<std::uint8_t>& Trace::RootByRootLeaves(PreparedSetId set, const std::vector<const void *>& tree)
 {
-    double farthest;
-    bool blocking;
-
-    explicit OpaqueShadowStopCondition(double limit, bool blocking = true) : farthest(limit), blocking(blocking) {}
-
-    virtual bool operator()(const Intersection& isect) const override
+    if (rootByRootLeaves.size() <= set)
+        rootByRootLeaves.resize(set + 1);
+    std::vector<std::uint8_t>& leaves = rootByRootLeaves[set];
+    if (leaves.size() != tree.size())
     {
-        if (isect.Depth >= farthest)
-            return false;
-        ConstObjectPtr testObject = (isect.Csg != nullptr ? isect.Csg : isect.Object);
-        return blocking && !Test_Flag(isect.Object, NO_SHADOW_FLAG) && Test_Flag(isect.Object, OPAQUE_FLAG) && Test_Flag(testObject, OPAQUE_FLAG);
+        leaves.resize(tree.size());
+        for (size_t i = 0; i < tree.size(); i++)
+            leaves[i] = reinterpret_cast<ConstObjectPtr>(tree[i])->ReturnsAllRoots() ? 0 : 1;
     }
-};
+    return leaves;
+}
 
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
@@ -3844,7 +3842,6 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     const double startTolerance = (lightsource.emitter && lightsource.emitter->IsSurface()) || exact ? 0.0 : SHADOW_TOLERANCE;
     Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
-    ConstObjectPtr cacheOwner = nullptr;
     bool foundTransparentObjects = false;
     bool foundIntersection;
 
@@ -3885,146 +3882,248 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     ShadowSegmentWalker postcond(connectionDepth, startTolerance,
         std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth), &query);
 
-    // check for object in the light source shadow cache (object that fully shadowed during last test) first
     const RayRootQueryDisabled restoreQuery(query);
 
-    const size_t cacheSlot = lightsourceray.GetPreparedSetId() * shadowCacheLights + lightsource.index;
-    if(lightsource.lightGroupLight == false &&
-       (!lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)))) // only cache geometric blockers
+    // Only geometric blockers are cached: an opaque surface then clears the light whatever lies around it.
+    const bool cacheable = (lightsource.lightGroupLight == false) && qualityFlags.shadows &&
+        (!lightsource.emitter || (lightsource.Light_Type != FILL_LIGHT_SOURCE));
+    const PreparedSetId setId = lightsourceray.GetPreparedSetId();
+    const size_t cacheSlot = setId * shadowCacheLights + lightsource.index;
+    const double limit = std::min(lightsourcedepth - endpointTolerance, lightsourcedepth - projectedDepth);
+    // Whether a blocker's nearest root in the walk's window is an opaque surface; a whole object that misses it is left out of the walk.
+    auto opaqueFirst = [&](const ShadowCacheEntry& entry) -> bool
     {
-        const ShadowCacheEntry& entry = ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot].object != nullptr)) ?
-            lightSourceLevel1ShadowCache[cacheSlot] : lightSourceOtherShadowCache[cacheSlot];
-        cacheObject = entry.object;
-        cacheOwner = entry.owner;
-
-        // if there was an object in the light source shadow cache, check that first
-        if (cacheObject != nullptr)
+        // Same window as the walk below, so a thread's earlier rays cannot change what shadows this one.
+        const IsoShadowWindow window(threadData, startTolerance, limit);
+        // The window reaches the shape's own root search, so a root before it cannot hide the roots after it.
+        query.SetRootQuery(&postcond);
+        // The walk's box for the object is looser than this exact one, so only a miss its roots were asked for leaves it out.
+        const bool asked = query.HasExactShadowWindow() || RayEntersBox(entry.object, query, limit);
+        if (!((Test_Flag(entry.object, OPAQUE_FLAG) && entry.object->Shadow_Hint_Intersection(query, &boundedIntersection, threadData) &&
+               (boundedIntersection.Depth > startTolerance) && (boundedIntersection.Depth < limit) &&
+               postcond.Admit(entry.owner, boundedIntersection.Depth)) ||
+              (asked && Find_Intersection_BBox_Passed(&boundedIntersection, entry.object, query, HeldRootCondition(postcond, entry.owner), threadData))))
         {
-            // Same window as the walk below, so a thread's earlier rays cannot change what shadows this one.
-            const double limit = std::min(lightsourcedepth - endpointTolerance, lightsourcedepth - projectedDepth);
-            const IsoShadowWindow window(threadData, startTolerance, limit);
-            // The window reaches the shape's own root search, so a root before it cannot hide the roots after it.
-            query.SetRootQuery(&postcond);
-            // The walk's box for the object is looser than this exact one, so only a miss its roots were asked for leaves it out.
-            const bool asked = query.HasExactShadowWindow() || RayEntersBox(cacheObject, query, limit);
-            if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(query, &boundedIntersection, threadData) &&
-                 (boundedIntersection.Depth > startTolerance) && (boundedIntersection.Depth < limit) &&
-                 postcond.Admit(cacheOwner, boundedIntersection.Depth)) ||
-                (asked && Find_Intersection_BBox_Passed(&boundedIntersection, cacheObject, query, HeldRootCondition(postcond, cacheOwner), threadData)))
-            {
-                if(!Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG))
-                {
-                    // A part that lets light through is left to the walk below, which filters it once.
-                    const MathColour unfiltered = lightcolour;
-                    Ray cachedSegment(lightsourceray);
-                    ComputeShadowColour(lightsource, boundedIntersection, cachedSegment, lightcolour);
+            if (asked && (entry.object == entry.owner))
+                precond.Miss(entry.object);
+            return false;
+        }
+        ConstObjectPtr part = (boundedIntersection.Csg != nullptr) ? boundedIntersection.Csg : boundedIntersection.Object;
+        return !Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG) && Test_Flag(boundedIntersection.Object, OPAQUE_FLAG) &&
+               Test_Flag(part, OPAQUE_FLAG);
+    };
+    auto blocked = [&]()
+    {
+        lightcolour.Clear();
+        threadData->Stats()[Shadow_Ray_Tests]++;
+        threadData->Stats()[Shadow_Rays_Succeeded]++;
+        threadData->Stats()[Shadow_Cache_Hits]++;
+    };
 
-                    if(lightcolour.IsNearZero(EPSILON) &&
-                       (Test_Flag(boundedIntersection.Object, OPAQUE_FLAG)))
-                    {
-                        threadData->Stats()[Shadow_Ray_Tests]++;
-                        threadData->Stats()[Shadow_Rays_Succeeded]++;
-                        threadData->Stats()[Shadow_Cache_Hits]++;
-                        return;
-                    }
-                    lightcolour = unfiltered;
-                }
-                cacheObject = nullptr;
-            }
-            else
-            {
-                if (asked)
-                    precond.missed = cacheObject;
-                cacheObject = nullptr;
-            }
+    // Any opaque surface in the window blacks the light out, so the thread's last blocker toward this light is tried first.
+    if (cacheable)
+    {
+        const ShadowCacheEntry entry = ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot].object != nullptr)) ?
+            lightSourceLevel1ShadowCache[cacheSlot] : lightSourceOtherShadowCache[cacheSlot];
+        if ((entry.object != nullptr) && opaqueFirst(entry))
+        {
+            blocked();
+            return;
         }
     }
+    cacheObject = nullptr;
 
     foundTransparentObjects = false;
-    while(true)
+    const PreparedSet& walkView = sceneData->GetPreparedSet(query.GetPreparedSetId());
+    // A part the walk reaches only through bounded_by tests is cached as the outermost compound holding one.
+    auto cacheEntry = [&](ConstObjectPtr part, ConstObjectPtr owner)
     {
+        const ConstObjectPtr bounded = (part == owner) ? nullptr : owner->Bound.empty() ? walkView.BoundedAncestor(part, owner) : owner;
+        return ShadowCacheEntry{const_cast<ObjectPtr>(bounded != nullptr ? bounded : part), owner};
+    };
+    if (qualityFlags.shadows && (walkView.boundingMethod == 1) && (walkView.flatSlabs != nullptr))
+    {
+        // One traversal gathers every admitted root in the window; the boundaries are then filtered in depth order.
         cooperate();
-        query.SetRootQuery(&postcond);
-        boundedIntersection.Object = boundedIntersection.Csg = nullptr;
-        boundedIntersection.Depth = postcond.End();
         threadData->Stats()[Shadow_Ray_Tests]++;
+        threadData->Stats()[Shadow_Walks]++;
+        query.SetRootQuery(&postcond);
         postcond.Reset();
-        const PreparedSet& shadowView = sceneData->GetPreparedSet(query.GetPreparedSetId());
-        if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
+        postcond.Gather(true);
+        const bool blocking = !lightsource.emitter || (lightsource.Light_Type != FILL_LIGHT_SOURCE);
+        const double end = postcond.End();
+        const size_t first = shadowWalkHits.size();
+        ShadowCacheEntry opaque;
+        const std::vector<std::uint8_t>& rootByRoot = RootByRootLeaves(query.GetPreparedSetId(), walkView.flatSlabs->leaves);
         {
-            OpaqueShadowStopCondition stop(postcond.End(), !lightsource.emitter ||
-                (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)));
-            const IsoShadowWindow window(threadData, std::max(startTolerance, postcond.Cursor()), stop.farthest);
-            foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, query, &boundedIntersection, precond, postcond, stop, threadData,
-                                                         postcond.Cursor());
+            const IsoShadowWindow window(threadData, startTolerance, end);
+            const float minExit = query.HasExactShadowWindow() ? 0.0f : float(MIN_ISECT_DEPTH);
+            Traverse_Flat_BBox_Tree(*walkView.flatSlabs, query, end, true, threadData->Stats(), [&](std::int32_t leaf) {
+                ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(walkView.flatSlabs->leaves[leaf]));
+                if (!precond(query, object, 0.0))
+                    return false;
+                if (!object->Bound.empty() && !Ray_In_Bound(query, object->Bound, threadData))
+                    return false;
+                if (rootByRoot[leaf])
+                {
+                    // Its roots are asked for one at a time from the last, as the restarting walk asks the whole scene.
+                    for (;;)
+                    {
+                        Intersection root;
+                        if (!Find_Intersection_BBox_Passed(&root, object, query, postcond, threadData))
+                            break;
+                        ConstObjectPtr part = (root.Csg != nullptr) ? root.Csg : root.Object;
+                        if (blocking && !Test_Flag(root.Object, NO_SHADOW_FLAG) && Test_Flag(root.Object, OPAQUE_FLAG) && Test_Flag(part, OPAQUE_FLAG))
+                        {
+                            opaque = cacheEntry(part, object);
+                            postcond.Rewind();
+                            return true;
+                        }
+                        shadowWalkHits.push_back(ShadowWalkHit{root, object});
+                        postcond.Pass(object, root.Depth);
+                    }
+                    postcond.Rewind();
+                    return false;
+                }
+                IStack roots(threadData->stackPool);
+                const RayRootOwnerScope rootOwner(query, object);
+                if (!object->All_Intersections(query, roots, threadData))
+                    return false;
+                for (; roots->size() > 0; roots->pop())
+                {
+                    const Intersection& root = roots->top();
+                    if (!(query.IsSubsurfaceRay() || query.HasExactShadowWindow() || (root.Depth >= MIN_ISECT_DEPTH)) || !postcond.Admit(object, root.Depth))
+                        continue;
+                    ConstObjectPtr part = (root.Csg != nullptr) ? root.Csg : root.Object;
+                    if (blocking && !Test_Flag(root.Object, NO_SHADOW_FLAG) && Test_Flag(root.Object, OPAQUE_FLAG) && Test_Flag(part, OPAQUE_FLAG))
+                    {
+                        // any opaque boundary in the window blacks the light out, whatever lies before it
+                        opaque = cacheEntry(part, object);
+                        for (; roots->size() > 0; roots->pop()) {}
+                        return true;
+                    }
+                    shadowWalkHits.push_back(ShadowWalkHit{root, object});
+                }
+                return false;
+            }, minExit);
         }
-        else
-            foundIntersection = FindIntersection(boundedIntersection, query, precond, postcond);
-
-        if (foundIntersection)
+        if (opaque.object != nullptr)
         {
             threadData->Stats()[Shadow_Rays_Succeeded]++;
-            double depth = boundedIntersection.Depth;
-            // A nearer admitted root the query did not return is asked of its object alone, so no boundary is passed over.
-            if (!postcond.Coincides(depth) && (postcond.Selected() != nullptr) && (postcond.SelectedDepth() < depth))
+            lightcolour.Clear();
+            if (lightsource.lightGroupLight == false)
             {
-                const ObjectPtr nearer = const_cast<ObjectPtr>(postcond.Selected());
-                const double at = postcond.SelectedDepth();
-                const IsoShadowWindow window(threadData, std::max(startTolerance, postcond.Cursor()), postcond.End());
-                Intersection again;
-                postcond.Reset();
-                if (!FindIntersection(nearer, again, query, postcond, std::nextafter(at, HUGE_VAL)))
-                {
-                    postcond.Pass(nearer, at);
-                    continue;
-                }
-                boundedIntersection = again;
-                depth = again.Depth;
+                if (lightsourceray.GetTicket().traceLevel == 2)
+                    lightSourceLevel1ShadowCache[cacheSlot] = opaque;
+                else
+                    lightSourceOtherShadowCache[cacheSlot] = opaque;
             }
-            boundedIntersection.Depth = depth - postcond.Cursor();
-            if (boundedIntersection.Depth < 0.0 || !IsFiniteIntersectionDepth(boundedIntersection.Depth))
-                throw POV_EXCEPTION_STRING("Shadow traversal produced an invalid segment.");
-            ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
-
-            ObjectPtr testObject(boundedIntersection.Csg != nullptr ? boundedIntersection.Csg : boundedIntersection.Object);
-
-            if(lightcolour.IsNearZero(EPSILON) &&
-               (Test_Flag(testObject, OPAQUE_FLAG)))
-            {
-                // Hit a fully opaque object; cache that object, so that next time we can test for it first;
-                // don't cache for light groups though (why not??)
-
-                if((lightsource.lightGroupLight == false) && (foundTransparentObjects == false))
-                {
-                    // The walk admitted the roots as the object it was given, which an emitter's endpoint is matched against.
-                    ConstObjectPtr owner = postcond.Selected() != nullptr ? postcond.Selected() : testObject;
-                    // A part the walk reaches only through bounded_by tests is cached as the outermost compound holding one.
-                    ConstObjectPtr cached = testObject;
-                    if (owner != testObject)
-                    {
-                        const ConstObjectPtr bounded = owner->Bound.empty() ? shadowView.BoundedAncestor(testObject, owner) : owner;
-                        if (bounded != nullptr)
-                            cached = bounded;
-                    }
-                    cacheObject = const_cast<ObjectPtr>(cached);
-                    const ShadowCacheEntry entry{cacheObject, owner};
-
-                    if(lightsourceray.GetTicket().traceLevel == 2)
-                        lightSourceLevel1ShadowCache[cacheSlot] = entry;
-                    else
-                        lightSourceOtherShadowCache[cacheSlot] = entry;
-                }
-                break;
-            }
-
-            foundTransparentObjects = true;
-            postcond.Commit(depth);
-            lightsourcedepth = postcond.Remaining();
-            lightsourceray.Origin = boundedIntersection.IPoint;
+            shadowWalkHits.resize(first);
+            return;
         }
-        else
-            // No further intersections in the direction of the ray.
-            break;
+        if (shadowWalkHits.size() - first > 1)
+            std::sort(shadowWalkHits.begin() + first, shadowWalkHits.end(),
+                      [](const ShadowWalkHit& a, const ShadowWalkHit& b) { return a.isect.Depth < b.isect.Depth; });
+        double cursor = 0.0;
+        for (size_t i = first; i < shadowWalkHits.size(); i++)
+        {
+            // copied, as filtering may grow the list
+            ShadowWalkHit hit = shadowWalkHits[i];
+            const double depth = hit.isect.Depth;
+            // One object's boundary returned twice within a few ulps (a mesh edge, two tests of one face) is crossed once.
+            bool crossed = false;
+            for (size_t j = i; (j > first) && CoincidentDepths(shadowWalkHits[j - 1].isect.Depth, depth); j--)
+                crossed = crossed || (shadowWalkHits[j - 1].owner == hit.owner);
+            if (crossed)
+            {
+                shadowWalkHits[i].owner = nullptr;
+                continue;
+            }
+            threadData->Stats()[Shadow_Rays_Succeeded]++;
+            threadData->Stats()[Shadow_Crossings]++;
+            hit.isect.Depth = depth - cursor;
+            ComputeShadowColour(lightsource, hit.isect, lightsourceray, lightcolour);
+            ObjectPtr testObject(hit.isect.Csg != nullptr ? hit.isect.Csg : hit.isect.Object);
+            if (lightcolour.IsNearZero(EPSILON) && Test_Flag(testObject, OPAQUE_FLAG))
+                break;
+            foundTransparentObjects = true;
+            cursor = depth;
+            lightsourceray.Origin = hit.isect.IPoint;
+        }
+        shadowWalkHits.resize(first);
+        lightsourcedepth = connectionDepth - cursor;
+    }
+    else
+    {
+        // Without the flat tree (bounding off) the walk asks the scene again past each boundary it crosses.
+        threadData->Stats()[Shadow_Walks]++;
+        while(true)
+        {
+            cooperate();
+            query.SetRootQuery(&postcond);
+            boundedIntersection.Object = boundedIntersection.Csg = nullptr;
+            boundedIntersection.Depth = postcond.End();
+            threadData->Stats()[Shadow_Ray_Tests]++;
+            postcond.Reset();
+            foundIntersection = FindIntersection(boundedIntersection, query, precond, postcond);
+
+            if (foundIntersection)
+            {
+                threadData->Stats()[Shadow_Rays_Succeeded]++;
+                double depth = boundedIntersection.Depth;
+                // A nearer admitted root the query did not return is asked of its object alone, so no boundary is passed over.
+                if (!postcond.Coincides(depth) && (postcond.Selected() != nullptr) && (postcond.SelectedDepth() < depth))
+                {
+                    const ObjectPtr nearer = const_cast<ObjectPtr>(postcond.Selected());
+                    const double at = postcond.SelectedDepth();
+                    const IsoShadowWindow window(threadData, std::max(startTolerance, postcond.Cursor()), postcond.End());
+                    Intersection again;
+                    postcond.Reset();
+                    if (!FindIntersection(nearer, again, query, postcond, std::nextafter(at, HUGE_VAL)))
+                    {
+                        postcond.Pass(nearer, at);
+                        continue;
+                    }
+                    boundedIntersection = again;
+                    depth = again.Depth;
+                }
+                boundedIntersection.Depth = depth - postcond.Cursor();
+                if (boundedIntersection.Depth < 0.0 || !IsFiniteIntersectionDepth(boundedIntersection.Depth))
+                    throw POV_EXCEPTION_STRING("Shadow traversal produced an invalid segment.");
+                ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
+
+                ObjectPtr testObject(boundedIntersection.Csg != nullptr ? boundedIntersection.Csg : boundedIntersection.Object);
+
+                if(lightcolour.IsNearZero(EPSILON) &&
+                   (Test_Flag(testObject, OPAQUE_FLAG)))
+                {
+                    // Hit a fully opaque object; cache that object, so that next time we can test for it first;
+                    // don't cache for light groups though (why not??)
+
+                    if((lightsource.lightGroupLight == false) && (foundTransparentObjects == false))
+                    {
+                        // The walk admitted the roots as the object it was given, which an emitter's endpoint is matched against.
+                        const ShadowCacheEntry entry = cacheEntry(testObject, postcond.Selected() != nullptr ? postcond.Selected() : testObject);
+                        cacheObject = entry.object;
+
+                        if(lightsourceray.GetTicket().traceLevel == 2)
+                            lightSourceLevel1ShadowCache[cacheSlot] = entry;
+                        else
+                            lightSourceOtherShadowCache[cacheSlot] = entry;
+                    }
+                    break;
+                }
+
+                foundTransparentObjects = true;
+                threadData->Stats()[Shadow_Crossings]++;
+                postcond.Commit(depth);
+                lightsourcedepth = postcond.Remaining();
+                lightsourceray.Origin = boundedIntersection.IPoint;
+            }
+            else
+                // No further intersections in the direction of the ray.
+                break;
+        }
     }
 
     if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && sceneData->interiorMedia &&

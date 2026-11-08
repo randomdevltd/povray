@@ -306,6 +306,8 @@ class Mesh final : public ObjectBase
         virtual ObjectPtr Copy() override;
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
+        /// Without an inside vector it culls the triangles past its nearest hit.
+        virtual bool ReturnsAllRoots() const override { return has_inside_vector; }
         /// All_Intersections less the hits behind the nearest, whose boxes are skipped: for callers that take the nearest only.
         bool Nearest_Intersections(const Ray&, IStack&, TraceThreadData *);
         virtual bool Shadow_Hint_Intersection(const Ray&, Intersection *, TraceThreadData *) override;

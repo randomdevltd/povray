@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
 #include <string>
 
 // POV-Ray header files (base module)
@@ -812,6 +813,11 @@ ObjectPtr CompoundObject::Invert()
         *Current_Sib = (*Current_Sib)->Invert();
     Invert_Flag(this, INVERTED_FLAG);
     return this;
+}
+
+bool CompoundObject::ReturnsAllRoots() const
+{
+    return std::all_of(children.begin(), children.end(), [](ConstObjectPtr child) { return child->ReturnsAllRoots(); });
 }
 
 bool ObjectBase::Intersect_BBox(BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, BBoxScalar maxd) const

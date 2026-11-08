@@ -157,6 +157,8 @@ class Blob final : public ObjectBase
         virtual ObjectPtr Copy() override;
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
+        /// Outside a compound its root search stops at the first interval holding a root.
+        virtual bool ReturnsAllRoots() const override { return (Type & IS_CHILD_OBJECT) != 0; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual double GetPotential (const Vector3d&, bool subtractThreshold, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;

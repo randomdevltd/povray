@@ -477,7 +477,13 @@ class Trace
         std::vector<ShadowCacheEntry> lightSourceLevel1ShadowCache;
         /// Light source shadow cache for shadow tests of higher trace level intersections.
         std::vector<ShadowCacheEntry> lightSourceOtherShadowCache;
+        /// One shadow walk's admitted roots with the scene object each belongs to, kept across walks to reuse the storage.
+        struct ShadowWalkHit { Intersection isect; ConstObjectPtr owner; };
+        std::vector<ShadowWalkHit> shadowWalkHits;
         size_t shadowCacheLights;
+        /// Per prepared set, which leaves of its flat tree a shadow walk asks one root at a time (see ObjectBase::ReturnsAllRoots()).
+        std::vector<std::vector<std::uint8_t>> rootByRootLeaves;
+        const std::vector<std::uint8_t>& RootByRootLeaves(PreparedSetId set, const std::vector<const void *>& tree);
         /// Sub-random uniform directions; each diffuse subsurface sample takes one at a keyed place.
         IndexedVectorGeneratorPtr ssltUniformDirections;
         /// Whether a random draw has shaped the result since @ref ClearGrain().

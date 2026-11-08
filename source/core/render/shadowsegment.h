@@ -56,6 +56,11 @@ public:
         }
         return true;
     }
+    /// A walk that gathers every root in one pass asks shapes that bound their root search (an isosurface's max_trace) for all of them.
+    bool AllRoots() const override { return gather; }
+    void Gather(bool all) { gather = all; }
+    /// Back to the start of the segment, as when a one-pass gather has walked one object's roots one by one.
+    void Rewind() { cursor = 0.0; crossed.clear(); }
     void Reset() const { selected = nullptr; selectedDepth = HUGE_VAL; }
     ConstObjectPtr Selected() const { return selected; }
     double SelectedDepth() const { return selectedDepth; }
@@ -91,6 +96,7 @@ public:
 private:
     double endpoint, end, start, cursor = 0.0;
     const Ray* ray;
+    bool gather = false;
     std::vector<ConstObjectPtr> crossed;
     mutable ConstObjectPtr selected = nullptr;
     mutable double selectedDepth = HUGE_VAL;

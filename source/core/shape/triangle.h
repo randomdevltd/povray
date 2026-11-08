@@ -88,6 +88,7 @@ class Triangle : public NonsolidObject
         virtual ObjectPtr Copy() override;
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
+        virtual bool ReturnsAllRoots() const override { return true; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
         // virtual void UVCoord(Vector2d&, const Intersection *) const override; // TODO FIXME - why is there no UV-mapping for this trivial object? [trf]

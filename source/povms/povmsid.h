@@ -577,6 +577,8 @@ enum
     kPOVAttrib_ShadowTest            = 'ShdT',
     kPOVAttrib_ShadowTestSuc         = 'ShdS',
     kPOVAttrib_ShadowCacheHits       = 'ShdC',
+    kPOVAttrib_ShadowWalks           = 'ShdW',
+    kPOVAttrib_ShadowCrossings       = 'ShdX',
 
     kPOVAttrib_PolynomTest           = 'PnmT',
     kPOVAttrib_RootsEliminated       = 'REli',
