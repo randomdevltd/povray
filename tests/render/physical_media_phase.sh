@@ -18,7 +18,7 @@ for eccentricity in 1 -1 1.5; do
     tr '\n' ' ' <eccentricity.log | tr -s '[:space:]' ' ' | grep -qF 'a scene of version 3.7 or older keeps it' || { cat eccentricity.log; exit 1; }
 done
 render point Declare=Source=1
-render volume16 Declare=Source=2 Declare=Draws=16
+render volume256 Declare=Source=2 Declare=Draws=256
 render volume64 Declare=Source=2 Declare=Draws=64
 render surface_point Declare=Source=1 Declare=Surface=1
 render surface_volume Declare=Source=2 Declare=Surface=1 Declare=Draws=1024
@@ -42,7 +42,7 @@ BEGIN {
     split(".0875 .1375 .15", s, " ")
     point = atan2(100, 1) - atan2(99, 1)
     expect("point", s[1] * 5000.5 * point, s[2] * 5000.5 * point, s[3] * 5000.5 * point)
-    expect("volume16", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
+    expect("volume256", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
     expect("volume64", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
     expect("surface_point", .5, .5, .5)
     expect("surface_volume", .5, .5, .5)
