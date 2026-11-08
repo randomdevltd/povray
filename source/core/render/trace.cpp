@@ -6392,7 +6392,8 @@ bool Trace::SubsurfaceEntryTaps(const Intersection& hit, const Vector3d& outward
                 const double distance = fabs(tap.Depth - reach);
                 if (!(distance < nearest))
                     continue;
-                const double probe = max(1.0e-6, max(4.0 * tap.Object->SurfaceTolerance(), 1.0e-4 * side));
+                const double probe = max(64.0 * std::numeric_limits<double>::epsilon() * (tap.IPoint.length() + side),
+                                         max(4.0 * tap.Object->SurfaceTolerance(), 1.0e-4 * side));
                 const ObjectPtr whole = SubsurfaceObject(hit);
                 if (whole->Inside(tap.IPoint + outward * probe, threadData) ||
                     !whole->Inside(tap.IPoint - outward * probe, threadData))
@@ -6676,6 +6677,7 @@ void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Inters
     for (int j = 0; j < MathColour::channels; j++)
         candidate.factor[j] = ft * rd[j];
     candidate.SetLight(in.IPoint, lightcolour);
+    candidate.whole = SubsurfaceObject(in);
     if (lightsource.emitter)
         SetSubsurfaceEmitterEndpoint(in, lightsourceray, lightsourcedepth, candidate);
 }
@@ -6786,6 +6788,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
         candidate.factor[j] = min(f, double(FLT_MAX));
     }
     candidate.SetLight(xi.IPoint, lightcolour);
+    candidate.whole = SubsurfaceObject(xi);
     if (lightsource.emitter)
         SetSubsurfaceEmitterEndpoint(xi, lightsourceray, lightsourcedepth, candidate);
     // Light leaves the object toward its source here, so the outward normal faces the source.
@@ -6863,6 +6866,14 @@ void Trace::SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d&
     ray.AppendInteriors(containing);
 }
 
+// Light is gathered at points on the material's own surface. A shadow window opened a scene-unit tolerance ahead would see
+// through any wall thinner than that, so the window opens at the point and passes only the point's own root.
+void Trace::SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point)
+{
+    ray.SetPreciseShadowWindow();
+    ray.SetSurfaceOrigin(whole, point, ray.Direction);
+}
+
 void Trace::SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate)
 {
     candidate.source = in.IPoint + ray.Direction * depth;
@@ -6928,12 +6939,14 @@ MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const Su
                     lightsourceray.AppendInterior(interior);
                 lightsourceray.SetFlags(Ray::OtherRay, true, false);
                 lightsourceray.SetMediaLight(&lightsource);
+                SetSubsurfaceShadowOrigin(lightsourceray, c.whole, c.point);
                 lightcolour = c.unshadowed;
                 TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, c.source - lightsource.Center);
             }
             else
             {
                 ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, true);
+                SetSubsurfaceShadowOrigin(lightsourceray, c.whole, c.point);
                 Vector2d areaSample = SubsurfaceAreaSample(shift, drawn + r);
                 TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, &areaSample);
             }
@@ -7453,6 +7466,7 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
             if ((qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE))) ||
                 (lightsource.emitter && qualityFlags.media && lightsource.Media_Interaction && lightsource.Media_Attenuation))
             {
+                SetSubsurfaceShadowOrigin(lightsourceray, whole, point);
                 if (lightsource.emitter)
                 {
                     const Vector3d source = point + lightsourceray.Direction * lightsourcedepth;
@@ -7537,6 +7551,7 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
                 else
                 {
                     MathColour unshadowed = lightcolour;
+                    SetSubsurfaceShadowOrigin(lightsourceray, SubsurfaceObject(out), out.IPoint);
                     if (lightsource.emitter)
                     {
                         const Vector3d source = out.IPoint + lightsourceray.Direction * lightsourcedepth;
@@ -8424,7 +8439,9 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     // Normals point out of the object where a step along them leaves it; the step shrinks to a quarter of the wall between
     // a crossing and its neighbours. Inside on both sides, outside on both, or under the floor, a crossing is dropped.
     const double probeMax = 0.05 * h;
-    const double probeMin = max(1e-6, 1e-4 * h);
+    // Thin is width against the cell, never in scene units; the floor is only the coordinates' rounding.
+    const double probeMin = max(1e-4 * h, 64.0 * std::numeric_limits<double>::epsilon() *
+                                          (max(fabs(lo[X]), max(fabs(lo[Y]), fabs(lo[Z]))) + size));
     const double depth = (cloud.flesh != nullptr) && (cloud.flesh->fleshAtDepth || cloud.flesh->emissionAtDepth) ? cloud.flesh->depth : 0.0;
     const BoundingBox& box = cloud.object->BBox;
     Vector3d dir(0.0);
@@ -8638,13 +8655,27 @@ void Trace::AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& c
 
 // Every crossing of the object along a line within [from, to]. One test of some shapes returns only the nearest
 // interval's crossings (a blob's does), so the line is tested again past the farthest crossing found until none is left.
+// Every crossing at float precision: a shape's classic root may stop its stated accuracy short of the surface, in scene
+// units, which leaves the probes either side of a small part on one side of it.
+class SubsurfaceCrossingQuery final : public RayRootQuery
+{
+public:
+    bool Admit(ConstObjectPtr, double) const override { return true; }
+    bool AllRoots() const override { return true; }
+    bool PreciseBoundary() const override { return true; }
+};
+
 void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double from, double to, std::vector<Intersection>& hits, TraceTicket& ticket)
 {
-    double step = max(1e-7, 1e-6 * to);
+    const double reach = max(fabs(origin[X]), max(fabs(origin[Y]), fabs(origin[Z]))) + to;
+    double step = max(64.0 * std::numeric_limits<double>::epsilon() * reach, 1e-6 * to);
     double start = 0.0;
+    const SubsurfaceCrossingQuery query;
     for (int guard = 0; (guard < 256) && (start <= to); guard++)
     {
         Ray ray(ticket, origin + dir * start, dir, Ray::SubsurfaceRay);
+        const RayRootQueryDisabled restoreQuery(ray);
+        ray.SetRootQuery(&query);
         if (!object->Bound.empty() && !Ray_In_Bound(ray, object->Bound, threadData))
             return;
         IStack stack(stackPool);

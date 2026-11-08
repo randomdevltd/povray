@@ -1263,6 +1263,7 @@ class Trace
             MathColour factor, unshadowed;
             Vector3d normal, source;
             RayInteriorVector interiors;
+            ConstObjectPtr whole = nullptr; ///< the object whose surface the point lies on, as shadow walks name it
             std::uint64_t key = 0;
             double bound = 0.0;
             void SetLight(const Vector3d& p, const MathColour& lightcolour);
@@ -1348,6 +1349,7 @@ class Trace
         double ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, ConstObjectPtr object,
                                           ConstObjectPtr whole, double tolerance, const Vector3d& towardSource, TraceTicket& ticket);
         void SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d& normal, const Interior* interior, Ray& ray);
+        static void SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point);
         void SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate);
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,

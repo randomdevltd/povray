@@ -252,7 +252,7 @@ bool Blob::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
     DBL newcoeffs[5], dk[5];
     DBL max_bound;
     DBL l, w;
-    DBL depthTolerance = (ray.IsSubsurfaceRay()? 0 : DEPTH_TOLERANCE);
+    DBL depthTolerance = (ray.IsSubsurfaceRay() || (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary())) ? 0 : DEPTH_TOLERANCE;
 
     Thread->Stats()[Ray_Blob_Tests]++;
 
