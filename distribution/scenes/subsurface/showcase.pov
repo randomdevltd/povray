@@ -15,7 +15,7 @@
 // physical source fluxes, real lumens before camera exposure
 #ifndef (CandleLumens) #declare CandleLumens=12; #end
 #ifndef (LanternLumens) #declare LanternLumens=6; #end
-#ifndef (EggLumens) #declare EggLumens=3; #end
+#ifndef (EggLumens) #declare EggLumens=1.2; #end
 #ifndef (HandLumens) #declare HandLumens=0.1; #end
 #ifndef (PanelLumens) #declare PanelLumens=0.3; #end
 #ifndef (RuneLumens) #declare RuneLumens=0.1; #end
@@ -28,7 +28,7 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 // ---------------------------------------------------------------- cameras
 #switch (View)
 #case (0) camera { location <0.02,0.30,-0.60> look_at <0.02,0.06,0.08> angle 42 right x*image_width/image_height } #break
-#case (1) camera { location <0.13,0.16,-0.20> look_at <0.03,0.035,0.0> angle 34 right x*image_width/image_height } #break // egg
+#case (1) camera { location <0.12,0.15,-0.22> look_at <0.0,0.05,0.04> angle 36 right x*image_width/image_height } #break // egg
 #case (2) camera { location <0.20,0.20,-0.38> look_at <0.20,0.015,-0.07> angle 36 right x*image_width/image_height } #break // hand
 #case (3) camera { location <0.07,0.13,-0.10> look_at <0.13,0.09,0.17> angle 34 right x*image_width/image_height } #break // ear
 #case (4) camera { location <-0.08,0.15,-0.12> look_at <-0.12,0.08,0.16> angle 40 right x*image_width/image_height } #break // candle
@@ -42,10 +42,10 @@ global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 16 prepared_m
 light_source { <-0.9,0.9,-0.6> rgb <1,0.62,0.34>*0.06*Fill area_light x*0.3,y*0.3,4,4 adaptive 1 jitter tags { "fill" } }
 plane { y,0
  texture {
-  pigment { wood turbulence 0.06 octaves 3 scale <0.006,0.006,1> rotate y*88 warp { turbulence <0.02,0.0,0.06> octaves 4 }
+  pigment { wood turbulence 0.08 octaves 3 scale <0.02,0.02,1> rotate y*88 warp { turbulence <0.03,0.0,0.08> octaves 4 }
    colour_map { [0 rgb <0.30,0.14,0.055>] [0.35 rgb <0.22,0.095,0.035>] [0.7 rgb <0.36,0.18,0.07>] [1 rgb <0.26,0.12,0.045>] } }
-  normal { average normal_map { [1 wood 0.04 scale <0.006,0.006,1> rotate y*88] [1 bumps 0.03 scale 0.0008] } }
-  finish { diffuse 0.75 specular 0.18 roughness 0.02 reflection { 0.02 0.06 } }
+  normal { average normal_map { [1 wood 0.03 scale <0.02,0.02,1> rotate y*88] [1 bumps 0.03 scale 0.0008] } }
+  finish { diffuse 0.75 specular 0.08 roughness 0.04 reflection { 0.0 0.02 } }
  }
  tags { "room" }
 }
@@ -83,8 +83,8 @@ plane { -z,-0.42
 // shingled scales: per-row ellipse height, the row above lies on top where it overlaps
 #declare ScaleRows=0.0062; #declare ScaleCount=22;
 #declare ScaleCell=function(A,Y,Row) {
- sqrt(pow((A*ScaleCount/(2*pi)+0.5*mod(Row+100,2)-floor(A*ScaleCount/(2*pi)+0.5*mod(Row+100,2))-0.5)/0.47,2)
-     +pow((Y/ScaleRows-Row-0.35)/0.72,2)) };
+ sqrt(pow((A*ScaleCount/(2*pi)+0.5*mod(Row+100,2)-floor(A*ScaleCount/(2*pi)+0.5*mod(Row+100,2))-0.5)/0.60,2)
+     +pow((Y/ScaleRows-Row-0.32)/0.74,2)) };
 #declare ScaleOwn=function(A,Y) { 1-ScaleCell(A,Y,floor(Y/ScaleRows)) };
 #declare ScaleUp=function(A,Y) { 1-ScaleCell(A,Y,floor(Y/ScaleRows)+1) };
 #declare ScaleH=function(x,y,z) { max(0,select(ScaleUp(atan2(x,z),y),ScaleOwn(atan2(x,z),y),ScaleUp(atan2(x,z),y))) };
@@ -93,9 +93,9 @@ plane { -z,-0.42
  #if (Pigments)
  texture {
   pigment { function { ScaleH(x,y,z) }
-   colour_map { [0 rgbt <0.9,0.35,0.05,1>] [0.05 rgbt <0.75,0.3,0.05,0.75>] [0.16 rgbt <0.32,0.12,0.03,0.25>] [0.26 rgb <0.06,0.09,0.06>] [0.6 rgb <0.10,0.13,0.08>] [1 rgb <0.16,0.14,0.07>] } }
+   colour_map { [0 rgbt <0.9,0.35,0.05,1>] [0.03 rgbt <0.8,0.3,0.05,0.8>] [0.10 rgbt <0.35,0.10,0.03,0.35>] [0.18 rgb <0.10,0.035,0.02>] [0.5 rgb <0.17,0.07,0.035>] [1 rgb <0.26,0.13,0.05>] } }
   #if (Normals) normal { function { ScaleH(x,y,z) } 0.9 accuracy 0.00015 } #end
-  finish { diffuse 0.6 specular 0.6 roughness 0.015 metallic 0.4 }
+  finish { diffuse 0.6 specular 0.7 roughness 0.012 metallic 0.6 }
  }
  #end
 #end
