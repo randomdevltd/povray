@@ -1,7 +1,8 @@
 #!/bin/sh
 # bounce_self.sh <povray> <srcdir>: with bounce { self off } a lone cloud, glowing or not, renders as without bounce while
 # its bounce lights a second cloud and a floor, alike on any thread count; an open box with a surface light keeps
-# its own bounce off itself in the same way, beneath the surface and through photons too; 4.0 scenes take it.
+# its own bounce off itself in the same way, beneath the surface, lit from within and through photons too; 4.0 scenes
+# take it.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -124,6 +125,12 @@ surface ssuboff Declare=Subsurface=1 Declare=Bounce=1 Declare=Self=0 +wt3
 surface ssubon Declare=Subsurface=1 Declare=Bounce=1 +wt3
 same ssubnone ssuboff "a subsurface surface without self bounce differs from one without bounce"
 [ "$(sum ssubon)" -gt "$(sum ssubnone)" ] || { echo "bounce_self: self bounce does not reach beneath a surface" >&2; exit 1; }
+# A lamp buried in the wall: the box's own light, from within and from its earlier orders, never returns to it at self 0.
+surface sburnone Declare=Subsurface=1 Declare=Buried=1 +wt3
+surface sburoff Declare=Subsurface=1 Declare=Buried=1 Declare=Bounce=2 Declare=Self=0 +wt3
+surface sburon Declare=Subsurface=1 Declare=Buried=1 Declare=Bounce=2 +wt3
+same sburnone sburoff "a subsurface surface lit from within without self bounce differs from one without bounce"
+[ "$(sum sburon)" -gt "$(sum sburnone)" ] || { echo "bounce_self: self bounce does not return light from within beneath a surface" >&2; exit 1; }
 surface sphnone Declare=Photons=1 Declare=Emit=1 +wt2
 surface sphoff Declare=Photons=1 Declare=Emit=1 Declare=Bounce=1 Declare=Self=0 +wt2
 surface sphon Declare=Photons=1 Declare=Emit=1 Declare=Bounce=1 +wt2

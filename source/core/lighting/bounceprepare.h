@@ -297,7 +297,7 @@ struct SubsurfaceScope final
 // entering each; the workers share one cache of boundary and layer tables.
 inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     Workers& workers, const std::shared_ptr<SceneData>& scene, const surface_refine::Result& result,
-    const std::vector<LightSource*>& sources, const std::function<void()>& cooperate, std::size_t units, bool boundary = true)
+    const Sources& sources, const std::function<void()>& cooperate, std::size_t units, bool boundary = true)
 {
     const SubsurfaceScope scope(workers, scene);
     std::vector<std::unique_ptr<Trace>> traces;
@@ -373,15 +373,28 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
         foundIndex[g]->Interpolate(nodes[i].intersection.IPoint, nodes[i].normal, weights);
         radiance[i] = Blend(weights, [&](std::uint32_t t) -> const MathColour& { return radiance[found[g][foundIndex[g]->Source()[t]]]; });
     }, 0);
-    if (std::any_of(sources.begin(), sources.end(), [](const LightSource* light)
-            { return light->emitter && light->emitter->HasVolumeEmission(); }))
+    // Light emitted within the material, each source at its share: a light's own earlier bounce at its self share.
+    std::vector<MathColour> shares;
+    for (std::size_t s = 0; s < sources.lights.size(); ++s)
     {
+        const MathColour share = sources.scales.empty() ? MathColour(1.0) : sources.scales[s];
+        const LightSource* light = sources.lights[s];
+        if (light->emitter && light->emitter->HasVolumeEmission() && !share.IsZero() &&
+            std::none_of(shares.begin(), shares.end(), [&](const MathColour& seen) { return (seen - share).IsZero(); }))
+            shares.push_back(share);
+    }
+    for (const MathColour& share : shares)
+    {
+        std::vector<LightSource*> lights;
+        for (std::size_t s = 0; s < sources.lights.size(); ++s)
+            if (((sources.scales.empty() ? MathColour(1.0) : sources.scales[s]) - share).IsZero())
+                lights.push_back(sources.lights[s]);
         for (const auto& trace : traces)
-            trace->BeginSurfaceSubsurface(field, sources, true);
+            trace->BeginSurfaceSubsurface(field, lights, true);
         workers.For(count, cooperate, [&](size_t i, size_t worker)
         {
             double unused;
-            radiance[i] += traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused);
+            radiance[i] += share * traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused);
         }, 0);
     }
     AdvancePreparation(workers.td->preparationProgress, units);
@@ -593,7 +606,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             Target& target = targets[primaryTargets[a]];
             workers.Step("internal emission " + Of("t", a, primaryParts.size()));
-            const auto field = PrepareSubsurfaceBounce(workers, scene, results[a], primarySources[a].lights, cooperate,
+            const auto field = PrepareSubsurfaceBounce(workers, scene, results[a], primarySources[a], cooperate,
                                                        kSurfaceUnits, false);
             target.primary = MakeBouncedSurfaceEmitter(target.primary, const_cast<ObjectPtr>(target.light->emitterContainer),
                                                        field, true);
@@ -692,9 +705,9 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 if (scene->useSubsurface)
                 {
                     workers.Step(orderItem + " " + Of("t", a, active.size()) + " subsurface");
-                    const std::vector<LightSource*> noSources;
+                    const Sources noSources;
                     subsurface = PrepareSubsurfaceBounce(workers, scene, results[a],
-                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a].lights, cooperate, kSurfaceUnits);
+                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a], cooperate, kSurfaceUnits);
                 }
                 surfaceFields[a] = std::make_shared<const SumSurfaceBounceRadiance>(
                     std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{results[a].diffuse, subsurface}, activeGain[a]);

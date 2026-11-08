@@ -1,12 +1,14 @@
 // bounce_self_surface.pov: an open box lit inside, a surface bounce light with Bounce passes and Self its self share;
 // Emit 1 gives it a light of its own, Subsurface 1 a method 2 finish, Photons 1 a mirror returning its light by
-// progressive photons; Scene 1 adds a floor before it, Mask 1 shows only the box, flat.
+// progressive photons, Buried 1 a lamp inside its back wall whose light leaves through the wall as the box's emission;
+// Scene 1 adds a floor before it, Mask 1 shows only the box, flat.
 #version 3.7;
 #ifndef (Bounce) #declare Bounce = 0; #end
 #ifndef (Self) #declare Self = 1; #end
 #ifdef (Tint) #declare Self = <0, 0.5, 1>; #end
 #ifndef (Emit) #declare Emit = 0; #end
 #ifndef (Subsurface) #declare Subsurface = 0; #end
+#ifndef (Buried) #declare Buried = 0; #end
 #ifndef (Photons) #declare Photons = 0; #end
 #ifndef (Scene) #declare Scene = 0; #end
 #ifndef (Mask) #declare Mask = 0; #end
@@ -25,8 +27,9 @@ difference {
   #else
     pigment { rgb <0.9, 0.85, 0.8> }
     finish { ambient 0 emission 0 diffuse 0.8 #if (Subsurface) subsurface { translucency 0.4 } #end }
-    #if (Bounce > 0 | Emit)
+    #if (Bounce > 0 | Emit | Buried)
       light {
+        #if (Buried) emission #end
         #if (Emit) pigment { rgb <1, 0.6, 0.3> } brightness 0.1 #end
         samples Samples
         #if (Photons) photons { reflection on } #end
@@ -35,6 +38,10 @@ difference {
     #end
   #end
 }
+#if (Buried & !Mask)
+  box { <-0.3, -0.3, 0.93>, <0.3, 0.3, 0.97> pigment { rgbt 1 } hollow
+    interior { ior off light { pigment { rgb <1, 0.6, 0.3> } brightness 2 samples 4 } } }
+#end
 #if (Scene = 1)
   box { <-3, -1.1, -4>, <3, -1, -1.05>
     #if (Mask) pigment { rgb 0 } finish { ambient 0 emission 0 diffuse 0 }
