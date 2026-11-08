@@ -426,7 +426,7 @@ an easier means of doing the same thing).
 <div class="content-level-h4" contains="Keywords" id="r3_3_1_2">
 <h4>3.3.1.2 Keywords</h4>
 <p>POV-Ray has a number of reserved keywords which are listed below.</p>
-<p>A few words are read only where they are expected and are not reserved: <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code> and <code>interface_texture</code>, and the interior item <code>ior_mix</code>, themselves. The words <code>light</code> (before a block on an object or in an <code>interior</code>), <code>nits</code> and <code>lumens</code> (after a <code>brightness</code> value), <code>bounce</code> (in a <code>light</code> block) and <code>passes</code> (in a <code>bounce</code> block) are read the same way. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
+<p>A few words are read only where they are expected and are not reserved: <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, <code>full</code> and <code>by_contribution</code> after a finish's <code>light_samples</code> value, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code> and <code>interface_texture</code>, and the interior item <code>ior_mix</code>, themselves. The words <code>light</code> (before a block on an object or in an <code>interior</code>), <code>nits</code> and <code>lumens</code> (after a <code>brightness</code> value), <code>bounce</code> (in a <code>light</code> block) and <code>passes</code> (in a <code>bounce</code> block) are read the same way. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
 <table class="tablelist">
 <tr>
 <th colspan="3" align="left">a</th>
@@ -526,6 +526,7 @@ an easier means of doing the same thing).
 <code><a href="r3_6.html#r3_6_1_3_3_2">brilliance</a></code><br>
 <code><a href="r3_6.html#r3_6_1_2_3">bump_map</a></code><br>
 <code><a href="r3_6.html#r3_6_1_2_3_2">bump_size</a></code><br>
+<code><a href="r3_6.html#r3_6_1_3_by_contribution">by_contribution</a></code> <em>finish light_samples, contextual word</em><br>
 <code><a href="r3_6.html#r3_6_2_1_5">bumps</a></code><br>
 <code><a href="r3_6.html#r3_6_1_2_3_1">bt709</a></code> <em>bump map</em><br>
 <code><a href="r3_5.html#r3_5_1_1_5">bt709</a></code> <em>height field</em><br>
@@ -709,6 +710,7 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_1_5_6">frame_number</a></code><br>
 <code><a href="r3_6.html#r3_6_2_5_2">frequency</a></code><br>
 <code><a href="r3_6.html#r3_6_1_3_5">fresnel</a></code><br>
+<code><a href="r3_6.html#r3_6_1_3_by_contribution">full</a></code> <em>finish light_samples, contextual word</em><br>
 <code><a href="r3_10.html#r3_10_3_2">front</a></code><br>
 <code><a href="r3_10.html#r3_10_3_11">front_filter_tags</a></code> <em>portal</em><br>
 <code><a href="r3_3.html#r3_3_1_5_4">function</a></code><br>
@@ -4514,6 +4516,7 @@ VERSION_DIRECTIVE:
 <tr><td><a href="r3_7.html#r3_7_2_1_4">ior_mix</a></td><td><code>surface</code></td><td><code>mean</code></td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></td><td>1.0</td><td>1.00029</td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_16">interface_texture</a></td><td><code>far</code></td><td><code>blend</code></td></tr>
+<tr><td><a href="r3_6.html#r3_6_1_3_by_contribution">light_samples</a> mode of a finish that states none</td><td><code>full</code></td><td><code>by_contribution</code></td></tr>
 </table>
 
 <p>A scene in the 4.0 language is a <code>.pov4</code> file and has no <code>#version</code> directive. It always runs with the 4.0 defaults, and an older version can be chosen for testing with <code>+ML</code>. See <a href="r3_13.html#r3_13">Scene Language 4.0</a>.</p>

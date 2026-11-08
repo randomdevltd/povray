@@ -119,6 +119,9 @@ struct Texture_Struct final : public Pattern_Struct
 /// The least ray weight times layer opacity at which method 2 reads a hit's cloud, unless the finish's subsurface { minimum_influence } says otherwise.
 const double kSubsurfaceMinimumInfluence = 0.003;
 
+/// light_samples M [full | by_contribution]; unstated, the scene's language version decides (by_contribution from 4.0)
+enum LightSamplesModes { kLightSamplesDefault = 0, kLightSamplesFull, kLightSamplesByContribution };
+
 struct Finish_Struct final
 {
     SNGL Diffuse, DiffuseBack, Brilliance;
@@ -156,6 +159,7 @@ struct Finish_Struct final
     bool SubsurfaceVolume; ///< whether the flesh and its emission are looked up below where light enters
     bool AlphaKnockout;   // whether pigment alpha knocks out finish effects
     DBL LightSamples;     ///< multiplies each light's samples for this surface's draws (light_samples)
+    int LightSamplesMode; ///< a LightSamplesModes value: whether a hit's samples also scale with its contribution to the pixel
     ~Finish_Struct();
 };
 

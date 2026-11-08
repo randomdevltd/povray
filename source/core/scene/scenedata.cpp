@@ -432,6 +432,7 @@ SceneData::SceneData() :
     iorMixModes = false;
     crossedNonSurface = false;
     interfaceTexture = kInterfaceTextureAuto;
+    lightSamplesByContribution = false;
     refractionAngle = 0.5;
     preparedMediaCells = 1000000.0;
     machinePreparedMediaCells = 1000000.0;
