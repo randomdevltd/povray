@@ -464,6 +464,27 @@ void IsoSurface::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *
         else
             New_Point = Inter->IPoint;
 
+        if (Thread->preciseInside)
+        {
+            // A boundary query reflects paths off this normal. A forward step of `accuracy`, a scene-unit length, tilts it
+            // by about accuracy over the curvature radius, enough to turn a reflected path out of a small solid; a central
+            // difference at the container's float-precision scale does not.
+            BoundingBox box;
+            container->ComputeBBox(box);
+            const DBL size = max3(DBL(box.size[X]), DBL(box.size[Y]), DBL(box.size[Z]));
+            const DBL reach = max3(fabs(New_Point[X]), fabs(New_Point[Y]), fabs(New_Point[Z]));
+            const DBL h = std::cbrt(std::numeric_limits<DBL>::epsilon()) * max(std::isfinite(size) ? size : 0.0, reach);
+            const DBL xs[6] = { New_Point[X] + h, New_Point[X] - h, New_Point[X], New_Point[X], New_Point[X], New_Point[X] };
+            const DBL ys[6] = { New_Point[Y], New_Point[Y], New_Point[Y] + h, New_Point[Y] - h, New_Point[Y], New_Point[Y] };
+            const DBL zs[6] = { New_Point[Z], New_Point[Z], New_Point[Z], New_Point[Z], New_Point[Z] + h, New_Point[Z] - h };
+            DBL f[6];
+            fn.Evaluate(xs, ys, zs, f, 6);
+            Result[X] = f[0] - f[1];
+            Result[Y] = f[2] - f[3];
+            Result[Z] = f[4] - f[5];
+        }
+        else
+        {
         const DBL xs[4] = { New_Point[X], New_Point[X] + accuracy, New_Point[X], New_Point[X] };
         const DBL ys[4] = { New_Point[Y], New_Point[Y], New_Point[Y] + accuracy, New_Point[Y] };
         const DBL zs[4] = { New_Point[Z], New_Point[Z], New_Point[Z], New_Point[Z] + accuracy };
@@ -473,6 +494,7 @@ void IsoSurface::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *
         Result[X] = f[1] - funct;
         Result[Y] = f[2] - funct;
         Result[Z] = f[3] - funct;
+        }
 
         if((Result[X] == 0) && (Result[Y] == 0) && (Result[Z] == 0))
             Result[X] = 1.0;
