@@ -48,3 +48,7 @@ runes sit in a plain box; its spiral roll and curl are separate solids 0.1 mm
 away, and the roll's half-cylinder shells overlap rather than meet face to face.
 A host merged with the roll and curl, or a roll whose shells only touched,
 failed the same query or stopped the render with `Uncategorized error`.
+TrueType `text` objects used directly as emitter containers failed the same
+query during rendering, so the glyphs are the density pattern of a thin box
+emitter instead (`function { pattern { object { ... } } }`; a bare `object`
+density is refused with `Prepared density cannot be published`).

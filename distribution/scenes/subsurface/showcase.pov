@@ -296,11 +296,11 @@ union {
 
 // ================================================================ grapes
 #macro GrapeTex()
- texture { pigment { granite turbulence 0.3 scale 0.01 colour_map { [0 rgb <0.74,0.72,0.16>] [1 rgb <0.82,0.66,0.18>] } }
+ texture { pigment { granite turbulence 0.3 scale 0.01 colour_map { [0 rgb <0.55,0.08,0.12>] [0.6 rgb <0.42,0.05,0.12>] [1 rgb <0.62,0.14,0.10>] } }
   #if (Normals) normal { bumps 0.06 scale 0.0015 } #end
-  finish { diffuse 0.7 specular 0.55 roughness 0.012 subsurface { method 2 translucency <9,8,2.4> colour rgb 0.95 thickness 0.4 } } }
+  finish { diffuse 0.7 specular 0.55 roughness 0.012 subsurface { method 2 translucency <9,2.2,2.6> colour rgb 0.95 thickness 0.4 } } }
  #if (Pigments)
- texture { pigment { granite scale 0.0004 colour_map { [0 rgbt <0.9,0.9,0.85,0.82>] [0.35 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>] } } finish { diffuse 0.8 specular 0 } }
+ texture { pigment { granite scale 0.0004 colour_map { [0 rgbt <0.75,0.72,0.85,0.8>] [0.35 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>] } } finish { diffuse 0.8 specular 0 } }
  #end
 #end
 union {
@@ -402,6 +402,8 @@ union {
 #end
 #macro TitleGlyphs(Depth,Y0) text { ttf "timrom.ttf" "X-|<>|-X" 1,0 scale <0.011,0.011,Depth> rotate x*90 translate <0.035,Y0,0.066> } #end
 #declare InkTitle=TitleGlyphs(0.003,PaperT+0.001);
+#declare RuneGlyphs=union { #for (J,0,4) RuneLine(J,0.0006,PaperT/2+0.0003) #end TitleGlyphs(0.0006,PaperT/2+0.0003) };
+#declare RuneField=function { pattern { object { RuneGlyphs } } };
 union {
  object { PaperRoll PaperTex() interior { ior 1.45 } }
  object { PaperCurl PaperTex() interior { ior 1.45 } }
@@ -415,14 +417,12 @@ union {
   #if (Export) light { emission samples LightSamples } #end
  }
  #if (Sources)
- #for (J,0,4)
-  object { RuneLine(J,0.0002,PaperT/2+0.0001) pigment { rgbt 1 }
-   interior { ior off media { mix add method 4 resolution 0.0002 emission <1,0.55,0.12> }
-    light { emission brightness RuneLumens*Lm/6 lumens samples LightSamples } } }
- #end
- object { TitleGlyphs(0.0002,PaperT/2+0.0001) pigment { rgbt 1 }
-  interior { ior off media { mix add method 4 resolution 0.0002 emission <1,0.55,0.12> }
-   light { emission brightness RuneLumens*Lm/3 lumens samples LightSamples } } }
+ // glyph emitter: a thin box whose density is the TrueType runes and title
+ box { <0.006,PaperT/2-0.0001,0.002>,<0.15,PaperT/2+0.0001,0.082>
+  pigment { rgbt 1 }
+  interior { ior off media { mix add method 4 resolution 0.00015 emission <1,0.55,0.12> density { function { RuneField(x,y,z) } } }
+   light { emission brightness RuneLumens*Lm lumens samples LightSamples domain_cells 1000000 } }
+ }
  #end
  rotate y*8
  translate <-0.17,0,-0.15>
