@@ -108,7 +108,7 @@ union {
  difference { EggShape(0.0022) EggShape(0.0080)
   pigment { rgbt 1 }
   interior { ior off media { mix add method 4 resolution 0.0005 emission <1,0.42,0.07>
-    density { granite turbulence 0.4 scale <0.012,0.03,0.012> colour_map { [0 rgb 0.25] [0.5 rgb 1] [1 rgb 0.4] } } }
+    density { granite turbulence 0.5 scale <0.016,0.04,0.016> colour_map { [0 rgb 0.08] [0.45 rgb 1] [0.7 rgb 0.5] [1 rgb 0.12] } } }
    light { emission brightness EggLumens*Lm lumens samples LightSamples domain_cells 400000 } }
  }
  #end
@@ -234,7 +234,7 @@ union {
 #declare WaxTex=texture {
  pigment { granite turbulence 0.2 scale 0.03 colour_map { [0 rgb <0.96,0.86,0.66>] [1 rgb <0.92,0.80,0.58>] } }
  #if (Normals) normal { average normal_map { [1 wrinkles 0.25 scale <0.004,0.02,0.004>] [1 bumps 0.08 scale 0.0006] } } #end
- finish { diffuse 0.75 specular 0.35 roughness 0.02 subsurface { method 2 translucency <12,8,4.5> colour rgb 0.95 thickness 0.4 } }
+ finish { diffuse 0.75 specular 0.35 roughness 0.02 subsurface { method 2 translucency <5,3.5,2> colour rgb 0.95 thickness 0.4 } }
 };
 union {
  merge {
