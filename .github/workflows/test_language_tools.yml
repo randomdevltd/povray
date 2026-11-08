@@ -1,0 +1,47 @@
+name: 'Language Tools'
+
+# No paths filter: the reference cards are mined from doc/html, so a manual-only
+# change can leave them stale too, and the job takes seconds.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'master', 'performance' ]
+  pull_request:
+
+concurrency:
+  group: language-tools-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  language_tools:
+    name: 'Generated Language Artefacts'
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: 'Check out Repository'
+      uses: actions/checkout@v7
+
+    - name: 'Set up Node'
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: 'Regenerate'
+      run: |
+        node tools/language/keywords.mjs
+        node libraries/tree-sitter-pov4/words.js
+        (cd tools/language/grammar && node extract.mjs && node blocks.mjs && node render.mjs)
+        node tools/language/vscode.mjs
+        node tools/language/reference.mjs --generate
+
+    - name: 'Generated Files Are Current'
+      run: |
+        git status --porcelain
+        git diff --exit-code || { echo '::error::Generated language artefacts are stale; run the generators listed in AGENTS.md and commit the result.'; exit 1; }
+
+    - name: 'Grammar Tests'
+      working-directory: tools/language/grammar
+      run: node --test test/*.test.mjs
+
+    - name: 'Reference Tests'
+      run: node --test tools/language/reference/test/*.test.mjs
