@@ -670,6 +670,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_internal_source.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_volume_emitter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_internal_hosts.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_cell_face.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cavity_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_crease_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_boundaries.sh \$(top_builddir)/unix/povray \$(top_srcdir)
