@@ -3793,9 +3793,10 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
         TraceSampleShadowRay(lightsource, newdepth, newray, colour, Vector3d(0.0));
 
     // If there's some distance left for the ray to reach the light source
-    // we have to apply atmospheric stuff to this part of the ray.
+    // we have to apply atmospheric stuff to this part of the ray; a black light has nothing left to attenuate.
 
-    if((newdepth > (newray.HasExactShadowWindow() ? 0.0 : SHADOW_TOLERANCE)) && (lightsource.Media_Interaction) && (lightsource.Media_Attenuation))
+    if((newdepth > (newray.HasExactShadowWindow() ? 0.0 : SHADOW_TOLERANCE)) && (lightsource.Media_Interaction) && (lightsource.Media_Attenuation) &&
+       !colour.IsNearZero(EPSILON))
     {
         isect.Depth = newdepth;
         isect.Object = nullptr;

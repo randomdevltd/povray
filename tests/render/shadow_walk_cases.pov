@@ -132,4 +132,13 @@ object { Floor }
     bounded_by { box { <-1.5, 0.8, -1.5>, <1.5, 2.0, 1.5> } } split_union off texture { Matte } }
   Grid(8, 0.1, 0.6, 2.8, Matte)
 #break
+#case (14) // fog and an attenuating light over opaque blocks, some under media-filled clear slabs: many shadow rays end black
+  light_source { <3, 12, -4> rgb 1 media_interaction on media_attenuation on }
+  fog { distance 30 rgb 0.6 fog_type 2 fog_alt 1.5 fog_offset 0 }
+  Grid(8, 0.14, 0.6, 1.2, Matte)
+  #for (K, 0, 2)
+    box { <-2.4, 2.0 + K * 0.4, -2.4>, <0.4, 2.1 + K * 0.4, 2.4> hollow
+      texture { Clear } interior { media { absorption <0.1, 0.3, 0.5> scattering { 1, 0.1 } samples 3 method 3 intervals 1 } } }
+  #end
+#break
 #end
