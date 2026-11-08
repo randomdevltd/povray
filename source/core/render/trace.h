@@ -330,9 +330,11 @@ class Trace
         bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                      MathColour& colour, const Vector2d& uv, bool shadows = true,
                                      const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
+        /// With `frontNormal`, a sample behind that normal is dropped before its shadow is traced.
         bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                      MathColour& colour, const EmitterDraw& draw, bool shadows = true,
-                                     const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
+                                     const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr,
+                                     const Vector3d* frontNormal = nullptr);
 
         /// Whether the first surface `ray` meets nearer than `depth` is an opaque one it leaves: its origin is inside an opaque solid.
         bool LeavesOpaqueSolid(const Ray& ray, double depth);
@@ -477,7 +479,13 @@ class Trace
         std::vector<ShadowCacheEntry> lightSourceLevel1ShadowCache;
         /// Light source shadow cache for shadow tests of higher trace level intersections.
         std::vector<ShadowCacheEntry> lightSourceOtherShadowCache;
+        /// One shadow walk's admitted roots with the scene object each belongs to, kept across walks to reuse the storage.
+        struct ShadowWalkHit { Intersection isect; ConstObjectPtr owner; };
+        std::vector<ShadowWalkHit> shadowWalkHits;
         size_t shadowCacheLights;
+        /// Per prepared set, which leaves of its flat tree a shadow walk asks one root at a time (see ObjectBase::ReturnsAllRoots()).
+        std::vector<std::vector<std::uint8_t>> rootByRootLeaves;
+        const std::vector<std::uint8_t>& RootByRootLeaves(PreparedSetId set, const std::vector<const void *>& tree);
         /// Sub-random uniform directions; each diffuse subsurface sample takes one at a keyed place.
         IndexedVectorGeneratorPtr ssltUniformDirections;
         /// Whether a random draw has shaped the result since @ref ClearGrain().

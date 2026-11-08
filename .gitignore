@@ -283,6 +283,7 @@ $RECYCLE.BIN/
 /tests/prepared-light/
 /tests/prepared-refraction/
 /tests/prepared-transfer/
+/tests/shadow-segment/
 /tests/sphere-intersection/
 /tests/subsurface-entry-ior/
 *.vsix

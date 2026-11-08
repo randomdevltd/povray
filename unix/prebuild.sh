@@ -628,6 +628,7 @@ CONFIG_CLEAN_FILES =
 check: check-heavy
 check-quick: all
 	+sh "\$(top_srcdir)/tools/bench/check-sphere-intersection.sh" "\$(top_builddir)" "\$(top_builddir)/tests/sphere-intersection"
+	+sh "\$(top_srcdir)/tools/bench/check-shadow-segment.sh" "\$(top_builddir)" "\$(top_builddir)/tests/shadow-segment"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-prepared-transfer.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-transfer"
 	+sh "\$(top_srcdir)/tools/bench/check-physical-phase.sh" "\$(top_builddir)" "\$(top_builddir)/tests/physical-phase"
 	sh "\$(top_srcdir)/tests/render/physical_media_phase.sh" "\$(top_builddir)/unix/povray" "\$(top_srcdir)"
@@ -647,6 +648,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/csg_mesh_media_shadow.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/csg_child_tree.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/shadow_coincident_layers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/shadow_walk.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_grid_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_tested_density_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/prepared_fields_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)

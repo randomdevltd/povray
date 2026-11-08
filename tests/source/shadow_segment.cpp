@@ -272,5 +272,8 @@ int main()
     assert(stepping(borrowed, &mesh, 3.5) && !stepping.Coincides(3.75));
     stepping.Pass(&mesh, 3.5);
     assert(stepping.Cursor() == 3.5 && !stepping.Admit(&mesh, 3.5) && stepping.Admit(&mesh, 3.75));
+    // A crossed object's root an ulp past the cursor is the same crossing, so it is not filtered twice.
+    assert(!stepping.Admit(&mesh, std::nextafter(3.5, 4.0)) && stepping.Admit(&iso, std::nextafter(3.5, 4.0)));
+    assert(CoincidentDepths(3.5, std::nextafter(std::nextafter(3.5, 4.0), 4.0)) && !CoincidentDepths(3.5, 3.5 + 1e-9));
     std::cout << "touching, close layers, 600 transparent events, opaque stop, endpoints, mesh, CSG, iso max_trace=1 and stepping past an unmatched boundary passed\n";
 }

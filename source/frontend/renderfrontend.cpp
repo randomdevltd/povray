@@ -2098,6 +2098,14 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
         (void)POVMSUtil_GetLong(msg, kPOVAttrib_ShadowCacheHits, &l);
         if(POVMSLongToCDouble(l) > 0.5)
             tsb->printf("Shadow Cache Hits:  %15.0f\n", POVMSLongToCDouble(l));
+
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_ShadowWalks, &l);
+        if(POVMSLongToCDouble(l) > 0.5)
+        {
+            (void)POVMSUtil_GetLong(msg, kPOVAttrib_ShadowCrossings, &l2);
+            tsb->printf("Shadow Walks:       %15.0f   Crossings:       %15.0f (%4.2f)\n",
+                          POVMSLongToCDouble(l), POVMSLongToCDouble(l2), POVMSLongToCDouble(l2) / POVMSLongToCDouble(l));
+        }
     }
 
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_ReflectedRays, &l);

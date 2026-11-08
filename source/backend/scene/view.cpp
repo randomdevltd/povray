@@ -1727,6 +1727,8 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_ShadowTest, stats[Shadow_Ray_Tests]);
     renderStats.SetLong(kPOVAttrib_ShadowTestSuc, stats[Shadow_Rays_Succeeded]);
     renderStats.SetLong(kPOVAttrib_ShadowCacheHits, stats[Shadow_Cache_Hits]);
+    renderStats.SetLong(kPOVAttrib_ShadowWalks, stats[Shadow_Walks]);
+    renderStats.SetLong(kPOVAttrib_ShadowCrossings, stats[Shadow_Crossings]);
     renderStats.SetLong(kPOVAttrib_MediaSamples, stats[Media_Samples]);
     renderStats.SetLong(kPOVAttrib_MediaIntervals, stats[Media_Intervals]);
     renderStats.SetLong(kPOVAttrib_MediaScatterLegs, stats[Media_Scatter_Legs]);

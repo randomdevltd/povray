@@ -4,11 +4,28 @@
 #include "core/render/ray.h"
 #include "core/math/intersectiondepth.h"
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <vector>
 
 namespace pov
 {
+
+/// Whether two depths are one boundary's, as two tests of one surface may round it a few ulps apart.
+inline bool CoincidentDepths(double a, double b)
+{
+    const int kCoincidentUlps = 4;
+    if (a == b)
+        return true;
+    double low = std::min(a, b);
+    const double high = std::max(a, b);
+    // four ulps never span more than this, so most pairs are told apart without stepping
+    if (high - low > 8.0 * DBL_EPSILON * std::max(std::fabs(low), std::fabs(high)) + DBL_MIN)
+        return false;
+    for (int step = 0; (step < kCoincidentUlps) && (low < high); step++)
+        low = std::nextafter(low, HUGE_VAL);
+    return low == high;
+}
 
 /// Admits the roots of one part of an object as those of the object, as a walk over whole objects admits them.
 struct HeldRootCondition final : RayObjectCondition
@@ -26,7 +43,7 @@ public:
     bool Admit(ConstObjectPtr object, double depth) const override
     {
         return (!ray || (!ray->MatchesSurfaceEndpoint(object, depth) && !ray->MatchesSurfaceOrigin(object, depth))) && IsFiniteIntersectionDepth(depth) && depth > start && depth < end && depth >= cursor &&
-            (depth != cursor || std::find(crossed.begin(), crossed.end(), object) == crossed.end());
+            (crossed.empty() || !CoincidentDepths(depth, cursor) || std::find(crossed.begin(), crossed.end(), object) == crossed.end());
     }
     bool operator()(const Ray&, ConstObjectPtr object, double depth) const override
     {
@@ -39,19 +56,18 @@ public:
         }
         return true;
     }
+    /// A walk that gathers every root in one pass asks shapes that bound their root search (an isosurface's max_trace) for all of them.
+    bool AllRoots() const override { return gather; }
+    void Gather(bool all) { gather = all; }
+    /// Back to the start of the segment, as when a one-pass gather has walked one object's roots one by one.
+    void Rewind() { cursor = 0.0; crossed.clear(); }
     void Reset() const { selected = nullptr; selectedDepth = HUGE_VAL; }
     ConstObjectPtr Selected() const { return selected; }
     double SelectedDepth() const { return selectedDepth; }
     // Whether a returned depth is the selected root, as two tests of one surface may round it a few ulps apart.
     bool Coincides(double depth) const
     {
-        if (!selected)
-            return false;
-        double low = std::min(depth, selectedDepth);
-        const double high = std::max(depth, selectedDepth);
-        for (int step = 0; (step < kCoincidentUlps) && (low < high); step++)
-            low = std::nextafter(low, HUGE_VAL);
-        return low == high;
+        return selected && CoincidentDepths(depth, selectedDepth);
     }
     // Crosses the returned boundary as the selected root's; when they do not coincide it is stepped past and false returned.
     bool Commit(double depth)
@@ -69,7 +85,7 @@ public:
     // Crosses one object's boundary at depth without its being returned.
     void Pass(ConstObjectPtr object, double depth)
     {
-        if (depth > cursor)
+        if (!CoincidentDepths(depth, cursor))
             crossed.clear();
         cursor = std::max(cursor, depth);
         crossed.push_back(object);
@@ -78,9 +94,9 @@ public:
     double End() const { return end; }
     double Remaining() const { return endpoint - cursor; }
 private:
-    static const int kCoincidentUlps = 4;
     double endpoint, end, start, cursor = 0.0;
     const Ray* ray;
+    bool gather = false;
     std::vector<ConstObjectPtr> crossed;
     mutable ConstObjectPtr selected = nullptr;
     mutable double selectedDepth = HUGE_VAL;
