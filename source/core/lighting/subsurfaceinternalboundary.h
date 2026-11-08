@@ -32,13 +32,13 @@ private:
 };
 
 // Why an exit search failed, for the caller's message; the search never returns past one.
-enum class SubsurfaceExitFailure { NoMaterial, MissedCrossing };
+enum class SubsurfaceExitFailure { NoCrossing, MissedCrossing };
 
 inline const char *SubsurfaceExitFailureText(SubsurfaceExitFailure reason)
 {
     switch (reason)
     {
-        case SubsurfaceExitFailure::NoMaterial: return "the ray never runs through the material";
+        case SubsurfaceExitFailure::NoCrossing: return "the ray crosses no surface of the material";
         case SubsurfaceExitFailure::MissedCrossing: return "the material still holds the ray after its last surface crossing";
     }
     return "unknown";
@@ -56,12 +56,15 @@ inline double SubsurfaceBoundsReach(const Vector3d& point, const Vector3d& direc
     return std::isfinite(reach) ? std::max(0.0, reach) : 0.0;
 }
 
-// The first place the material ends along the ray. The host's own crossings cut the ray into runs; the material test at
-// the middle of each run, never a probe a tolerance away from a root, says which runs hold material, so tolerance bands
-// in a shape's inside test, approximate roots and thin parts all classify alike. A run too short to have a distinct middle
-// takes its neighbours' side; the first such run at the origin counts as material (a start on the surface). The exit is
-// the crossing that opens the first run without material after one with it. Shift moves only the geometry query
-// backwards; physical distances are measured from point. `fail` throws with the caller's description.
+// The first place the material ends along the ray. Every caller starts in the material: at a point inside it, or on its
+// surface heading in (a refracted entry, a reflection off its inside, a light connection already found to enter). So the
+// run from the start to the first crossing is material by construction and is never tested; a start on the surface would
+// otherwise be asked which side it lies on. The host's later crossings cut the ray into runs, and the material test at the
+// middle of each run says which hold material. A run whose middle lies within rounding of either crossing's surface (half
+// its length times the cosine there) has no decidable side and takes its neighbours'; on a grazing ray that covers the
+// start surface found again a rounding error ahead. The exit is the crossing that opens the first run without material.
+// Shift moves only the geometry query backwards; physical distances are measured from point. `fail` throws with the
+// caller's description.
 template<typename Find, typename Owns, typename Contains, typename Outward, typename Fail>
 SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point, const Vector3d& direction,
     TraceTicket& ticket, double shift, double extent, double reach,
@@ -73,8 +76,16 @@ SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point,
     ray.SetRootQuery(&query);
     const double coordinates = std::max(std::abs(point[0]), std::max(std::abs(point[1]), std::abs(point[2])));
     const double roundoff = 32.0 * std::numeric_limits<double>::epsilon() * std::max(extent, coordinates);
-    bool entered = false, opened = false;
-    double start = 0.0;
+    auto leave = [&](Intersection& at)
+    {
+        Vector3d normal;
+        outward(at, normal);
+        if (dot(normal, direction) < 0.0) normal.invert();
+        if (!(dot(normal, direction) > 0.0)) normal = direction;
+        return SubsurfaceInternalBoundary{query.Distance(at.Depth), at.IPoint, normal};
+    };
+    bool opened = false;
+    double start = 0.0, openCosine = 1.0;
     Intersection crossing;
     for (;;)
     {
@@ -85,39 +96,32 @@ SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point,
             query.Advance(hit.Depth);
             continue;
         }
-        const double end = found ? query.Distance(hit.Depth) : std::max(reach, start);
-        if (end - start > roundoff)
+        double closeCosine = 1.0;
+        if (found)
         {
-            if (contains(point + direction * (0.5 * (start + end))))
-                entered = true;
-            else if (entered)
-            {
-                if (!opened)
-                    return {0.0, point, direction};
-                Vector3d normal;
-                outward(crossing, normal);
-                if (dot(normal, direction) < 0.0) normal.invert();
-                if (!(dot(normal, direction) > 0.0)) normal = direction;
-                return {query.Distance(crossing.Depth), crossing.IPoint, normal};
-            }
+            Intersection at(hit);
+            Vector3d normal;
+            outward(at, normal);
+            closeCosine = std::abs(dot(normal, direction));
         }
-        else if (!opened)
-            entered = true;
+        const double end = found ? query.Distance(hit.Depth) : std::max(reach, start);
+        const bool decided = opened && (0.5 * (end - start) * std::min(openCosine, closeCosine) > roundoff);
+        const bool material = decided && contains(point + direction * (0.5 * (start + end)));
+        if (decided && !material)
+            return leave(crossing);
         if (!found)
         {
-            if (entered && opened && !(end - start > roundoff))
-            {
-                Vector3d normal;
-                outward(crossing, normal);
-                if (dot(normal, direction) < 0.0) normal.invert();
-                if (!(dot(normal, direction) > 0.0)) normal = direction;
-                return {query.Distance(crossing.Depth), crossing.IPoint, normal};
-            }
-            fail(entered ? SubsurfaceExitFailure::MissedCrossing : SubsurfaceExitFailure::NoMaterial, start);
-            throw std::runtime_error(SubsurfaceExitFailureText(entered ? SubsurfaceExitFailure::MissedCrossing : SubsurfaceExitFailure::NoMaterial));
+            if (!opened)
+                fail(SubsurfaceExitFailure::NoCrossing, end);
+            else if (decided)
+                fail(SubsurfaceExitFailure::MissedCrossing, start);
+            else
+                return leave(crossing);
+            throw std::runtime_error(SubsurfaceExitFailureText(opened ? SubsurfaceExitFailure::MissedCrossing : SubsurfaceExitFailure::NoCrossing));
         }
         crossing = hit;
         opened = true;
+        openCosine = closeCosine;
         start = std::max(start, end);
         query.Advance(hit.Depth);
     }

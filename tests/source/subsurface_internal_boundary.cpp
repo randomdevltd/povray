@@ -270,7 +270,7 @@ int main()
         const Vector3d origin(0.0), along(1.0, 0.0, 0.0);
         auto owns = [](const Intersection &) { return true; };
         auto outward = [&](Intersection &, Vector3d &normal) { normal = -along; };
-        SubsurfaceExitFailure failure = SubsurfaceExitFailure::NoMaterial;
+        SubsurfaceExitFailure failure = SubsurfaceExitFailure::NoCrossing;
         auto fail = [&](SubsurfaceExitFailure reason, double) {
             failure = reason;
             throw std::runtime_error(SubsurfaceExitFailureText(reason));
@@ -295,13 +295,22 @@ int main()
         assert(near(exitOf({0.0, 0.7, 0.9}, [](const Vector3d &p) { return p[0] > 0.7 && p[0] < 0.9; }).distance, 0.0));
         // A start just outside the material walks in through the entry gap.
         assert(near(exitOf({1.0e-6, 0.5}, [](const Vector3d &p) { return p[0] > 1.0e-6 && p[0] < 0.5; }).distance, 0.5));
-        // Material past the last reported crossing is a missed root, and a ray with no material says so.
+        // A grazing ray meets one surface twice, a rounding error apart: the sliver between is never tested, since its
+        // middle lies within rounding of that surface, and the path runs on to the real exit.
+        {
+            const Vector3d grazing = Vector3d(-1.0e-6, 1.0, 0.0).normalized();
+            auto steep = [&](Intersection &hit, Vector3d &normal) { normal = (hit.IPoint[0] < 0.4) ? grazing : -along; };
+            Crossings crossings{{0.3, 0.3 + 1.0e-12, 0.5}, {}};
+            auto sliver = [](const Vector3d &p) { assert(!(p[0] > 0.3 && p[0] < 0.3 + 1.0e-12)); return p[0] < 0.5; };
+            assert(near(FindSubsurfaceInternalBoundary(origin, along, ticket, 0.0002, 1.0, 1.0, crossings, owns, sliver, steep, fail).distance, 0.5));
+        }
+        // Material past the last reported crossing is a missed root, and a ray crossing nothing says so.
         bool thrown = false;
         try { exitOf({0.3}, [](const Vector3d &p) { return p[0] < 0.9; }); } catch (const std::runtime_error &) { thrown = true; }
         assert(thrown && failure == SubsurfaceExitFailure::MissedCrossing);
         thrown = false;
         try { exitOf({}, [](const Vector3d &) { return false; }); } catch (const std::runtime_error &) { thrown = true; }
-        assert(thrown && failure == SubsurfaceExitFailure::NoMaterial);
+        assert(thrown && failure == SubsurfaceExitFailure::NoCrossing);
     }
     {
         // A ray leaving a sphere inside a merged superellipsoid: the superellipsoid crosses in and out between two plane
@@ -650,11 +659,16 @@ int main()
         scene->preparedSets.front()->objects = {&junction};
     }
     {
+        // A material no placed object carries has no crossings to find: the search fails loudly.
         CSGMerge empty;
+        Sphere stray;
+        stray.interior = std::make_shared<Interior>();
+        stray.interior->boundsLow = junction.interior->boundsLow;
+        stray.interior->boundsHigh = junction.interior->boundsHigh;
         bool failed = false;
         try
         {
-            trace.SubsurfaceInternalBoundaryAt(point, direction, palm, &empty, ticket);
+            trace.SubsurfaceInternalBoundaryAt(point, direction, &stray, &empty, ticket);
         }
         catch (const std::runtime_error&)
         {
