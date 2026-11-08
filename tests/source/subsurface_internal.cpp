@@ -133,6 +133,16 @@ int main()
     Near(reflected, 2.5);
     assert(segments == 2 && connections == 1 && index == sequence.size());
 
+    // An internal reflection keeps what the skin it crosses there passes.
+    index = 0;
+    const double skinned = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
+        1.0, 1.0, 1.5, boundary,
+        [&](const Vector3d&, const Vector3d&, double, double) { return 1.0; },
+        [&](const Vector3d&, double) { return 2.0; },
+        [&] { assert(index < sequence.size()); return sequence[index++]; },
+        [](const Vector3d&) { return 0.25; });
+    Near(skinned, 2.0 + 0.5 * 0.25);
+
     // In an infinite homogeneous source, L=j/sigma_a, independent of scattering.
     std::mt19937_64 generator(736411);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);

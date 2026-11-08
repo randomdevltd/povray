@@ -29,11 +29,12 @@ inline double SubsurfaceInternalFresnel(double cosine, double relativeIor)
     return 0.5 * (s * s + p * p);
 }
 
-// Source is the attenuated line integral; connect is ∫j(y) exp(-σt r) / (4π r²) dV(y).
-template<typename Boundary, typename Source, typename Connect, typename Draw>
+// Source is the attenuated line integral; connect is ∫j(y) exp(-σt r) / (4π r²) dV(y); bounce(p) is what an internal
+// reflection at boundary point p keeps (the skin it crosses there).
+template<typename Boundary, typename Source, typename Connect, typename Draw, typename Bounce>
 double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     double absorption, double scattering, double relativeIor,
-    Boundary&& boundary, Source&& source, Connect&& connect, Draw&& draw)
+    Boundary&& boundary, Source&& source, Connect&& connect, Draw&& draw, Bounce&& bounce)
 {
     const double extinction = absorption + scattering;
     if (!(absorption >= 0.0) || !(scattering >= 0.0) || !(extinction > 0.0) ||
@@ -69,6 +70,8 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
             const double cosine = dot(direction, hit.normal);
             if (!(cosine > 0.0)) throw std::runtime_error("Internal subsurface normal must point outwards");
             if (draw() >= SubsurfaceInternalFresnel(cosine, relativeIor)) return radiance;
+            throughput *= bounce(hit.position);
+            if (!(throughput > 0.0)) return radiance;
             position = hit.position;
             direction -= hit.normal * (2.0 * cosine);
             gatherSegment = true;
@@ -80,6 +83,15 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
             throughput /= survival;
         }
     }
+}
+
+template<typename Boundary, typename Source, typename Connect, typename Draw>
+double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
+    double absorption, double scattering, double relativeIor,
+    Boundary&& boundary, Source&& source, Connect&& connect, Draw&& draw)
+{
+    return SampleSubsurfaceInternalRadiance(position, direction, absorption, scattering, relativeIor,
+        boundary, source, connect, draw, [](const Vector3d&) { return 1.0; });
 }
 
 }
