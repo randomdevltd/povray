@@ -7033,6 +7033,51 @@ const std::vector<ObjectPtr>& Trace::SubsurfaceMaterialBodies(const Interior* in
     return bodies;
 }
 
+// A buried light lights the material it lies in; the transport applies that exactly on each path, integrating emission
+// only along the path's material and connecting only to samples before its exit. This only spares that work for a light
+// sharing no volume with the material: its container's box against the boxes of the material's placed parts, through
+// unions and merges, where a common slab no thicker than the boxes' own float rounding is a shared boundary, not a volume.
+bool Trace::SubsurfaceSourceOverlaps(const LightSource& light, const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId)
+{
+    const auto key = std::make_tuple(preparedSetId, interior, whole, &light);
+    const auto known = ssltSourceOverlaps.find(key);
+    if (known != ssltSourceOverlaps.end())
+        return known->second;
+    const BoundingBox& source = light.emitterContainer->BBox;
+    auto meets = [&](const BoundingBox& box)
+    {
+        for (int axis = X; axis <= Z; axis++)
+        {
+            const double low = std::max(double(box.lowerLeft[axis]), double(source.lowerLeft[axis]));
+            const double high = std::min(double(box.lowerLeft[axis]) + box.size[axis], double(source.lowerLeft[axis]) + source.size[axis]);
+            const double magnitude = std::max(std::max(fabs(low), fabs(high)), std::max(double(box.size[axis]), double(source.size[axis])));
+            if (!(high - low > 4.0 * std::numeric_limits<float>::epsilon() * magnitude))
+                return false;
+        }
+        return true;
+    };
+    std::function<bool(ConstObjectPtr)> part = [&](ConstObjectPtr object)
+    {
+        if (!meets(object->BBox))
+            return false;
+        const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object);
+        if ((compound == nullptr) || compound->children.empty() || (dynamic_cast<const CSGIntersection *>(object) != nullptr))
+            return true;
+        for (ConstObjectPtr child : compound->children)
+            if (part(child))
+                return true;
+        return false;
+    };
+    bool overlaps = false;
+    for (ObjectPtr body : SubsurfaceMaterialBodies(interior, whole, preparedSetId))
+        if (part(body))
+        {
+            overlaps = true;
+            break;
+        }
+    return ssltSourceOverlaps[key] = overlaps;
+}
+
 SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
     ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket)
 {
@@ -7079,9 +7124,10 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
 bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
     double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket)
 {
-    if (!light.emitter || !light.emitter->HasVolumeEmission() || object == nullptr || !object->interior) return false;
+    if (!light.emitter || !light.emitter->HasVolumeEmission() || !light.emitterContainer || object == nullptr || !object->interior) return false;
     const Interior* material = object->interior.get();
     if (!SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return false;
+    if (!SubsurfaceSourceOverlaps(light, material, const_cast<ObjectPtr>(whole), ticket.preparedSetId)) return false;
     const double extent = (material->boundsHigh - material->boundsLow).length();
     if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, InterfaceTolerance(point, material), extent),
         material, ticket.preparedSetId)) return false;
@@ -7097,21 +7143,12 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     const Interior* material = out.Object->interior.get();
     if (eye.IsInterior(material) || !SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return result;
     std::vector<const Emitter*> sources;
-    const auto& bounds = SubsurfaceObject(out)->BBox;
     for (const auto* light : lights)
-        if (!light->Photon_Only && light->emitter && light->emitter->HasVolumeEmission())
+        if (!light->Photon_Only && light->emitter && light->emitter->HasVolumeEmission() && light->emitterContainer)
         {
             const auto* emitter = light->emitter.get();
             if (std::find(sources.begin(), sources.end(), emitter) != sources.end()) continue;
-            double distanceSquared = 0.0;
-            for (int axis = 0; bounds.finiteInterior && axis < 3; ++axis)
-            {
-                const double below = double(bounds.lowerLeft[axis]) - emitter->Centre()[axis];
-                const double above = emitter->Centre()[axis] - double(bounds.lowerLeft[axis]) - double(bounds.size[axis]);
-                const double distance = std::max(0.0, std::max(below, above));
-                distanceSquared += distance * distance;
-            }
-            if (distanceSquared <= Sqr(emitter->Radius())) sources.push_back(emitter);
+            if (SubsurfaceSourceOverlaps(*light, material, SubsurfaceObject(out), eye.GetPreparedSetId())) sources.push_back(emitter);
         }
     if (sources.empty()) return result;
     Vector3d normal;
