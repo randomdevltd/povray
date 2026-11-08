@@ -438,10 +438,6 @@
    "text": "The lambda parameter controls how statistically different the random move of an octave is compared to its previous octave.",
    "doc": "r3_6.html#r3_6_2_5_5_5"
   },
-  "light_samples": {
-   "text": "The light_samples keyword, light_samples M [full | by_contribution], multiplies the samples of every surface and volume light for this surface by M and chooses how each hit spends them.",
-   "doc": "r3_6.html#r3_6_1_3"
-  },
   "linear_spline": {
    "text": "The default if none is specified is linear_spline.",
    "doc": "r3_5.html#r3_5_1_1_8"
@@ -882,10 +878,6 @@
    "text": "The hyperbolic tangent of A.",
    "doc": "r3_3.html#r3_3_1_5_4"
   },
-  "target": {
-   "text": "First, make your object into a \"target.\" You do this with the target keyword.",
-   "doc": "r3_4.html#r3_4_3_4_2"
-  },
   "texture_list": {
    "text": "The normal_vectors, uv_vectors, and texture_list sections are optional.",
    "doc": "r3_5.html#r3_5_1_2_4"
@@ -1020,6 +1012,21 @@
   }
  },
  "snippets": {
+  "Declare": {
+   "rank": 1013,
+   "code": "Declare=RAD=0",
+   "from": "doc/html/r3_2.html"
+  },
+  "Filter_Tags": {
+   "rank": 1022,
+   "code": "Filter_Tags=TAG_FILTER",
+   "from": "doc/html/r3_2.html"
+  },
+  "Photon_Memory": {
+   "rank": 1016,
+   "code": "Photon_Memory=GB",
+   "from": "doc/html/r3_2.html"
+  },
   "aa_level": {
    "rank": 1012,
    "code": "aa_level : 3",
@@ -1838,9 +1845,9 @@
    "from": "tests/pov4/tags_inherit.pov4:9"
   },
   "input": {
-   "rank": 61,
-   "code": "if (Local() != 2) { error(\"a local resolved to the input\"); }",
-   "from": "tests/pov4/ok_param_shadows_input.pov4:14"
+   "rank": 1012,
+   "code": "input Label;",
+   "from": "tests/pov4/ok_input.pov4:3"
   },
   "inside_vector": {
    "rank": 1023,

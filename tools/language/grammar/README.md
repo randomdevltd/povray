@@ -21,6 +21,6 @@ functions it was mined from. `pov4schema.h` compiles the same table into the ren
 where the `.pov4` static checker consumes it. `--inspect` prints every mined function.
 
 Regenerate everything with `node extract.mjs && node blocks.mjs && node render.mjs`
-(run from this directory; `node --test test/` checks completeness, reserved-word
+(run from this directory; `node --test test/*.test.mjs` checks completeness, reserved-word
 validity, known-content anchors and regeneration stability). `keywords.json` comes from
 `tools/language/keywords.mjs` as before; these generators consume it, never edit it.
