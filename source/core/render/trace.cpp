@@ -3533,6 +3533,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
         const PhotonSobol sequence(DeriveKey(key, kDrawAreaLight, 0));
         MarkGrain();
+        // a one-sided receiver drops samples behind it, so their shadow walks are not traced
+        const Vector3d *frontNormal = (!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (finish->DiffuseBack == 0.0)) ? &layer_normal : nullptr;
         for (int k = 0; k < count; k++)
         {
             Ray sampleRay(lightsourceray);
@@ -3543,7 +3545,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                                    DeriveKey(DeriveKey(key, kDrawEmitter, k), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
             MathColour incoming, tmp;
             double distance;
-            if (!SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, draw, true, geometricNormal, object->interior.get()))
+            if (!SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, draw, true, geometricNormal, object->interior.get(),
+                                         frontNormal))
                 continue;
             incoming /= M_PI * count;
             bool backside = false;
@@ -4385,7 +4388,7 @@ static const double kSurfaceEndpointSnap = 1.0e-8;
 
 bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                     MathColour& colour, const EmitterDraw& draw, bool shadows,
-                                    const Vector3d* receiverNormal, Interior* receiverInterior)
+                                    const Vector3d* receiverNormal, Interior* receiverInterior, const Vector3d* frontNormal)
 {
     colour.Clear();
     if (Light_Below_Cutoff(&light, point))
@@ -4404,6 +4407,11 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
     const Vector3d delta = sample.position - point;
     depth = delta.length();
     const Vector3d direction = (depth > 0.0) ? delta / depth : Vector3d(0.0, 0.0, 1.0);
+    if (frontNormal && (dot(*frontNormal, direction) < EPSILON))
+    {
+        ray.Direction = direction;
+        return false;
+    }
     if (receiverNormal && receiverInterior)
     {
         const bool crosses = dot(ray.Direction, *receiverNormal) * dot(direction, *receiverNormal) > 0.0;

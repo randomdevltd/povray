@@ -330,9 +330,11 @@ class Trace
         bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                      MathColour& colour, const Vector2d& uv, bool shadows = true,
                                      const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
+        /// With `frontNormal`, a sample behind that normal is dropped before its shadow is traced.
         bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                      MathColour& colour, const EmitterDraw& draw, bool shadows = true,
-                                     const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
+                                     const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr,
+                                     const Vector3d* frontNormal = nullptr);
 
         /// Whether the first surface `ray` meets nearer than `depth` is an opaque one it leaves: its origin is inside an opaque solid.
         bool LeavesOpaqueSolid(const Ray& ray, double depth);
