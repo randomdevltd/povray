@@ -755,6 +755,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/split_union_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/token_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/parser_token_count.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/near_hit_other_object.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 check-heavy: check-quick
 	sh \$(top_srcdir)/tests/pov4/identical.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/render_tags.sh \$(top_builddir)/unix/povray \$(top_srcdir)

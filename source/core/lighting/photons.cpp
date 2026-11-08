@@ -397,6 +397,8 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     DBL choice;
     DBL Cos_Angle_Incidence;
     int TIR_occured;
+    struct ObjectRestore { ConstObjectPtr &slot, value; ~ObjectRestore() { slot = value; } } objectRestore{ hitObject, hitObject };
+    hitObject = isect.Object;
 
     double relativeIor = 1.0;
     if (NeedsRelativeIor(Texture, isect.Object))
@@ -716,6 +718,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
 #endif // PT_AMPLIFY_BUG
 
         ColourChannel dummyTransm = 0.0; // Shouldn't matter, but placates static code analysis.
+        const RayLeavingScope leaving(NRay, hitObject);
         TraceRay(NRay, CurLightCol, dummyTransm, (float)New_Weight, true);
 
 #ifndef PT_AMPLIFY_BUG
@@ -863,6 +866,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
         MathColour lc(colour * MathColour(threadData->GFilCol));
 
         ColourChannel dummyTransm;
+        const RayLeavingScope leaving(nray, hitObject);
         TraceRay(nray, lc, dummyTransm, weight, true);
     }
     else
@@ -930,6 +934,7 @@ bool PhotonTrace::TraceRefractionRayForPhotons(const FINISH* finish, const Vecto
 
     ColourChannel dummyTransm;
     nray.Origin = ipoint + leave * nray.Direction;
+    const RayLeavingScope leaving(nray, hitObject);
     TraceRay(nray, lc, dummyTransm, weight, false);
 
     return false;

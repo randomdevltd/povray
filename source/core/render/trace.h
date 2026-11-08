@@ -455,6 +455,8 @@ class Trace
         DBL shadowReach = 0.0;
         /// The fold of the reflected ray whose hit is being shaded, which a straight transmitted continuation keeps.
         const Vector3d *hitFold = nullptr;
+        /// The object of the hit being shaded, whose surface its reflected and refracted rays leave.
+        ConstObjectPtr hitObject = nullptr;
 
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;
