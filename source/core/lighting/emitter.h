@@ -162,7 +162,7 @@ struct MediaLight final
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
     int samples = 64;               ///< emitter draws per receiver point
-    double domainCells = 0.0;       ///< interior only: prepared source domain budget overriding global_settings; 0 = no override
+    double domainCells = 0.0;       ///< interior only: domain_cells for its prepared source domain; 0 = the scene's light default
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;

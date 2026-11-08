@@ -184,9 +184,11 @@ class Media final
         DBL Light_Samples;
 
         std::vector<PIGMENT*> Density;
+        /// the prepared grid's cell width, derived from domainCells and the container
         DBL FastResolution;
-        DBL requestedFastResolution = -1.0;
-        bool fastResolutionRecorded = false;
+        /// domain_cells: the most cells the prepared grid spreads evenly over its container
+        DBL domainCells = 500000.0;
+        bool domainCellsStated = false;
         std::shared_ptr<FastCache> fastCache;
         std::vector<std::shared_ptr<FastCache>> preparedBindings;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
@@ -203,11 +205,10 @@ class Media final
         void Transform(const TRANSFORM *trans);
 
         void PostProcess();
-        void SetFastContainer(ObjectPtr object, DBL cellLimit = 0.0);
+        void SetFastContainer(ObjectPtr object);
+        /// the cap on any prepared grid of this medium: twice its domain_cells
+        DBL PreparedCellLimit() const { return 2.0 * domainCells; }
         void FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
-        void SetRequestedFastResolution(DBL value) { FastResolution = requestedFastResolution = value; fastResolutionRecorded = true; }
-        /// the resolution the scene wrote, or a nonpositive value when it left the grid automatic
-        DBL AuthoredFastResolution() const { return fastResolutionRecorded ? requestedFastResolution : FastResolution; }
         void RequirePreparedField() const;
         void PreparedDensityAt(const Vector3d& point, MathColour& result) const;
         DBL PreparedStep(const Ray& ray, DBL from, DBL to) const;

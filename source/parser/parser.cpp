@@ -315,7 +315,7 @@ void Parser::RecordMediaField(Media& medium, bool allowEager)
             *slot.first = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(slot.second));
         }
     }
-    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, sceneData->EffectivePreparedMediaCells());
+    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, medium.PreparedCellLimit());
     if (field == nullptr)
         return;
     // one job per eager thread, all claiming slabs of the same grid
@@ -521,7 +521,7 @@ void Parser::Run()
             Assign_Scene_Lights();
             Check_Legacy_Transport();
             Check_Subsurface_Light_Hosts();
-            Warn_Unused_Media_Resolution();
+            Warn_Unused_Media_Domain_Cells();
             Split_Unions();
 
             // post process atmospheric media
@@ -7836,16 +7836,41 @@ void Parser::Parse_Default ()
                 END_CASE
 
                 OTHERWISE
-                    UNGET
-                    EXIT
+                    if (CurrentTokenText() == "domain_cells")
+                        sceneData->domainCells = Parse_Domain_Cells();
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
                 END_CASE
             END_EXPECT
             Parse_End ();
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            // an interior light's default grid size, its own setting apart from the media's
+            if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+            {
+                Parse_Begin ();
+                EXPECT
+                    OTHERWISE
+                        if (CurrentTokenText() == "domain_cells")
+                            sceneData->lightDomainCells = Parse_Domain_Cells();
+                        else
+                        {
+                            UNGET
+                            EXIT
+                        }
+                    END_CASE
+                END_EXPECT
+                Parse_End ();
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -8628,20 +8653,6 @@ void Parser::Parse_Global_Settings()
                         sceneData->interfaceTexture = mode;
                 if (sceneData->interfaceTexture == kInterfaceTextureAuto)
                     Error("Expected blend, near or far after interface_texture.");
-            }
-            else if (CurrentTokenText() == "prepared_media_cells")
-            {
-                const DBL cells = Parse_Float();
-                if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
-                    Error("prepared_media_cells must be an integer from 1 to 1000000000.");
-                sceneData->preparedMediaCells = cells;
-            }
-            else if (CurrentTokenText() == "prepared_source_cells")
-            {
-                const DBL cells = Parse_Float();
-                if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
-                    Error("prepared_source_cells must be an integer from 1 to 1000000000.");
-                sceneData->preparedSourceCells = cells;
             }
             else if (CurrentTokenText() == "atmospheric_ior")
             {
@@ -10803,7 +10814,7 @@ void Parser::Check_Legacy_Transport()
 }
 
 // A constant method 4 medium's resolution sets its interior's grid only when nothing there varies.
-void Parser::Warn_Unused_Media_Resolution()
+void Parser::Warn_Unused_Media_Domain_Cells()
 {
     std::vector<ObjectPtr> objects;
     for (ObjectPtr object : sceneData->objects)
@@ -10825,10 +10836,10 @@ void Parser::Warn_Unused_Media_Resolution()
         if (cause.empty())
             continue;
         for (const Media& medium : interior->media)
-            if ((medium.Sample_Method == 4) && (medium.AuthoredFastResolution() > 0.0) && Media_Is_Constant(medium) &&
+            if ((medium.Sample_Method == 4) && medium.domainCellsStated && Media_Is_Constant(medium) &&
                 warned.insert(medium.where).second)
-                Warning("The constant medium at %s in the %s gives a resolution, but the grid there follows %s, "
-                        "so the resolution is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());
+                Warning("The constant medium at %s in the %s gives domain_cells, but the grid there follows %s, "
+                        "so its domain_cells is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());
     }
 }
 
@@ -11004,7 +11015,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
-            medium.SetFastContainer(Object, sceneData->EffectivePreparedMediaCells());
+            medium.SetFastContainer(Object);
         }
         if (Object->interior->light)
             Make_Interior_Light(*Object->interior, Object);

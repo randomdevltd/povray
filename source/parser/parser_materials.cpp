@@ -3682,6 +3682,14 @@ void Parser::Parse_Texture_Transform (TEXTURE *Texture)
 }
 
 
+DBL Parser::Parse_Domain_Cells()
+{
+    const DBL cells = Parse_Float();
+    if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
+        Error("domain_cells must be an integer from 1 to 1000000000.");
+    return cells;
+}
+
 /*****************************************************************************
 *
 * FUNCTION
@@ -3715,7 +3723,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     TRANSFORM Local_Trans;
     Vector3d Local_Vector;
     MATRIX Local_Matrix;
-    bool resolutionSpecified = false;
+    bool domainCellsSpecified = false;
     const std::string where = CurrentSourceLine();
 
     Parse_Begin();
@@ -3732,6 +3740,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
             IMedia->Max_Samples = 10;
             IMedia->Sample_Method = (sceneData->EffectiveLanguageVersion() >= 400) ? 4 : 3;
         }
+        IMedia->domainCells = sceneData->domainCells;
     }
 
     EXPECT
@@ -3766,13 +3775,6 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (JITTER_TOKEN)
             IMedia->Jitter = Parse_Float();
-        END_CASE
-
-        CASE (RESOLUTION_TOKEN)
-            resolutionSpecified = true;
-            IMedia->SetRequestedFastResolution(Parse_Float());
-            if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
-                Error("media resolution needs a finite positive scene-unit width.");
         END_CASE
 
         CASE (AA_THRESHOLD_TOKEN)
@@ -3904,6 +3906,12 @@ void Parser::Parse_Media(vector<Media>& medialist)
         OTHERWISE
             if (CurrentTokenText() == "light_samples")
                 IMedia->Light_Samples = Parse_Light_Samples();
+            else if (CurrentTokenText() == "domain_cells")
+            {
+                domainCellsSpecified = true;
+                IMedia->domainCells = Parse_Domain_Cells();
+                IMedia->domainCellsStated = true;
+            }
             else
             {
                 Reject_Nested_Item("media", "a media");
@@ -3915,8 +3923,8 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
     Parse_End();
 
-    if (resolutionSpecified && IMedia->Sample_Method != 4)
-        Error("media resolution requires method 4.");
+    if (domainCellsSpecified && IMedia->Sample_Method != 4)
+        Error("media domain_cells requires method 4.");
 
     IMediaObj.where = where;
     medialist.push_back(IMediaObj);
@@ -4128,10 +4136,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
                     Error("A surface light has no prepared source domain; domain_cells is for interior lights.");
                 if (light->domainCells > 0.0)
                     Error("A light block accepts only one domain_cells setting.");
-                const DBL cells = Parse_Float();
-                if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
-                    Error("domain_cells must be an integer from 1 to 1000000000.");
-                light->domainCells = cells;
+                light->domainCells = Parse_Domain_Cells();
             }
             else
             {
@@ -4146,6 +4151,9 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
     if (light->BounceOnly() && (light->nits || light->lumens >= 0.0))
         Error("A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.");
+    // an interior light without its own count takes the light default in effect here, never its medium's
+    if (!surface && !(light->domainCells > 0.0))
+        light->domainCells = sceneData->lightDomainCells;
     // a pattern's luminance integral is known only once prepared; a constant pigment's is known here
     if (light->pigment && (light->pigment->Type == PLAIN_PATTERN) && !(light->pigment->colour.colour().Greyscale() > 0.0) &&
         ((light->nits && light->brightness > 0.0) || (light->lumens > 0.0)))

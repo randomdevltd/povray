@@ -14,7 +14,7 @@ struct PreparedSourceDomainPolicy
 {
     std::array<size_t, 3> cartesianCells{{80, 80, 80}};
     bool automaticCartesian = true;
-    /// the automatic lattice's target cell budget (global_settings prepared_source_cells)
+    /// the automatic lattice's cell budget (the light's domain_cells)
     double automaticCells = 500000;
     size_t maxNodes = 1048576;
 };
@@ -112,11 +112,11 @@ SelectSourceDomain(const std::vector<PreparedSourceGeometry>& owners, const Prep
 inline PreparedSourceDomainPolicy SceneSourceDomainPolicy(const SceneData& scene)
 {
     PreparedSourceDomainPolicy policy;
-    policy.automaticCells = scene.preparedSourceCells;
+    policy.automaticCells = scene.lightDomainCells;
     return policy;
 }
 
-/// Each owner's domain with its own policy: a light's domain_cells override, else the scene's.
+/// Each owner's domain with its own policy: the light's domain_cells, else the scene's light default.
 inline std::shared_ptr<const PreparedSourceDomain>
 PrepareSourceDomain(ConstObjectPtr owner, const PreparedSourceDomainPolicy& policy = {})
 {

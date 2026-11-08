@@ -2481,11 +2481,6 @@
    "code": "global_settings { assumed_gamma 1.0 prepared_media_cells 4096 }",
    "from": "tests/pov4/framing_tagged.pov4:3"
   },
-  "prepared_source_cells": {
-   "rank": 47,
-   "code": "global_settings { prepared_source_cells 65536 }",
-   "from": "doc/html/r3_4.html"
-  },
   "pretrace_end": {
    "rank": 1019,
    "code": "pretrace_end : 0.04",
@@ -2602,11 +2597,6 @@
    "rank": 19,
    "code": "warp { repeat 2*x }",
    "from": "doc/html/r3_6.html"
-  },
-  "resolution": {
-   "rank": 1016,
-   "code": "resolution 0.025",
-   "from": "tests/pov4/interior_all_options.pov4:29"
   },
   "return": {
    "rank": 26,

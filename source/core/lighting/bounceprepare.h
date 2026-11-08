@@ -524,8 +524,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             td->preparationProgress->End();
         return;
     }
-    // Surface bounce fields draw on the prepared media cell budget, as many bytes as that many colours, over all orders.
-    const std::size_t budget = std::size_t(scene->EffectivePreparedMediaCells()) * sizeof(MathColour);
+    // Surface bounce fields share the scene's prepared cell limit, as many bytes as that many colours, over all orders.
+    const std::size_t budget = std::size_t(scene->PreparedCellLimit()) * sizeof(MathColour);
     std::size_t used = 0, baseline = surface_refine::kBaseline;
     double spacing = 0.0;
     if (!parts.empty())

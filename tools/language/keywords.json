@@ -1970,11 +1970,6 @@
   "category": "other"
  },
  {
-  "word": "resolution",
-  "token": "RESOLUTION_TOKEN",
-  "category": "other"
- },
- {
   "word": "rgb",
   "token": "RGB_TOKEN",
   "category": "colour"
