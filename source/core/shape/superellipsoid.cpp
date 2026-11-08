@@ -239,16 +239,19 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
     /* Test if superellipsoid lies 'behind' the ray origin. */
 
-    if (t2 < DEPTH_TOLERANCE)
+    // A boundary query admits roots itself: an object-space floor would drop crossings near its origin once scaled.
+    const DBL nearest = precise ? 0.0 : DEPTH_TOLERANCE;
+
+    if (t2 < nearest)
     {
         return(false);
     }
 
     cnt = 0;
 
-    if (t1 < DEPTH_TOLERANCE)
+    if (t1 < nearest)
     {
-        t1 = DEPTH_TOLERANCE;
+        t1 = nearest;
     }
 
     dists[cnt++] = t1;
@@ -1189,7 +1192,8 @@ bool Superellipsoid::insert_hit(const Ray &ray, DBL Depth, IStack& Depth_Stack, 
 {
     Vector3d IPoint;
 
-    if ((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth) && ray.AdmitRoot(this, Depth))
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+    if ((Depth > (precise ? 0.0 : DEPTH_TOLERANCE)) && IsFiniteIntersectionDepth(Depth) && ray.AdmitRoot(this, Depth))
     {
         IPoint = ray.Evaluate(Depth);
 
