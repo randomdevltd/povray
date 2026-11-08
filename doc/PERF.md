@@ -1599,6 +1599,91 @@ index triangles in file order. A `mesh {}` of smooth triangles keeps a 12-byte n
 normals by vertex would remove. Building peaks at about 100 bytes a triangle of heap, mostly the pass's boxes and sort
 orders.
 
+## CSG child trees
+
+A CSG tested every child for every ray, and an intersection or merge asked every other child whether each hit lay
+inside it: a union's `Inside` was another scan of its children. The scene tree hides this for a union it splits, but
+not for a CSG kept whole: a union inside an intersection or difference, a union with `split_union off` or one carrying a
+light or medium, a merge, a difference with many cutters, or a union used as `clipped_by` or `bounded_by`. A union of
+17,576 bricks (`union { box cylinder×4 }` each) wrapped in an intersection cost 32 times the plain union.
+
+Once the geometry is final (after the deferred mesh pass), a CSG with 8 or more children builds two median-split box
+trees over its children's certified world boxes, padded by 2e-4 plus 4e-6 of the coordinates' magnitude:
+
+- for rays, the children whose every hit lies in their box (`BBox.finite`, and not a `bounded_by` stand-in for a shape
+  it does not enclose). A ray asks the children whose box it crosses ahead of its origin, sorted and merged with the
+  children the tree cannot hold, so the children are still asked in their order and ties between equal depths resolve
+  as before;
+- for inside tests, in unions and merges the children with no inside point outside their box (`BBox.finiteInterior`,
+  not inverted), and in intersections and differences the inverted, unclipped children whose inside test honours
+  inversion, which are inside everywhere outside their box. Patches, meshes without `inside_vector`, open skeins and
+  CSGs holding any of them contain no point however inverted, so they are always asked. A point asks only the children whose box holds it; the others are asked in order as before.
+
+`CSGUnion::Inside`, `CSGIntersection::Inside`, the per-hit test of intersections and differences and the per-hit test of
+merges use them, so `clipped_by` and `bounded_by` objects, media containers, photons and interior tests that reach a
+large CSG through `Inside_Object` gain as well. The trees are read-only while rendering; a ray's candidates go on a
+per-thread list that nested CSGs stack on, so nothing is allocated per call. A transform or a copy drops a CSG's trees;
+`Bounding=off` builds none. `POV_CSG_CHILD_TREE=<n>` sets the child count from which they are built (0: never), for
+comparisons.
+
+Instructions are user-space, one thread, `-A`, against `performance` before the change; every image is pixel-identical
+to it, and the same on four threads:
+
+| Scene (128×96, stock scenes 160×120) | Before | After | After / before |
+|---|---:|---:|---:|
+| 17,576-brick union, split into the scene tree | 4.83 G | 4.83 G | 0.999 |
+| the same union inside an intersection | 153.84 G | 4.61 G | 0.030 |
+| the same union, `split_union off` | 96.18 G | 4.56 G | 0.047 |
+| merge of 4,000 overlapping glass spheres | 230.73 G | 5.99 G | 0.026 |
+| box minus 4,000 spheres | 13.22 G | 0.43 G | 0.033 |
+| union (kept whole) of 4,000 spheres, each `clipped_by` a box | 3.79 G | 0.42 G | 0.110 |
+| quartic torus `bounded_by` a union of 4,000 boxes | 5.37 G | 3.00 G | 0.559 |
+| two planes `clipped_by` a 4,096-sphere union | 3.10 G | 0.42 G | 0.137 |
+| `advanced/chess2.pov` | 15.79 G | 10.31 G | 0.653 |
+| `advanced/lamppost.pov` | 1.50 G | 1.50 G | 1.000 |
+| `advanced/woodbox.pov` | 0.87 G | 0.87 G | 1.000 |
+| `advanced/blocks/stackerday.pov` | 37.18 G | 37.10 G | 0.998 |
+| `objects/csg/cliptst2.pov` | 0.27 G | 0.27 G | 1.000 |
+| `objects/csg/intee1.pov` | 0.33 G | 0.33 G | 1.000 |
+| `objects/csg/hfclip.pov` | 0.50 G | 0.50 G | 1.000 |
+| `tests/render/csg_mesh_media_shadow.pov` | 0.27 G | 0.27 G | 1.000 |
+| `advanced/benchmark/benchmark.pov` | 48.10 G | 47.80 G | 0.994 |
+
+The threshold comes from a sweep of the child count with the trees forced on for every CSG of two or more children
+(`POV_CSG_CHILD_TREE=2`) against off (`0`), at 96×72, as the render phase (each run minus its 1×1 run) over five child
+kinds: scattered spheres, boxes and closed 12-triangle meshes on a grid, overlapping spheres, and children that are
+themselves unions of four spheres. Rays are a union with `split_union off`; inside tests are two planes `clipped_by` the
+union:
+
+Render-phase instructions with the trees / without them:
+
+| Query, children | 2 | 4 | 8 | 16 | 32 | 64 | 256 | 4096 | 17576 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| rays, spheres | 1.004 | 1.002 | 0.985 | 0.942 | 0.853 | 0.708 | 0.359 | 0.033 | 0.010 |
+| rays, boxes | 1.002 | 0.999 | 0.981 | 0.932 | 0.843 | 0.693 | 0.336 | 0.030 | 0.009 |
+| rays, meshes | 0.995 | 0.955 | 0.864 | 0.708 | 0.520 | 0.330 | 0.108 | 0.008 | 0.002 |
+| rays, overlapping spheres | 1.022 | 1.017 | 0.993 | 0.907 | 0.783 | 0.630 | 0.316 | 0.048 | 0.017 |
+| rays, unions of 4 spheres | 0.989 | 0.934 | 0.836 | 0.691 | 0.510 | 0.321 | 0.107 | 0.008 | 0.003 |
+| inside, spheres | 0.997 | 0.990 | 0.968 | 0.936 | 0.870 | 0.728 | 0.420 | 0.037 | 0.008 |
+| inside, boxes | 0.998 | 0.990 | 0.972 | 0.935 | 0.870 | 0.727 | 0.397 | 0.036 | 0.008 |
+| inside, meshes | 0.990 | 0.969 | 0.923 | 0.835 | 0.711 | 0.498 | 0.199 | 0.014 | 0.003 |
+| inside, overlapping spheres | 0.999 | 0.988 | 0.969 | 0.915 | 0.816 | 0.700 | 0.361 | 0.044 | 0.011 |
+| inside, unions of 4 spheres | 0.974 | 0.917 | 0.829 | 0.698 | 0.537 | 0.324 | 0.111 | 0.007 | 0.002 |
+
+![Tree / linear render-phase instructions against child count, rays and inside tests](img/csg-child-tree-sweep.png)
+![The same from 2 to 64 children on a linear scale, where the curves cross 1](img/csg-child-tree-crossover.png)
+
+Cheap children break even at 4 and gain from 8; meshes and compound children (whose own four-child unions get trees in
+this sweep) gain from 2 to 4. At 2 and 4 the overlapping spheres' rays cost 2% more. 8 is the smallest count at which every kind gains, so it is the threshold; a cost-aware
+threshold would gain under 10% of an already small cost on 2 to 7 expensive children. Small-CSG stock scenes and the
+standard benchmark are unchanged or slightly faster.
+
+Left: a CSG's `Determine_Textures` still asks every child whether a hit is inside it (only objects without a texture of
+their own reach it). With the trees off (`POV_CSG_CHILD_TREE=0`) a large CSG's scan is the old scan through shared
+helpers and compiles differently: 1–3% more instructions on the large unions above, 10% on the merge, 11% fewer on the
+difference. With the trees on, only children the trees cannot hold are scanned that way, and CSGs under 8 children
+measure unchanged.
+
 ## Radiosity
 
 The same 100×60 window of the large scene, single-threaded, traces in 0.32 CPU-s without radiosity, 12.1 with

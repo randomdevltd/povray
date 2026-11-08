@@ -148,6 +148,8 @@ class TraceThreadData : public ThreadData
         std::vector<BCYL_INT> BCyl_RInt;
         std::vector<BCYL_INT> BCyl_HInt;
         IStackPool stackPool;
+        /// Child indices a CSG's tree hands its ray loop, stacked for nested CSGs (see CSGChildTree).
+        std::vector<unsigned int> csgCandidates;
         std::vector<GenericFunctionContextPtr> functionContextPool;
         int Facets_Last_Seed;
         int Facets_CVC;

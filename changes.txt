@@ -725,6 +725,17 @@ New Features
 Performance Improvements
 ------------------------
 
+  - A CSG of 8 or more children indexes them by their boxes, so a ray asks
+    only the children whose box it crosses and an inside test only those
+    whose box holds the point, in unions, merges, intersections and
+    differences alike. A CSG kept whole had cost its child count per ray and
+    per hit: a 17,576-brick union inside an intersection took 154 G
+    instructions at 128x96 against 4.8 G for the same union split into the
+    scene, and now takes 4.6 G; a merge of 4,000 spheres 231 G, now 6.0 G; a
+    box minus 4,000 spheres 13.2 G, now 0.43 G. Objects clipped_by or
+    bounded_by a large union, media containers and photons gain through the
+    same inside test. Images are unchanged; smaller CSGs keep the plain scan
+    (doc/PERF.md).
   - A prepared interior light's grid stores no topology: on its regular
     lattice every cell's eight corner node indices, every node's position
     and every cell's volume follow from the box and the counts, so none is

@@ -42,7 +42,8 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <memory>
+#include <unordered_set>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -77,6 +78,8 @@ namespace pov
 * Global typedefs
 ******************************************************************************/
 
+struct CSGChildTree;
+
 class CSG : public CompoundObject
 {
     public:
@@ -88,6 +91,13 @@ class CSG : public CompoundObject
         bool lightGroupActive = false;
         /// [light group] made by copying one, which leaves the group's own list of lights empty
         bool lightGroupCopy = false;
+        /// Box trees over the children for rays and inside tests; null until Prepare_Child_Tree, below the size where they pay,
+        /// and again after any change to the geometry.
+        std::shared_ptr<const CSGChildTree> childTree;
+
+        /// Builds `childTree` from the children's certified boxes when `minimum` of them can go in a tree (0: never);
+        /// returns whether it did.
+        bool Prepare_Child_Tree(unsigned minimum);
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
@@ -99,6 +109,13 @@ class CSG : public CompoundObject
 
         virtual void Determine_Textures(Intersection *isect, bool hitinside, WeightedTextureVector& textures, TraceThreadData *Threaddata) override;
 };
+
+/// The child count from which a CSG indexes its children; POV_CSG_CHILD_TREE=<n> overrides it, 0 turns the trees off.
+unsigned CSG_Child_Tree_Minimum();
+
+/// Gives every CSG reachable from `object` its child tree; one thread, once the scene's geometry is final.
+/// Adds the CSGs that got one to `built`.
+void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_set<ConstObjectPtr>& visited, unsigned& built);
 
 class CSGUnion : public CSG
 {
