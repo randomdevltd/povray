@@ -160,7 +160,7 @@ union {
 };
 union {
  object { HandShape(0) texture { SkinTex } interior { ior 1.4 }
-  #if (Export) light { emission samples LightSamples } #end
+  #if (Export) light { emission bounce samples LightSamples } #end
  }
  // nails
  #for (J,0,3)
