@@ -311,6 +311,8 @@ class SceneData
         int interfaceTexture;
         /// whether a finish that states no light_samples mode samples by contribution (from #version 4.0)
         bool lightSamplesByContribution;
+        /// whether a ray at max_trace_level is shaded locally with its transmitted part continued straight, not black (from #version 4.0)
+        bool traceLimitContinues;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
         /// the scene's prepared media cell limit (global_settings prepared_media_cells)

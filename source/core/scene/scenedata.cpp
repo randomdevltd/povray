@@ -433,6 +433,7 @@ SceneData::SceneData() :
     crossedNonSurface = false;
     interfaceTexture = kInterfaceTextureAuto;
     lightSamplesByContribution = false;
+    traceLimitContinues = false;
     refractionAngle = 0.5;
     preparedMediaCells = 1000000.0;
     machinePreparedMediaCells = 1000000.0;

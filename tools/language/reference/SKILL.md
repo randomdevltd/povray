@@ -117,6 +117,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 - No scene-state inspection at build time: built-ins that need the scene (`trace`, `inside`, `min_extent`, `str`) are handed to the classic parser; the program cannot query the scene while it runs.
 - A classic twin of a `.pov4` scene is `#version 4.0;` classic syntax — same semantics, two spellings. A `#version 3.7` twin does not match: 4.0 changed defaults (gamma among them).
 - `finish { light_samples M [full | by_contribution] }`: `M` multiplies every surface and volume light's `samples`; `by_contribution` (the 4.0 default) scales each hit's samples by its share of the pixel, so hits seen through reflections or clear layers take fewer while directly seen surfaces keep all. `full` is the classic sampling: choose it where reflections or refractions carry the look and their noise shows. Scene-wide: `default { finish { light_samples 1 full } }`.
+- `max_trace_level` (4.0 default): a ray that reaches it is not black. Its hit is lit without reflection, and through transparent surfaces it goes straight on, filtered and faded, to the first opaque surface or the background. Raise the level where the bent or reflected image itself matters.
 
 ## Canonical examples
 
