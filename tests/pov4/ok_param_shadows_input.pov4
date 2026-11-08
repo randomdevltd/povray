@@ -1,0 +1,17 @@
+include "scene.inc";
+input Panel = "outer";
+let View = 7;
+fn Make(Panel, View) { return { index: Panel.index, name: View.name }; }
+fn Emit(Panel) { for (V in Panel.views) { let M = Make(Panel, V); sphere { 0, M.index pigment { rgb 1 } } } }
+fn Names(Panel) { return [for (V in Panel.views) { Make(Panel, V) }]; }
+fn Local() { let Panel = { index: 2 }; return Panel.index; }
+input Count = 5;
+fn Bump(Count) { global Count = "bumped"; return Count + 1; }
+fn Rename() { global Count = "renamed"; return 0; }
+Emit({ index: 0.5, views: [{ name: "a" }] })
+let Got = Names({ index: 1, views: [{ name: "b" }, { name: "c" }] });
+if (concat(Got[0].name, Got[1].name) != "bc") { error("a parameter resolved to the input in a comprehension"); }
+if (Local() != 2) { error("a local resolved to the input"); }
+if (Bump(2) != 3) { error("a global binding shadowed the parameter"); }
+let Renamed = Rename();
+debug(concat("pov4 parameters shadow ", Panel, " ", str(View, 0, 0), " ", Count, "\n"));

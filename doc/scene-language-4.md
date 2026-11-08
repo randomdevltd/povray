@@ -466,6 +466,8 @@ current scope. Parameters may have defaults. Functions are closures; arguments a
   supplied with `Declare=X=V` on the command line or in an INI file, or else to the default `E`.
   An input without a default must be supplied. Every `Declare` given to a 4.0 scene must name an
   input; renderer-provided values such as `clock_delta` and `image_width` are exempt.
+- A parameter or local always shadows an input or file-scope binding of the same name, wherever the
+  function is called from.
 
 An `.inc4` include runs in the including file's scope (as classic includes do).
 
