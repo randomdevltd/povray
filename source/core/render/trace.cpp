@@ -877,6 +877,15 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray, const RayO
     return false;
 }
 
+// The single-object query's box pretest: whether the ray crosses the object's box between MIN_ISECT_DEPTH and closest.
+static bool RayEntersBox(ConstObjectPtr object, const Ray& ray, double closest)
+{
+    const Vector3d tmp(1.0 / ray.GetDirection()[X], 1.0 / ray.GetDirection()[Y], 1.0 / ray.GetDirection()[Z]);
+    const BBoxVector3d invdir(tmp);
+    const BBoxDirection variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
+    return object->Intersect_BBox(variant, BBoxVector3d(ray.Origin), invdir, closest);
+}
+
 bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, double closest)
 {
     if (object != nullptr)
@@ -3896,10 +3905,12 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             const IsoShadowWindow window(threadData, startTolerance, limit);
             // The window reaches the shape's own root search, so a root before it cannot hide the roots after it.
             query.SetRootQuery(&postcond);
+            // The walk's box for the object is looser than this exact one, so only a miss its roots were asked for leaves it out.
+            const bool asked = query.HasExactShadowWindow() || RayEntersBox(cacheObject, query, limit);
             if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(query, &boundedIntersection, threadData) &&
                  (boundedIntersection.Depth > startTolerance) && (boundedIntersection.Depth < limit) &&
                  postcond.Admit(cacheOwner, boundedIntersection.Depth)) ||
-                FindIntersection(cacheObject, boundedIntersection, query, HeldRootCondition(postcond, cacheOwner), limit))
+                (asked && Find_Intersection_BBox_Passed(&boundedIntersection, cacheObject, query, HeldRootCondition(postcond, cacheOwner), threadData)))
             {
                 if(!Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG))
                 {
@@ -3922,7 +3933,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             }
             else
             {
-                precond.missed = cacheObject;
+                if (asked)
+                    precond.missed = cacheObject;
                 cacheObject = nullptr;
             }
         }
@@ -3984,9 +3996,18 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
 
                 if((lightsource.lightGroupLight == false) && (foundTransparentObjects == false))
                 {
-                    cacheObject = testObject;
                     // The walk admitted the roots as the object it was given, which an emitter's endpoint is matched against.
-                    const ShadowCacheEntry entry{cacheObject, postcond.Selected() != nullptr ? postcond.Selected() : cacheObject};
+                    ConstObjectPtr owner = postcond.Selected() != nullptr ? postcond.Selected() : testObject;
+                    // A part the walk reaches only through bounded_by tests is cached as the outermost compound holding one.
+                    ConstObjectPtr cached = testObject;
+                    if (owner != testObject)
+                    {
+                        const ConstObjectPtr bounded = owner->Bound.empty() ? shadowView.BoundedAncestor(testObject, owner) : owner;
+                        if (bounded != nullptr)
+                            cached = bounded;
+                    }
+                    cacheObject = const_cast<ObjectPtr>(cached);
+                    const ShadowCacheEntry entry{cacheObject, owner};
 
                     if(lightsourceray.GetTicket().traceLevel == 2)
                         lightSourceLevel1ShadowCache[cacheSlot] = entry;

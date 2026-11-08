@@ -207,10 +207,43 @@ static void BoundMediaInteriors(PreparedSet& view)
     view.mediaBounded = true;
 }
 
+// Pairs each part beneath a `bounded_by` with the outermost compound holding one above it, the bound the walk tests first.
+static void CollectBoundedAncestors(ConstObjectPtr object, ConstObjectPtr bounded, std::vector<std::pair<ConstObjectPtr, ConstObjectPtr>>& out)
+{
+    const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object);
+    if (compound == nullptr)
+        return;
+    if ((bounded == nullptr) && !compound->Bound.empty())
+        bounded = object;
+    for (ConstObjectPtr child : compound->children)
+    {
+        if (bounded != nullptr)
+            out.emplace_back(child, bounded);
+        CollectBoundedAncestors(child, bounded, out);
+    }
+}
+
 void BoundingTask::Run()
 {
     PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     BoundMediaInteriors(view);
+    std::vector<std::pair<ConstObjectPtr, ConstObjectPtr>>& ancestors = view.boundedAncestors;
+    ancestors.clear();
+    // A placed object with a bound of its own is cached whole, so only unbounded ones are listed.
+    for (ConstObjectPtr object : view.objects)
+        if (object->Bound.empty())
+            CollectBoundedAncestors(object, nullptr, ancestors);
+    std::sort(ancestors.begin(), ancestors.end());
+    // A part placed under two different bounded compounds keeps no single one: null caches its placed object.
+    auto kept = ancestors.begin();
+    for (auto run = ancestors.begin(); run != ancestors.end(); ++kept)
+    {
+        const auto end = std::find_if(run, ancestors.end(), [run](const std::pair<ConstObjectPtr, ConstObjectPtr>& e) { return e.first != run->first; });
+        const std::pair<ConstObjectPtr, ConstObjectPtr> entry(run->first, (run->second == (end - 1)->second) ? run->second : nullptr);
+        *kept = entry;
+        run = end;
+    }
+    ancestors.erase(kept, ancestors.end());
     view.boundingMethod = sceneData->boundingMethod;
     if((view.objects.size() < boundingThreshold) || (view.boundingMethod == 0))
     {

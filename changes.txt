@@ -319,7 +319,13 @@ Changed Behaviour
     691,200 pixels darken, none by more than 5 levels), and a mesh's triangle
     plane is recomputed from its vertices (47 of 691,200 pixels differ). A
     see-through component of an opaque CSG object no longer casts a shadow
-    twice as dark once the object is cached.
+    twice as dark once the object is cached. A part of a union reached only
+    through a `bounded_by` is no longer cached without its bound, which
+    shadowed whole regions of a scene on threads that had cached it, and an
+    object whose box falls short of its surface is no longer left out of a
+    shadow ray because its cached test missed the box: shadows now match on
+    any thread count (in `advanced/chess2.pov` at 240x180, 9 of 43,200 pixels
+    move to the uncached result).
   - Subsurface scattering: the diffuse sum is divided by the rays cast, not
     the rays that hit, so open surfaces such as planes no longer get twice
     their subsurface light (closed objects are unchanged); the sample scene
