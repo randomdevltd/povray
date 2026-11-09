@@ -432,7 +432,6 @@ private:
         TraceThreadData* const td = workers.Thread(worker);
         const double radius = 0.5 * Spacing(node.level);
         const unsigned first = node.draws;
-        std::vector<BounceIncidentBeam> batch;
         for (unsigned j = first; j < last; ++j)
         {
             double x = 0.0, y = 0.0;
@@ -452,6 +451,11 @@ private:
             auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, gathered.lights, 1,
                                                BounceOrderSeed(node.key, order, j, 0), &at, &normal, 0.0,
                                                gathered.scales.empty() ? nullptr : &gathered.scales);
+            if (subsurface)
+            {
+                node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{at, normal, 0.0}, beams, 0, node.eta);
+                node.eta = SubsurfaceBoundary::Quantise(node.eta);
+            }
             double scalar = 0.0;
             for (auto& beam : beams)
             {
@@ -463,7 +467,6 @@ private:
                 scalar += g;
                 node.nearWeight += g;
                 node.near += g / beam.distance;
-                if (subsurface) batch.push_back(beam);
             }
             node.sum += scalar;
             node.square += scalar * scalar;
@@ -478,11 +481,6 @@ private:
             }
         }
         node.draws = last;
-        if (subsurface && first < last)
-        {
-            node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{node.hit, node.normal, 0.0}, batch, 0, node.eta);
-            node.eta = SubsurfaceBoundary::Quantise(node.eta);
-        }
     }
 
     void Index()

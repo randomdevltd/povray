@@ -666,6 +666,8 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_tables.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_normals.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_photons_method2.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_internal_beer.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_internal_source.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_volume_emitter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cavity_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_crease_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -677,6 +679,9 @@ check-quick: all
 	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/progressive_photon.cpp -o progressive_photon_test
 	./progressive_photon_test
 	rm -f progressive_photon_test
+	\$(CXX) -std=c++14 -O2 -DHAVE_CONFIG_H -I\$(top_builddir)/unix -I\$(top_srcdir)/source -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/libraries \$(top_srcdir)/tests/source/subsurface_internal.cpp -o subsurface_internal_test
+	./subsurface_internal_test
+	rm -f subsurface_internal_test
 	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/subsurface_patch.cpp -o subsurface_patch_test
 	./subsurface_patch_test
 	rm -f subsurface_patch_test

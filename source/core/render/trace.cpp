@@ -64,7 +64,9 @@
 #include "core/lighting/radiosity.h"
 #include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
+#include "core/lighting/subsurfaceexit.h"
 #include "core/lighting/subsurfaceboundary.h"
+#include "core/lighting/subsurfaceinternalboundary.h"
 #include "core/lighting/subsurfacepatch.h"
 #include "core/lighting/surfacebounce.h"
 #include "core/material/interior.h"
@@ -6244,17 +6246,10 @@ public:
     {
         for (const auto& component : this->components)
         {
-            constexpr unsigned count = 1024;
-            double integral = 0.0;
-            for (unsigned i = 0; i <= count; ++i)
-            {
-                const double mu = double(i) / count;
-                const double weight = (i == 0 || i == count) ? 1.0 : (i % 2 ? 4.0 : 2.0);
-                integral += weight * mu * ExitRatio(mu, component.eta);
-            }
-            fluxFactors.push_back(2.0 * integral / (3.0 * count));
+            fluxFactors.push_back(FluxFactor(component.eta));
         }
     }
+    static double FluxFactor(double eta) { return SubsurfaceExitFluxFactor(eta); }
     void AccumulateGuide(SurfaceAngularGuide& guide, double scale = 1.0) const override
     {
         for (std::size_t i = 0; i < components.size(); ++i)
@@ -6279,15 +6274,7 @@ public:
         return result;
     }
 private:
-    static double ExitRatio(double cosine, double eta)
-    {
-        const double g2 = (eta - 1.0) * (eta + 1.0) + cosine * cosine;
-        if (!(g2 > 0.0)) return 0.0;
-        const double g = sqrt(g2);
-        const double rs = (cosine - g) / (cosine + g);
-        const double rp = (eta * eta * cosine - g) / (eta * eta * cosine + g);
-        return (1.0 - 0.5 * (rs * rs + rp * rp)) * Sqr(1.0 + eta) / (4.0 * eta);
-    }
+    static double ExitRatio(double cosine, double eta) { return SubsurfaceExitRatio(cosine, eta); }
     std::vector<Component> components;
     std::vector<double> fluxFactors;
 };
@@ -6313,9 +6300,11 @@ double Trace::ComputeFacetsEntry(const Vector3d& side, const Vector3d* facets, c
     return sum;
 }
 
-void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field)
+void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field, const std::vector<LightSource*>& sources, bool internalOnly)
 {
     ssltBridge = &field;
+    ssltBridgeSources.assign(sources.begin(), sources.end());
+    ssltBridgeInternalOnly = internalOnly;
     ssltBridgeEntryKnown.clear();
 }
 
@@ -6341,6 +6330,9 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const st
     SubsurfaceEntryTaps(hit, node.normal.normalized(), sqrt(node.areaWeight), ticket, taps);
     for (const BounceIncidentBeam& beam : incident)
     {
+        if (beam.source && SubsurfaceInternalConnection(*beam.source, hit.IPoint, -beam.direction,
+                beam.distance, hit.Object, SubsurfaceObject(hit), ticket))
+            continue;
         if (!taps.empty())
         {
             light += beam.angularWeight * float(ComputeFacetsEntry(node.normal, taps.data(), nullptr, taps.size(), beam.direction, eta));
@@ -6368,7 +6360,32 @@ MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size
     ssltBridgeLength = HUGE_VAL;
     MathColour radiance;
     ColourChannel transmission = 0.0;
-    ComputeTextureColour(hit, radiance, transmission, eye, 1.0, false);
+    if (ssltBridgeInternalOnly)
+    {
+        const int samples = sceneData->subsurfaceSamplesSingle;
+        if (samples <= 0) return radiance;
+        const auto key = eye.GetKey();
+        const Vector3d axis = fabs(node.normal[Y]) < 0.9 ? Vector3d(0.0, 1.0, 0.0) : Vector3d(1.0, 0.0, 0.0);
+        const Vector3d u = cross(node.normal, axis).normalized(), v = cross(node.normal, u);
+        double eta;
+        ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
+        for (int i = 0; i < samples; ++i)
+        {
+            const auto sampleKey = DeriveKey(key, kDrawSubsurface, i);
+            const double r = sqrt(Draw(sampleKey, kDrawSubsurface, 0));
+            const double phi = TWO_M_PI * Draw(sampleKey, kDrawSubsurface, 1);
+            eye.Direction = -(node.normal * sqrt(1.0 - r * r) + r * (u * cos(phi) + v * sin(phi)));
+            eye.SetKey(sampleKey);
+            MathColour sample;
+            Intersection sampleHit(node.intersection);
+            ComputeTextureColour(sampleHit, sample, transmission, eye, 1.0, false);
+            radiance += sample;
+        }
+        // Cosine-weighted radiance gives flux/pi, represented by the normalised Fresnel exit profile.
+        radiance /= float(samples * SubsurfaceBounceRadiance::FluxFactor(SubsurfaceBoundary::Quantise(eta)));
+    }
+    else
+        ComputeTextureColour(hit, radiance, transmission, eye, 1.0, false);
     length = ssltBridgeLength;
     return radiance;
 }
@@ -6856,7 +6873,7 @@ void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Inters
 // Unshadowed single-scattered light from one source at bend_point; weightOut holds each channel's sampling weight.
 void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
                                              const PreciseMathColour& weightOut, const Vector3d& bend_point, double ftOut, double cos_out_prime,
-                                             SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key, bool bumps)
+                                             SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key, bool bumps, bool internalSources)
 {
     // Do Light source to get the correct lightsourceray
     // (note that for now we're mainly interested in the direction)
@@ -6884,6 +6901,9 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
     }
     else
         ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, bend_point);
+
+    if (internalSources && SubsurfaceInternalConnection(lightsource, bend_point, lightsourceray.Direction,
+        lightsourcedepth, out.Object, SubsurfaceObject(out), ticket)) return;
 
     // Where light from the source enters the object, ignoring refraction; mostly for the surface normal there.
     Intersection xi;
@@ -7162,9 +7182,16 @@ ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
 void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId)
 {
     lights.clear();
-    // The bridge's light is its field's, and preparation threads hold no scene lights.
+    // Preparation reads only the immutable sources of the previous bounce order.
     if (ssltBridge != nullptr)
+    {
+        for (const auto* light : ssltBridgeSources)
+            if ((!light->lightGroupLight && !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG)) ||
+                (light->lightGroupLight && std::any_of(object->LLights.begin(), object->LLights.end(),
+                    [light](const LightSource* member) { return member->index == light->index; })))
+                lights.push_back(light);
         return;
+    }
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
         for(unsigned int i : view.globalLights)
@@ -7183,11 +7210,142 @@ const LightSource* Trace::LightOnObject(const LightSource& light, ConstObjectPtr
     return light.ownLight.get();
 }
 
+bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId)
+{
+    RayInteriorVector containing;
+    FindContainingInteriors(point, containing, preparedSetId);
+    return std::find(containing.begin(), containing.end(), interior) != containing.end();
+}
+
+SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
+    ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket)
+{
+    const Interior* material = object->interior.get();
+    const double extent = (material->boundsHigh - material->boundsLow).length();
+    const double shift = std::max(2.0 * MIN_ISECT_DEPTH, std::max(InterfaceTolerance(point, material), 4.0e-6 * extent));
+    auto find = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& query)
+    {
+        cooperate();
+        return FindIntersection(whole, hit, ray, query);
+    };
+    auto exits = [&](Intersection& hit, Vector3d& outward)
+    {
+        if (!IsSameSSLTObject(hit.Object, object)) return false;
+        hit.Object->Normal(outward, &hit, threadData);
+        outward.normalize();
+        if (dot(outward, direction) < 0.0) outward.invert();
+        return !ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, direction,
+            InterfaceTolerance(hit.IPoint, material), extent), material, ticket.preparedSetId);
+    };
+    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, find, exits);
+}
+
+bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
+    double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket)
+{
+    if (!light.emitter || !light.emitter->HasVolumeEmission() || object == nullptr || !object->interior) return false;
+    const Interior* material = object->interior.get();
+    if (!SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return false;
+    const double extent = (material->boundsHigh - material->boundsLow).length();
+    if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, InterfaceTolerance(point, material), extent),
+        material, ticket.preparedSetId)) return false;
+    return distance < SubsurfaceInternalBoundaryAt(point, toward, object, const_cast<ObjectPtr>(whole), ticket).distance;
+}
+
+MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
+    const PreciseMathColour& absorption, const PreciseMathColour& scattering,
+    const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous)
+{
+    MathColour result;
+    if (samples <= 0) return result;
+    const Interior* material = out.Object->interior.get();
+    if (eye.IsInterior(material) || !SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return result;
+    std::vector<const Emitter*> sources;
+    const auto& bounds = SubsurfaceObject(out)->BBox;
+    for (const auto* light : lights)
+        if (!light->Photon_Only && light->emitter && light->emitter->HasVolumeEmission())
+        {
+            const auto* emitter = light->emitter.get();
+            if (std::find(sources.begin(), sources.end(), emitter) != sources.end()) continue;
+            double distanceSquared = 0.0;
+            for (int axis = 0; bounds.finiteInterior && axis < 3; ++axis)
+            {
+                const double below = double(bounds.lowerLeft[axis]) - emitter->Centre()[axis];
+                const double above = emitter->Centre()[axis] - double(bounds.lowerLeft[axis]) - double(bounds.size[axis]);
+                const double distance = std::max(0.0, std::max(below, above));
+                distanceSquared += distance * distance;
+            }
+            if (distanceSquared <= Sqr(emitter->Radius())) sources.push_back(emitter);
+        }
+    if (sources.empty()) return result;
+    Vector3d normal;
+    Intersection surface(out);
+    out.Object->Normal(normal, &surface, threadData);
+    normal.normalize();
+    Vector3d inward;
+    if (!SSLTComputeRefractedDirection(eye.Direction, normal, 1.0 / eta, inward)) return result;
+    const double extent = (material->boundsHigh - material->boundsLow).length();
+    const double tolerance = InterfaceTolerance(out.IPoint, material);
+    if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(out.IPoint, inward, tolerance, extent), material, eye.GetPreparedSetId()))
+        return result;
+    auto boundary = [&](const Vector3d& point, const Vector3d& direction)
+    {
+        return SubsurfaceInternalBoundaryAt(point, direction, out.Object, SubsurfaceObject(out), eye.GetTicket());
+    };
+    samples = std::max(1, samples);
+    for (int channel = 0; channel < MathColour::channels; ++channel)
+    {
+        const double sigmaA = absorption[channel] * sceneData->mmPerUnit;
+        const double sigmaS = scattering[channel] * sceneData->mmPerUnit;
+        if (!std::isfinite(sigmaA + sigmaS)) continue;
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            const auto pathKey = DeriveKey(key, kDrawSubsurface, channel * samples + sample);
+            std::uint64_t dimension = 0;
+            auto draw = [&]() { return Draw(pathKey, kDrawSubsurface, dimension++); };
+            auto source = [&](const Vector3d& point, const Vector3d& direction, double reach, double extinction)
+            {
+                double radiance = 0.0;
+                for (const auto* emitter : sources)
+                    radiance += emitter->VolumeEmissionAlong(point, direction, reach, extinction, draw(), threadData)[channel];
+                if (!homogeneous && radiance != 0.0)
+                    throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
+                return radiance;
+            };
+            auto connect = [&](const Vector3d& point, double extinction)
+            {
+                double radiance = 0.0;
+                for (const auto* emitter : sources)
+                {
+                    const double choose = draw(), x = draw(), y = draw(), z = draw();
+                    const auto positionKey = DeriveKey(pathKey, kDrawEmitter, dimension++);
+                    const EmitterDraw proposal(choose, x, y, z, positionKey);
+                    EmitterSample light;
+                    if (!emitter->SampleToward(point, proposal, threadData, light) || light.weight.IsZero()) continue;
+                    const Vector3d delta = light.position - point;
+                    const double distance = delta.length();
+                    if (!(distance > 0.0)) continue;
+                    const auto hit = boundary(point, delta / distance);
+                    if (distance >= hit.distance) continue;
+                    radiance += light.weight[channel] * std::exp(-extinction * distance) / (4.0 * M_PI);
+                }
+                if (!homogeneous && radiance != 0.0)
+                    throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
+                return radiance;
+            };
+            result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
+                boundary, source, connect, draw) / samples;
+        }
+    }
+    const double cosine = clip(fabs(dot(inward, normal)), 0.0, 1.0);
+    return result * ((1.0 - SubsurfaceInternalFresnel(cosine, eta)) / Sqr(eta));
+}
+
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
 void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo,
                                                 const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
-                                                TraceTicket& ticket, std::uint64_t key, bool bumps)
+                                                TraceTicket& ticket, std::uint64_t key, bool bumps, bool internalSources)
 {
     Lo.Clear();
     if (lights.empty())
@@ -7281,7 +7439,7 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
         for (int l = 0; l < lights.size(); l++)
             if (!closed[l])
                 ComputeSingleScatteringCandidate(*lights[l], out, sigma_t_xo, sigma_s, weightOut, bend_point, ftOut, cos_out_prime,
-                                                 candidates[l * numSamples + i], ticket, DeriveKey(key, kDrawEmitter, l * numSamples + i), bumps);
+                                                 candidates[l * numSamples + i], ticket, DeriveKey(key, kDrawEmitter, l * numSamples + i), bumps, internalSources);
     }
 
     // Light entering elsewhere crosses the skin there.
@@ -7410,6 +7568,8 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
             double lightsourcedepth;
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, point, lightcolour, true);
+            if (SubsurfaceInternalConnection(lightsource, point, lightsourceray.Direction, lightsourcedepth, object, whole, ticket))
+                continue;
             if (lightcolour.IsNearZero(EPSILON))
             {
                 if (lightsource.emitter)
@@ -10367,6 +10527,17 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     std::vector<const LightSource*> lights;
     CollectSubsurfaceLights(out.Object, lights, Eye.GetPreparedSetId());
+    if (ssltBridgeInternalOnly)
+    {
+        MathColour internalSource;
+        if (pointCloud)
+            internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
+                1, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr);
+        if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
+        Final_Colour += internalSource * layers.weight;
+        Eye.GetTicket().subsurfaceRecursionDepth--;
+        return;
+    }
 
     // Method 2 is the cloud's everywhere, the radiosity pretrace included (its points then carry no radiosity, the cache still
     // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
@@ -10507,6 +10678,13 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
         Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftDiffuse);
 
+    MathColour internalSource;
+    if (pointCloud)
+        internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
+            NumSamplesSingle, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr);
+    if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
+    Final_Colour += internalSource * layers.weight;
+
     if (ssltBridge != nullptr)
     {
         if (Finish->SubsurfaceHasColour) Total_Colour *= flesh.exitSkin;
@@ -10540,7 +10718,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         {
             MathColour singleColour;
             ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, lights,
-                                                cloud ? &cloudData : nullptr, flesh, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3), pointCloud);
+                                                cloud ? &cloudData : nullptr, flesh, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3), cloudData.bumps, pointCloud);
             if (Finish->SubsurfaceHasColour)
                 singleColour *= flesh.entrySkin;
             Total_Colour += singleColour / NumSamplesSingle;
