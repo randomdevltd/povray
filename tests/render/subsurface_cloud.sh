@@ -30,7 +30,7 @@ has capped 'Subsurfacecloudsneedatleast[0-9.]*MBatspacing0.02after[0-9]*%oftheim
 has capped 'Raisethecapabovememory[0-9.]*,orsetspacing[0-9.]*ormore(about[0-9.]*MB' || fail "the memory error gives no remedies"
 if render cell "$case" +w64 +h48 +wt2 Declare=Case=5; then fail "a cell past the memory cap did not stop the render"; fi
 text cell
-has cell 'Subsurfacecloudsneedatleast1[.0-9]*MBatspacing0.0001after' || fail "a cell past the cap was not stopped as it cast"
+has cell 'Subsurfacecloudsneedatleast[0-9][.0-9]*MBatspacing0.0001after' || fail "a cell past the cap was not stopped as it cast"
 for c in 2:plane 3:group 4:thin; do
     render ${c#*:} "$case" +w64 +h48 +wt2 Declare=Case=${c%:*}; text ${c#*:}
     has ${c#*:} 'Subsurfacemethod2fellback' && fail "the ${c#*:} warned of a fallback"

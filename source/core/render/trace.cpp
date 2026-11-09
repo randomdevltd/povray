@@ -8645,6 +8645,14 @@ bool Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
     return ran;
 }
 
+// The cell along one axis that holds a coordinate. A point within rounding of a cell face belongs to the cell below it,
+// so a surface lying on a face (a cap or table top at y = 0) is held by exactly one cell whichever way its crossings round.
+static double CloudCellIndex(double coordinate, double size)
+{
+    const double rounding = 64.0 * std::numeric_limits<double>::epsilon() * (fabs(coordinate) + size);
+    return ceil((coordinate - rounding) / size) - 1.0;
+}
+
 // One row of lines along one axis through a jittered grid of step h_a: a patch with unit normal n meets those lines
 // |n_a|/h_a^2 times per unit area, so each crossing stands for 1/sum(|n_a|/h_a^2) of surface.
 void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket)
@@ -8665,6 +8673,9 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
                                           (max(fabs(lo[X]), max(fabs(lo[Y]), fabs(lo[Z]))) + size));
     const double depth = (cloud.flesh != nullptr) && (cloud.flesh->fleshAtDepth || cloud.flesh->emissionAtDepth) ? cloud.flesh->depth : 0.0;
     const BoundingBox& box = cloud.object->BBox;
+    // Each crossing goes to the one cell holding it; the lines reach past the cell's faces by their rounding to find it.
+    const double cellIndex = Vector3d(key.x, key.y, key.z)[a];
+    const double faceRounding = 128.0 * std::numeric_limits<double>::epsilon() * (fabs(lo[a]) + 2.0 * size);
     Vector3d dir(0.0);
     dir[a] = 1.0;
     uint64_t state = CloudSeed(key, 0, job);
@@ -8683,13 +8694,13 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             (origin[v] < box.lowerLeft[v]) || (origin[v] > box.lowerLeft[v] + box.size[v]))
             continue;
         crossings.clear();
-        CollectCrossings(cloud.object, origin, dir, h, h + size, crossings, ticket);
+        CollectCrossings(cloud.object, origin, dir, h - faceRounding, h + size + faceRounding, crossings, ticket);
         std::sort(crossings.begin(), crossings.end(), [](const Intersection& p, const Intersection& q) { return p.Depth < q.Depth; });
         size_t kept = 0;
         for (size_t c = 0; c < crossings.size(); c++)
         {
             Intersection& in = crossings[c];
-            if (!(in.Depth < h + size))
+            if (CloudCellIndex(in.IPoint[a], size) != cellIndex)
                 continue;
             if (cloud.parts->sheets.count(in.Object) != 0)
             {
@@ -9182,8 +9193,10 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
         hi[a] = floor((centre[a] + radius) / cloud.size);
         if (box.size[a] < BOUND_HUGE / 4)
         {
-            lo[a] = max(lo[a], ceil(box.lowerLeft[a] / cloud.size) - 1.0);
-            hi[a] = min(hi[a], floor((box.lowerLeft[a] + box.size[a]) / cloud.size));
+            // the cells that can hold the object's points, its float bounds widened by their rounding
+            const double lower = box.lowerLeft[a], upper = lower + box.size[a];
+            lo[a] = max(lo[a], CloudCellIndex(lower - 4.0 * std::numeric_limits<float>::epsilon() * (fabs(lower) + cloud.size), cloud.size));
+            hi[a] = min(hi[a], CloudCellIndex(upper + 4.0 * std::numeric_limits<float>::epsilon() * (fabs(upper) + cloud.size), cloud.size));
         }
         if (!(fabs(lo[a]) < 9e15) || !(fabs(hi[a]) < 9e15))
             return false;
@@ -9247,7 +9260,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
 // The gathered cell holding a point, if any, or else the nearest gathered cell.
 const SubsurfaceCell *Trace::FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q, bool nearestAny)
 {
-    Vector3d key(floor(q[X] / cloud.size), floor(q[Y] / cloud.size), floor(q[Z] / cloud.size));
+    Vector3d key(CloudCellIndex(q[X], cloud.size), CloudCellIndex(q[Y], cloud.size), CloudCellIndex(q[Z], cloud.size));
     for (int i = 0; i < cloud.cells.size(); i++)
         if ((cloud.coords[i] - key).lengthSqr() < 0.25)
             return cloud.cells[i];
