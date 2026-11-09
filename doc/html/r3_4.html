@@ -81,9 +81,6 @@
   <td><div class="divh3"><a title="3.4.1.16" href="#r3_4_1_16">Interface_Texture</a></div></td>
 </tr>
 <tr>
-  <td><div class="divh3"><a title="3.4.1.17" href="#r3_4_1_17">Prepared_Media_Cells</a></div></td>
-</tr>
-<tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
 </tr>
 <tr>
@@ -409,7 +406,7 @@ GLOBAL_SETTINGS_ITEM:
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
   refraction_angle Value |
-  prepared_media_cells Value | atmospheric_ior Value | atmospheric_dispersion Value |
+  atmospheric_ior Value | atmospheric_dispersion Value |
 
   interface_texture blend | interface_texture near | interface_texture far |
   mesh_cache &quot;directory&quot; |
@@ -436,7 +433,6 @@ mm_per_unit        : 10
 number_of_waves	   : 10
 noise_generator	   : 2
 refraction_angle   : 0.5
-prepared_media_cells : 1000000 (the machine option raises it)
 atmospheric_ior    : 1.00029 (1.0 before #version 4.0)
 atmospheric_dispersion : 1.0
 interface_texture  : blend (far before #version 4.0)
@@ -720,15 +716,6 @@ global_settings { atmospheric_ior 1.33 }
 <p>Where clear objects share a face, such as glass and water meeting at a wall, the ray crosses it as one surface (see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>), and <code>interface_texture</code> chooses the texture it shows. <code>blend</code>, the default from <code>#version 4.0</code>, evaluates the texture of every object there and averages the results equally, pigment and finish alike, so the face looks the same from either side and in any placement order; it costs one texture evaluation per object, at shared faces only. <code>far</code> shows the texture of the object on the far side of the face from the ray, the one being entered; <code>near</code> shows the one on the ray's side, the one being left. Faces of an <code>ior_mix replace</code> object show its own texture whatever the setting. Before 4.0 coincident surfaces are merged only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses refraction fields, and the default there is <code>far</code>. See <a href="r3_7.html#r3_7_2_1_10">Shared Faces</a>.</p>
 <pre>
 global_settings { interface_texture near }
-</pre></div>
-
-<a name="r3_4_1_17"></a>
-<div class="content-level-h4" contains="Prepared_Media_Cells" id="r3_4_1_17">
-<h4>3.4.1.17 Prepared_Media_Cells</h4>
-<p>A <a href="r3_11.html#r3_11_5_1">prepared media grid</a> (method 4) is limited to this many cells, 1000000 by default. A density grid or a per-light optical-depth table that would need more is not abandoned: it is built coarser, at the widest cell width that fits, with a warning naming the requested and fitted resolutions, the cells needed and the <code>prepared_media_cells</code> value that would avoid the coarsening. A prepared march longer than its step budget is likewise coarsened, not dropped.</p>
-<p>The same limit can be set for the machine as the <code>Prepared_Media_Cells</code> INI or command-line option, and the larger of the scene's and the machine's value applies: a render farm can raise a scene's request without editing it, and a scene can demand more than a machine's default. Place the setting before field containers.</p>
-<pre>
-global_settings { prepared_media_cells 4000000 }
 </pre></div>
 
 <a name="r3_4_2"></a>
@@ -2833,7 +2820,7 @@ photons {
 <h6>Progressive photon controls</h6>
 <p><code>photons { method 2 quality FLOAT }</code> enables progressive photons. The <code>quality</code> value is a finite number greater than zero and at most 16384, with a default of 1; it sets <code>ceil(4*quality)</code> batches of 65536 emitted photon samples, gathered from one map by their nearest neighbours. Higher values spend more photon work reducing noise; camera sampling, including anti-aliasing, is unchanged. Omitting <code>method</code> retains method 1 and its classic controls. Method 2 rejects <code>count</code>, <code>spacing</code>, <code>gather</code>, <code>radius</code>, <code>jitter</code>, <code>autostop</code> and <code>expand_thresholds</code>; <code>quality</code> requires method 2. Its <code>media</code> photons keep <code>max_steps</code> and the spacing <code>factor</code>, stepping through media by a length drawn from the size of the target each photon was aimed at. Its targets take a share weight after <code>target</code> instead of a spacing multiplier (see Shooting Photons at an Object). Method 2 works with radiosity and with media photons from lights in a <code>light_group</code>, which light only the group's media. Its <code>save_file</code> and <code>load_file</code> write and read method 2 maps, which neither method 1 nor a scene with other photon settings, quality, target weights or object structure can load; a loaded map gives the same image as the render that saved it.</p>
 <p>Method 2 photon files use format version 3. Older files are rejected and must be regenerated: the format distinguishes physical volume-source flux from legacy light calibration, so loading an older map could give incorrect illumination.</p>
-<p><code>photons { method 2 quality FLOAT memory FLOAT }</code>: <code>memory</code> sets the ceiling on method 2 photon storage in GB (10<sup>9</sup> bytes), a finite number greater than zero. Without it the ceiling is 40% of the memory available after the first batch, at most 6 GB. After each batch the storage of the whole emission is projected from the deposits so far, and a render whose projection, or whose loaded photon file, passes the ceiling stops with an error that names where the ceiling came from. The ceiling belongs to the machine as much as to the scene, so the <a href="r3_2.html#r3_2_5_7">Photon_Memory</a> option, and after it the <code>POV_PHOTON_MEMORY</code> environment variable, override the scene's value in either direction; the log notes an override in one line. Like <code>quality</code>, <code>memory</code> requires method 2.</p>
+<p><code>photons { method 2 quality FLOAT memory FLOAT }</code>: <code>memory</code> sets the ceiling on method 2 photon storage in GB (10<sup>9</sup> bytes), a finite number greater than zero. Without it the ceiling is 40% of the memory available after the first batch, at most 6 GB. After each batch the storage of the whole emission is projected from the deposits so far, and a render whose projection, or whose loaded photon file, passes the ceiling stops with an error that names where the ceiling came from. The ceiling belongs to the machine as much as to the scene, so the <a href="r3_2.html#r3_2_5_6">Photon_Memory</a> option, and after it the <code>POV_PHOTON_MEMORY</code> environment variable, override the scene's value in either direction; the log notes an override in one line. Like <code>quality</code>, <code>memory</code> requires method 2.</p>
 <p>Method 2 never changes direct lighting: a light's color, <code>fade_distance</code> and <code>fade_power</code> light the scene as under method 1, and every fade setting is accepted. Its photons are calibrated to that direct light at every distance: a point, spot or area light emits photons of intensity <code>color</code>, and each deposit is weighted by <code>A(L)*L*L</code>, where <em>L</em> is the photon's path length from the light and <code>A</code> the light's own distance attenuation (1 when unfaded, <code>2/(1+(L/fade_distance)^fade_power)</code> when faded, <code>L^-fade_power</code> with <code>fade_distance 0</code>), so photons deliver the irradiance the direct light gives at the same distance. As with classic photons, an unfaded light's photons do not attenuate; <code>fade_power 2 fade_distance 0</code> makes direct light and photons both inverse-square. Parallel and cylinder colors are irradiance, and their photons carry the light's fade at their distance from the light's plane, as classic photons do. Area lights always emit photons over their area, with or without the light's <code>photons { area_light }</code>. Media glow from photons is deliberately closer to the directly lit medium than classic photons make it, so ported media scenes glow less. Lights in a <code>light_group</code> shoot photons by default in every scene version; <code>light_group { ... photons off }</code> stops them under method 2.</p>
 <p>Under method 2 photons are aimed at targets but deposited on any collecting object they reach after at least one reflection or refraction; light reaching its first surface directly, or through <code>pass_through</code> objects only, is never deposited. A receiver need not be a target, and light can be bent around corners by targeting only the first glass or mirror on its path: a photon's first surface must be a target or the photon stops there, while later objects reflect or refract photons when their own <code>photons { reflection on }</code> or <code>refraction on</code> says so (or the light's photons block turns that on and the object does not turn it off). <code>collect off</code> stops an object receiving, and an object stores deposits only if its finish uses them: glass without <code>diffuse</code>, <code>diffuse_back</code>, <code>phong</code>, <code>specular</code> or subsurface stores none.</p>
 <p>Native <code>.pov4</code> scenes support the same settings, with expressions such as <code>quality (Budget * 2)</code> or <code>memory (Gigabytes)</code>. The words <code>quality</code> and <code>memory</code> are matched by text in the photon item position and remain available as identifiers. See <code>distribution/scenes/lights/progressive_photons4.pov4</code> for a complete example.</p>
