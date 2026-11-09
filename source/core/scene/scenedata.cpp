@@ -437,6 +437,7 @@ SceneData::SceneData() :
     refractionAngle = 0.5;
     preparedMediaCells = 1000000.0;
     machinePreparedMediaCells = 1000000.0;
+    lightDomainCells = 500000.0;
     machinePhotonMemory = 0.0;
     dielectrics = false;
     anyOpaque = false;

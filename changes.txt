@@ -1,6 +1,7 @@
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
 
+- An interior `light { domain_cells N }` sets the light's prepared source domain, the source lattice that also lays out its prepared light and bounce grid; without it the light takes the scene's light default, `#default { light { domain_cells N } }`, 500000 by default; a light never takes its medium's count, so it may be coarser or finer than the medium. The lattice targets N cells with at most 128 x cbrt(max(1, N/500000)) per axis, refining thin domains as the count grows; a surface light refuses it. `domain_cells` is matched by its text and stays free as an identifier.
 - Carry finite volume light emission through homogeneous method 2 subsurface solids, with direct source sampling, internal Fresnel reflection and flux-conserving diffuse bounce export. Existing emission syntax remains available.
 - Buried volume lights find where their paths leave any method 2 host (blob, isosurface, mesh, superellipsoid, CSG, text, sphere sweeps, thin sheets, touching shells) from the material between crossings; a fault names the host, its source line and the ray in the fatal error.
 - A volume light inside a method 2 subsurface part that cannot enclose a volume (an open inside_vector mesh or a disc), or on one, is a parse error naming both source lines; it used to render without its internal light.

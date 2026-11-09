@@ -319,6 +319,8 @@ class SceneData
         double preparedMediaCells;
         /// the machine's prepared media cell limit (INI/CLI Prepared_Media_Cells)
         double machinePreparedMediaCells;
+        /// the default cell budget of an interior light's domain (#default { light { domain_cells } })
+        double lightDomainCells;
         /// the machine's method 2 photon memory ceiling in GB (INI/CLI Photon_Memory); zero when not given
         double machinePhotonMemory;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media

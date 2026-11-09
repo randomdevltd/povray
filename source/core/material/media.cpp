@@ -934,6 +934,14 @@ static DBL AutomaticResolution(ObjectPtr object)
     return std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0, std::cbrt(volume / 500000.0));
 }
 
+// A light's domain cells: its own, else the scene's light default; never its medium's.
+static DBL LightDomainCells(const MediaLight* light, const SceneData& scene)
+{
+    if ((light != nullptr) && (light->domainCells > 0.0))
+        return light->domainCells;
+    return scene.lightDomainCells;
+}
+
 // A container's bounding-box size, the extent measure the detail rules share.
 static Vector3d ContainerSize(ObjectPtr object)
 {
@@ -1757,13 +1765,25 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         progress->Begin("lights", refracting.size() + scene->mediaLights.size());
     PrepareRefractionDefinitions(refracting, td, cooperate);
     std::vector<ConstObjectPtr> sourceOwners;
+    std::map<ConstObjectPtr, double> statedDomainCells;
     for (const LightSource* light : scene->mediaLights)
         if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
+        {
             sourceOwners.push_back(light->emitterContainer);
+            if (light->sourceDomainCells > 0.0)
+                statedDomainCells.emplace(light->emitterContainer, light->sourceDomainCells);
+        }
+    // a light's domain_cells, else the scene's light default; the first light wins a shared container
     std::map<ConstObjectPtr, std::shared_ptr<const PreparedSourceDomain>> sourceDomains;
-    for (const auto& group : PrepareSourceDomains(sourceOwners))
-        for (ConstObjectPtr owner : group.owners)
-            sourceDomains.emplace(owner, group.domain);
+    for (ConstObjectPtr owner : sourceOwners)
+    {
+        if (sourceDomains.count(owner) != 0)
+            continue;
+        PreparedSourceDomainPolicy policy = SceneSourceDomainPolicy(*scene);
+        const auto stated = statedDomainCells.find(owner);
+        policy.automaticCells = (stated != statedDomainCells.end()) ? stated->second : LightDomainCells(nullptr, *scene);
+        sourceDomains.emplace(owner, PrepareSourceDomain(owner, policy));
+    }
     for (LightSource *light : scene->mediaLights)
     {
         if (!light->emitter || !light->emitterContainer)
@@ -1865,7 +1885,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
     bouncePasses(source.bouncePasses), bounceSelf(source.bounceSelf), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
-    samples(source.samples),
+    samples(source.samples), domainCells(source.domainCells),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
     photonOptions(source.photonOptions), where(source.where)

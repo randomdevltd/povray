@@ -7845,8 +7845,28 @@ void Parser::Parse_Default ()
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            // an interior light's default grid size, its own setting apart from the media's
+            if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+            {
+                Parse_Begin ();
+                EXPECT
+                    OTHERWISE
+                        if (CurrentTokenText() == "domain_cells")
+                            sceneData->lightDomainCells = Parse_Domain_Cells();
+                        else
+                        {
+                            UNGET
+                            EXIT
+                        }
+                    END_CASE
+                END_EXPECT
+                Parse_End ();
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -10644,6 +10664,7 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
     light->attenuationScale = settings.attenuationScale;
     light->attenuationPower = settings.attenuationPower;
     light->cutoff = settings.cutoff;
+    light->sourceDomainCells = settings.domainCells;
     light->lawRadius = emitter->Radius();
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;

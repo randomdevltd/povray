@@ -609,6 +609,8 @@ class Parser final
         void Parse_Media (std::vector<Media>&);
         void Parse_Light_Bounce(MediaLight& light);
         double Parse_Light_Samples();
+        /// domain_cells N: an integer cell count from 1 to 1000000000
+        DBL Parse_Domain_Cells();
         void Parse_Light_Attenuation(MediaLight& light, bool surface);
         std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
         void Reject_Nested_Item(const char* block, const char* where);
