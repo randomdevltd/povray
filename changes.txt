@@ -1,5 +1,7 @@
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
+
+- Texture normals now affect method 2 subsurface entry illumination over each estimate's surface area; geometry and outgoing transmission retain surface normals.
 ------------------------------------------------------------------------------
 Notes:
 
