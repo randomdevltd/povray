@@ -124,7 +124,7 @@ public:
         std::vector<DiffuseLayer> result;
         for (const FINISH* finish : finishes)
         {
-            if (thread->GetSceneData()->useSubsurface && finish->UseSubsurface) continue;
+            if (thread->GetSceneData()->useSubsurface && finish->UseSubsurface && finish->SubsurfaceSurfaceChannels().IsZero()) continue;
             if (finish->Crand > 0.0)
                 throw std::invalid_argument("Surface bounce cannot prepare stochastic crand diffuse finishes");
             double outgoing = 1.0;
@@ -309,9 +309,12 @@ private:
                     throw std::invalid_argument("Surface light layered materials require plain texture layers");
                 TransColour colour;
                 if (!Compute_Pigment(colour, layer->Pigment, point, &intersection, nullptr, thread)) continue;
+                // a subsurface layer's diffusion is prepared apart; its channels without transport stay plain diffuse
+                const MathColour plain = (thread->GetSceneData()->useSubsurface && layer->Finish->UseSubsurface) ?
+                    layer->Finish->SubsurfaceSurfaceChannels() : MathColour(1.0);
                 const MathColour response = diffuse ?
-                    MathColour((thread->GetSceneData()->useSubsurface && layer->Finish->UseSubsurface) ||
-                        (selected && selected != layer->Finish) ? 0.0 : (selected ? 1.0 : layer->Finish->Diffuse) / M_PI) : layer->Finish->Emission;
+                    plain * ((selected && selected != layer->Finish) ? 0.0 : (selected ? 1.0 : layer->Finish->Diffuse) / M_PI) :
+                    layer->Finish->Emission;
                 emitted += transmitted * colour.colour() * response * colour.Opacity();
                 transmitted *= colour.TransmittedColour();
             }

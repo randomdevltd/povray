@@ -2725,13 +2725,20 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
     return false;
 }
 
+// The channels a finish shades as plain diffuse: every channel, or with subsurface those whose translucency is 0, which carry
+// no transport.
+MathColour Trace::PlainDiffuseChannels(const FINISH *finish) const
+{
+    return (sceneData->useSubsurface && finish->UseSubsurface) ? finish->SubsurfaceSurfaceChannels() : MathColour(1.0);
+}
+
 // Whether every light's term for this finish is an exact zero: a diffuse term scaled by attenuation 0 (or no diffuse at all) and no
 // highlights; iridescence only scales the sum. A mark such a skipped loop could have left says a random draw shaped a zero.
 bool Trace::LightsAddNothing(const FINISH *finish, double attenuation) const
 {
     const bool noDiffuse = ((attenuation == 0.0) && (finish->Crand <= 0.0)) ||
                            ((finish->Diffuse * finish->BrillianceAdjust <= 0.0) && (finish->DiffuseBack * finish->BrillianceAdjust <= 0.0)) ||
-                           (sceneData->useSubsurface && finish->UseSubsurface);
+                           PlainDiffuseChannels(finish).IsZero();
     return noDiffuse && (finish->Phong <= 0.0) && (finish->Specular <= 0.0);
 }
 
@@ -2952,7 +2959,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         const auto& map = sceneData->GetPreparedSet(Eye.GetPreparedSetId()).progressiveSurface;
         if (map.photons.empty() || (Finish->Diffuse == 0.0 && Finish->DiffuseBack == 0.0 && Finish->Phong == 0.0 && Finish->Specular == 0.0))
             return;
-        if (sceneData->useSubsurface && Finish->UseSubsurface && (Eye.IsRadiosityRay() || (Finish->Phong == 0.0 && Finish->Specular == 0.0)))
+        if (PlainDiffuseChannels(Finish).IsZero() && (Eye.IsRadiosityRay() || (Finish->Phong == 0.0 && Finish->Specular == 0.0)))
             return;
         const std::uint32_t receiver = map.Receiver(Object);
         if (receiver == ProgressivePhotonMap::noReceiver)
@@ -2994,9 +3001,9 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
             const double responseScale = photon.physicalFlux ? 1.0 / M_PI : 1.0;
             const MathColour incident = photon.flux * (responseScale * weight / std::abs(dot(Raw_Normal, direction)));
             MathColour contribution;
-            if (!(sceneData->useSubsurface && Finish->UseSubsurface))
+            if (!PlainDiffuseChannels(Finish).IsZero())
                 ComputeDiffuseColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident,
-                                     Layer_Pigment_Colour, relativeIor, Attenuation, backside, key, index++);
+                                     Layer_Pigment_Colour * PlainDiffuseChannels(Finish), relativeIor, Attenuation, backside, key, index++);
             if (!Eye.IsRadiosityRay() && !backside)
             {
                 if (Finish->Phong > 0.0)
@@ -3098,11 +3105,11 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 
         tmpCol2.Clear();
 
-        if (!(sceneData->useSubsurface && Finish->UseSubsurface))
+        if (!PlainDiffuseChannels(Finish).IsZero())
             // (Diffuse contribution is not supported in combination with BSSRDF, to emphasize the fact that the BSSRDF
             // model is intended to provide for all the diffuse term by default. If users want to add some additional
             // surface-only diffuse term, they should use layered textures.
-            ComputeDiffuseColour(Finish, lightDirection, Eye.Direction, Layer_Normal, tmpCol2, Light_Colour, Layer_Pigment_Colour, relativeIor, Attenuation, backside,
+            ComputeDiffuseColour(Finish, lightDirection, Eye.Direction, Layer_Normal, tmpCol2, Light_Colour, Layer_Pigment_Colour * PlainDiffuseChannels(Finish), relativeIor, Attenuation, backside,
                                  photonKey, j);
 
         // NK rad - don't compute highlights for radiosity gather rays, since this causes
@@ -3496,11 +3503,11 @@ void Trace::ComputeOneLightContribution(const LightSource &lightsource, const Ve
             return;
         }
 
-        if(!(sceneData->useSubsurface && finish->UseSubsurface))
+        if (!PlainDiffuseChannels(finish).IsZero())
             // (Diffuse contribution is not supported in combination with BSSRDF, to emphasize the fact that the BSSRDF
             // model is intended to provide for all the diffuse term by default. If users want to add some additional
             // surface-only diffuse term, they should use layered textures.
-            ComputeDiffuseColour(finish, lightsourceray.Direction, eye.Direction, layer_normal, tmpCol, lightcolour, layer_pigment_colour, relativeIor, attenuation, backside,
+            ComputeDiffuseColour(finish, lightsourceray.Direction, eye.Direction, layer_normal, tmpCol, lightcolour, layer_pigment_colour * PlainDiffuseChannels(finish), relativeIor, attenuation, backside,
                                  eye.GetKey(), LightSlot(lightsource) << 32);
 
         MathColour tempLightColour = (finish->AlphaKnockout ? lightcolour * attenuation : lightcolour);
@@ -3566,9 +3573,9 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                     continue;
                 backside = true;
             }
-            if (!(sceneData->useSubsurface && finish->UseSubsurface))
+            if (!PlainDiffuseChannels(finish).IsZero())
                 ComputeDiffuseColour(finish, sampleRay.Direction, eye.Direction, layer_normal, tmp, incoming,
-                                     layer_pigment_colour, relativeIor, attenuation, backside, eye.GetKey(),
+                                     layer_pigment_colour * PlainDiffuseChannels(finish), relativeIor, attenuation, backside, eye.GetKey(),
                                      (LightSlot(lightsource) << 32) + 1 + k);
             if ((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside)
             {
@@ -3699,11 +3706,11 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                 }
             }
 
-            if(!(sceneData->useSubsurface && finish->UseSubsurface))
+            if (!PlainDiffuseChannels(finish).IsZero())
                 // (Diffuse contribution is not supported in combination with BSSRDF, to emphasize the fact that the BSSRDF
                 // model is intended to provide for all the diffuse term by default. If users want to add some additional
                 // surface-only diffuse term, they should use layered textures.
-                ComputeDiffuseColour(finish, lsr.Direction, eye.Direction, layer_normal, tmpCol, attenuatedLightcolour, layer_pigment_colour, relativeIor, attenuation, backside,
+                ComputeDiffuseColour(finish, lsr.Direction, eye.Direction, layer_normal, tmpCol, attenuatedLightcolour, layer_pigment_colour * PlainDiffuseChannels(finish), relativeIor, attenuation, backside,
                                      eye.GetKey(), (LightSlot(lightsource) << 32) + 1 + cell);
 
             // NK rad - don't compute highlights for radiosity gather rays, since this causes
@@ -7387,7 +7394,9 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     {
         const double sigmaA = absorption[channel] * sceneData->mmPerUnit;
         const double sigmaS = scattering[channel] * sceneData->mmPerUnit;
-        if (!std::isfinite(sigmaA + sigmaS)) continue;
+        if (!std::isfinite(sigmaA + sigmaS))
+            throw POV_EXCEPTION_STRING(std::string("Internal subsurface coefficients are not finite for the material of ") +
+                                        DescribeSubsurfaceObject(out.Object) + "; this is a bug.");
         for (int sample = 0; sample < samples; ++sample)
         {
             const auto pathKey = DeriveKey(key, kDrawSubsurface, sample);
@@ -10572,6 +10581,32 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         NumSamplesSingle  = 1;
     }
 
+    // A channel of translucency 0 carries no transport: it is shaded as plain diffuse and gets nothing here. The carried
+    // channels' mean length stands in for it, so that nothing below is computed from 1 / 0.
+    const MathColour carried = MathColour(1.0) - Finish->SubsurfaceSurfaceChannels();
+    if (carried.IsZero())
+        return;
+    PreciseMathColour translucency(Finish->SubsurfaceTranslucency);
+    struct CarriedOnly
+    {
+        MathColour& colour;
+        const MathColour before, carried;
+        bool partial;
+        ~CarriedOnly() { if (partial) colour = before + (colour - before) * carried; }
+    } carriedOnly{Final_Colour, Final_Colour, carried, carried.Min() == 0.0};
+    if (carriedOnly.partial)
+    {
+        double sum = 0.0, count = 0.0;
+        for (int c = 0; c < MathColour::channels; c++)
+        {
+            sum += carried[c] * translucency[c];
+            count += carried[c];
+        }
+        for (int c = 0; c < MathColour::channels; c++)
+            if (carried[c] == 0.0)
+                translucency[c] = sum / count;
+    }
+
     Eye.GetTicket().subsurfaceRecursionDepth++;
     const std::uint64_t key = Eye.NextChildKey(kDrawSubsurface);
     MarkGrain();
@@ -10610,7 +10645,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                                                      : out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
     for (int j = 0; pointCloud && (j < MathColour::channels); j++)
         alpha_prime[j] = max(alpha_prime[j], kSubsurfaceAlbedoFloor);
-    PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
+    PreciseMathColour   sigma_prime_s   = 1.0 / translucency;
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;
     PreciseMathColour   sigma_a         = sigma_prime_t - sigma_prime_s;

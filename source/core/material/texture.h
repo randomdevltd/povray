@@ -152,6 +152,14 @@ struct Finish_Struct final
     SNGL Reflect_Metallic; // MBP
     int Conserve_Energy;  // added by NK Dec 19 1999
     bool UseSubsurface;   // whether to use subsurface light transport
+    /// The channels a subsurface finish leaves to plain diffuse: those whose translucency is 0 carry no transport.
+    MathColour SubsurfaceSurfaceChannels() const
+    {
+        MathColour channels;
+        for (int c = 0; c < MathColour::channels; c++)
+            channels[c] = (SubsurfaceTranslucency[c] == 0.0) ? 1.0 : 0.0;
+        return channels;
+    }
     int SubsurfaceMethod; // kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, or 0 for the scene's
     std::string SubsurfaceWhere; ///< where its subsurface block was written, "line N of file", for messages
     bool SubsurfaceHasColour, SubsurfaceEmits;

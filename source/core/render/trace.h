@@ -809,6 +809,7 @@ class Trace
     ///
 
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
+        MathColour PlainDiffuseChannels(const FINISH *finish) const;
         bool LightsAddNothing(const FINISH *finish, double attenuation) const;
         void ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const  Ray& eye, const Vector3d& layer_normal, const MathColour& layer_pigment_colour,
                                  MathColour& colour, double attenuation, ObjectPtr object, double relativeIor, const Vector3d& geometricNormal);

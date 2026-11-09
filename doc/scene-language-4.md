@@ -103,9 +103,11 @@ once. The host needs homogeneous coefficients (one texture layer, no `volume_sam
 flesh). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
 mesh with an open border) stops the parse, and so does one whose container lies inside an
 open subsurface mesh's `inside_vector` volume, naming both lines, with or without
-`subsurface` in `global_settings`; an open part that holds no light hosts nothing.
-A container that is itself the host receives the light's own emission and the `self` share
-of its bounce.
+`subsurface` in `global_settings`; an open part that holds no light hosts nothing. A
+container that is itself the host receives the light's own emission and the `self` share
+of its bounce. A `translucency` channel of 0 has no subsurface transport: that channel is
+shaded as plain diffuse and gets no internal glow; a negative or non-finite channel is an
+error.
 Method 2 also averages entry illumination over texture normals across each estimate's
 area; exits and internal paths keep the surface normal.
 

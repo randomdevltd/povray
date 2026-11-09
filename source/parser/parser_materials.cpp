@@ -2556,6 +2556,13 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                 END_CASE
                 CASE (TRANSLUCENCY_TOKEN)
                     Parse_Colour(New->SubsurfaceTranslucency);
+                    // 0 is a channel without subsurface transport; anything else must be a finite positive length
+                    for (int c = 0; c < MathColour::channels; c++)
+                        if (!std::isfinite(New->SubsurfaceTranslucency[c]) || (New->SubsurfaceTranslucency[c] < 0.0))
+                            Error("Subsurface translucency of the finish at %s has %s channel %g; each channel must be "
+                                  "finite and 0 or more, 0 for no subsurface transport in that channel.",
+                                  subsurfaceWhere.c_str(), (c == 0) ? "red" : (c == 1) ? "green" : "blue",
+                                  double(New->SubsurfaceTranslucency[c]));
                     otherItem = true;
                 END_CASE
                 CASE (METHOD_TOKEN)
