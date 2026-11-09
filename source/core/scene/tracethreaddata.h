@@ -134,6 +134,7 @@ class TraceThreadData : public ThreadData
         /// The progress report of scene preparation; set only on the thread that prepares.
         PreparationProgress* preparationProgress = nullptr;
 
+        bool preciseInside = false;
         double isoShadowFrom;
         double isoShadowTo;
 
@@ -290,6 +291,14 @@ struct ActiveTraceScope final
         t->activeWeight = w;
     }
     ~ActiveTraceScope() { thread->activeTrace = trace; thread->activeWeight = weight; }
+};
+
+struct PreciseInsideScope final
+{
+    TraceThreadData* thread;
+    bool previous;
+    explicit PreciseInsideScope(TraceThreadData* t) : thread(t), previous(t->preciseInside) { t->preciseInside = true; }
+    ~PreciseInsideScope() { thread->preciseInside = previous; }
 };
 
 struct IsoShadowWindow final

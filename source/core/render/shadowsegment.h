@@ -45,6 +45,7 @@ public:
         return (!ray || (!ray->MatchesSurfaceEndpoint(object, depth) && !ray->MatchesSurfaceOrigin(object, depth))) && IsFiniteIntersectionDepth(depth) && depth > start && depth < end && depth >= cursor &&
             (crossed.empty() || !CoincidentDepths(depth, cursor) || std::find(crossed.begin(), crossed.end(), object) == crossed.end());
     }
+    bool PreciseBoundary() const override { return ray && ray->HasPreciseShadowWindow(); }
     bool operator()(const Ray&, ConstObjectPtr object, double depth) const override
     {
         if (!Admit(object, depth))

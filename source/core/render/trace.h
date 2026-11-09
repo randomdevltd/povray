@@ -1295,6 +1295,7 @@ class Trace
             MathColour factor, unshadowed;
             Vector3d normal, source;
             RayInteriorVector interiors;
+            ConstObjectPtr whole = nullptr; ///< the object whose surface the point lies on, as shadow walks name it
             std::uint64_t key = 0;
             double bound = 0.0;
             void SetLight(const Vector3d& p, const MathColour& lightcolour);
@@ -1380,6 +1381,7 @@ class Trace
         double ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, ConstObjectPtr object,
                                           ConstObjectPtr whole, double tolerance, const Vector3d& towardSource, TraceTicket& ticket);
         void SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d& normal, const Interior* interior, Ray& ray);
+        static void SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point);
         void SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate);
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
@@ -1462,6 +1464,12 @@ class Trace
         bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
             double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket);
         bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
+        /// The placed objects that carry a material, whose union ContainsSubsurfaceMaterial tests; `whole` always among them.
+        const std::vector<ObjectPtr>& SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
+        std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr>, std::vector<ObjectPtr>> ssltMaterialBodies;
+        /// Whether a volume light's container and a material share a volume, at bounding box resolution; see doc/PERF.md.
+        bool SubsurfaceSourceOverlaps(const LightSource& light, const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
+        std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr, const LightSource*>, bool> ssltSourceOverlaps;
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
             const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous);

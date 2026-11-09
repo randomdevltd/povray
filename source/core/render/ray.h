@@ -198,8 +198,11 @@ class Ray final : public BasicRay
         bool IsHollowRay() const { return hollowRay; }
         bool IsPretraceRay() const { return pretraceRay; }
         /// Shadow tests of this ray count every blocker between its ends, with no fixed margin at either.
-        void SetExactShadowWindow() { exactShadowWindow = true; }
-        bool HasExactShadowWindow() const { return exactShadowWindow; }
+        void SetExactShadowWindow() { if (shadowWindow < kExactShadowWindow) shadowWindow = kExactShadowWindow; }
+        bool HasExactShadowWindow() const { return shadowWindow >= kExactShadowWindow; }
+        /// An exact window whose shapes also find their roots at float precision, as a boundary query does.
+        void SetPreciseShadowWindow() { shadowWindow = kPreciseShadowWindow; }
+        bool HasPreciseShadowWindow() const { return shadowWindow == kPreciseShadowWindow; }
         /// A receiver standing for a region this wide takes a light's falloff no nearer than this to the light.
         void SetReceiverRadius(DBL radius) { receiverRadius = radius; }
         DBL ReceiverRadius() const { return receiverRadius; }
@@ -219,7 +222,7 @@ class Ray final : public BasicRay
         /// or one interface with it, unless the ray leaves another object (@ref RayLeavingScope) and `object` is opaque.
         bool AcceptsDepth(ConstObjectPtr object, double depth) const
         {
-            return (depth >= MIN_ISECT_DEPTH) || subsurfaceRay || exactShadowWindow || ((ticket.leaving.ray == this) && MeetsNear(object));
+            return (depth >= MIN_ISECT_DEPTH) || subsurfaceRay || HasExactShadowWindow() || ((ticket.leaving.ray == this) && MeetsNear(object));
         }
         bool MeetsNear(ConstObjectPtr object) const;
 
@@ -286,7 +289,8 @@ class Ray final : public BasicRay
         PreparedSetId preparedSetId = 0;
         DBL receiverRadius = 0.0;
         mutable std::uint32_t children = 0;
-        bool exactShadowWindow = false;
+        static constexpr std::uint8_t kExactShadowWindow = 1, kPreciseShadowWindow = 2;
+        std::uint8_t shadowWindow = 0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;

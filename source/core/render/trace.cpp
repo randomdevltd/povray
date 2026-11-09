@@ -6582,7 +6582,8 @@ bool Trace::SubsurfaceEntryTaps(const Intersection& hit, const Vector3d& outward
                 const double distance = fabs(tap.Depth - reach);
                 if (!(distance < nearest))
                     continue;
-                const double probe = max(1.0e-6, max(4.0 * tap.Object->SurfaceTolerance(), 1.0e-4 * side));
+                const double probe = max(64.0 * std::numeric_limits<double>::epsilon() * (tap.IPoint.length() + side),
+                                         max(4.0 * tap.Object->SurfaceTolerance(), 1.0e-4 * side));
                 const ObjectPtr whole = SubsurfaceObject(hit);
                 if (whole->Inside(tap.IPoint + outward * probe, threadData) ||
                     !whole->Inside(tap.IPoint - outward * probe, threadData))
@@ -6866,6 +6867,7 @@ void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Inters
     for (int j = 0; j < MathColour::channels; j++)
         candidate.factor[j] = ft * rd[j];
     candidate.SetLight(in.IPoint, lightcolour);
+    candidate.whole = SubsurfaceObject(in);
     if (lightsource.emitter)
         SetSubsurfaceEmitterEndpoint(in, lightsourceray, lightsourcedepth, candidate);
 }
@@ -6976,6 +6978,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
         candidate.factor[j] = min(f, double(FLT_MAX));
     }
     candidate.SetLight(xi.IPoint, lightcolour);
+    candidate.whole = SubsurfaceObject(xi);
     if (lightsource.emitter)
         SetSubsurfaceEmitterEndpoint(xi, lightsourceray, lightsourcedepth, candidate);
     // Light leaves the object toward its source here, so the outward normal faces the source.
@@ -7053,6 +7056,14 @@ void Trace::SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d&
     ray.AppendInteriors(containing);
 }
 
+// Light is gathered at points on the material's own surface. A shadow window opened a scene-unit tolerance ahead would see
+// through any wall thinner than that, so the window opens at the point and passes only the point's own root.
+void Trace::SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point)
+{
+    ray.SetPreciseShadowWindow();
+    ray.SetSurfaceOrigin(whole, point, ray.Direction);
+}
+
 void Trace::SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate)
 {
     candidate.source = in.IPoint + ray.Direction * depth;
@@ -7118,12 +7129,14 @@ MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const Su
                     lightsourceray.AppendInterior(interior);
                 lightsourceray.SetFlags(Ray::OtherRay, true, false);
                 lightsourceray.SetMediaLight(&lightsource);
+                SetSubsurfaceShadowOrigin(lightsourceray, c.whole, c.point);
                 lightcolour = c.unshadowed;
                 TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, c.source - lightsource.Center);
             }
             else
             {
                 ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, true);
+                SetSubsurfaceShadowOrigin(lightsourceray, c.whole, c.point);
                 Vector2d areaSample = SubsurfaceAreaSample(shift, drawn + r);
                 TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, &areaSample);
             }
@@ -7212,40 +7225,121 @@ const LightSource* Trace::LightOnObject(const LightSource& light, ConstObjectPtr
 
 bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId)
 {
+    const PreciseInsideScope precision(threadData);
     RayInteriorVector containing;
     FindContainingInteriors(point, containing, preparedSetId);
     return std::find(containing.begin(), containing.end(), interior) != containing.end();
 }
 
+const std::vector<ObjectPtr>& Trace::SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId)
+{
+    auto& bodies = ssltMaterialBodies[std::make_tuple(preparedSetId, interior, whole)];
+    if (bodies.empty())
+    {
+        // A split union or a text object leaves several placed objects that share one material.
+        bodies.push_back(whole);
+        for (ObjectPtr object : sceneData->GetPreparedSet(preparedSetId).objects)
+            if (object != whole && object->interior.get() == interior)
+                bodies.push_back(object);
+    }
+    return bodies;
+}
+
+// A buried light lights the material it lies in; the transport applies that exactly on each path, integrating emission
+// only along the path's material and connecting only to samples before its exit. This only spares that work for a light
+// sharing no volume with the material: its container's box against the boxes of the material's placed parts, through
+// unions and merges, where a common slab no thicker than the boxes' own float rounding is a shared boundary, not a volume.
+bool Trace::SubsurfaceSourceOverlaps(const LightSource& light, const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId)
+{
+    const auto key = std::make_tuple(preparedSetId, interior, whole, &light);
+    const auto known = ssltSourceOverlaps.find(key);
+    if (known != ssltSourceOverlaps.end())
+        return known->second;
+    const BoundingBox& source = light.emitterContainer->BBox;
+    auto meets = [&](const BoundingBox& box)
+    {
+        for (int axis = X; axis <= Z; axis++)
+        {
+            const double low = std::max(double(box.lowerLeft[axis]), double(source.lowerLeft[axis]));
+            const double high = std::min(double(box.lowerLeft[axis]) + box.size[axis], double(source.lowerLeft[axis]) + source.size[axis]);
+            const double magnitude = std::max(std::max(fabs(low), fabs(high)), std::max(double(box.size[axis]), double(source.size[axis])));
+            if (!(high - low > 4.0 * std::numeric_limits<float>::epsilon() * magnitude))
+                return false;
+        }
+        return true;
+    };
+    std::function<bool(ConstObjectPtr)> part = [&](ConstObjectPtr object)
+    {
+        if (!meets(object->BBox))
+            return false;
+        const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object);
+        if ((compound == nullptr) || compound->children.empty() || (dynamic_cast<const CSGIntersection *>(object) != nullptr))
+            return (compound != nullptr) || !SubsurfaceSheet(object, false, nullptr); // a sheet holds no volume to host in
+        for (ConstObjectPtr child : compound->children)
+            if (part(child))
+                return true;
+        return false;
+    };
+    bool overlaps = false;
+    for (ObjectPtr body : SubsurfaceMaterialBodies(interior, whole, preparedSetId))
+        if (part(body))
+        {
+            overlaps = true;
+            break;
+        }
+    return ssltSourceOverlaps[key] = overlaps;
+}
+
 SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
     ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket)
 {
+    const PreciseInsideScope precision(threadData);
     const Interior* material = object->interior.get();
     const double extent = (material->boundsHigh - material->boundsLow).length();
     const double shift = std::max(2.0 * MIN_ISECT_DEPTH, std::max(InterfaceTolerance(point, material), 4.0e-6 * extent));
+    const double reach = SubsurfaceBoundsReach(point, direction, material->boundsLow, material->boundsHigh);
+    const std::vector<ObjectPtr>& bodies = SubsurfaceMaterialBodies(material, whole, ticket.preparedSetId);
     auto find = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& query)
     {
         cooperate();
-        return FindIntersection(whole, hit, ray, query);
+        bool f = false;
+        for (ObjectPtr body : bodies)
+        {
+            Intersection candidate;
+            if (FindIntersection(body, candidate, ray, query, f ? hit.Depth : HUGE_VAL) && (!f || candidate.Depth < hit.Depth))
+            {
+                hit = candidate;
+                f = true;
+            }
+        }
+        return f;
     };
-    auto exits = [&](Intersection& hit, Vector3d& outward)
+    auto owns = [&](const Intersection& hit) { return IsSameSSLTObject(hit.Object, object); };
+    auto contains = [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); };
+    auto outward = [&](Intersection& hit, Vector3d& normal)
     {
-        if (!IsSameSSLTObject(hit.Object, object)) return false;
-        hit.Object->Normal(outward, &hit, threadData);
-        outward.normalize();
-        if (dot(outward, direction) < 0.0) outward.invert();
-        return !ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(hit.IPoint, direction,
-            InterfaceTolerance(hit.IPoint, material), extent), material, ticket.preparedSetId);
+        hit.Object->Normal(normal, &hit, threadData);
+        normal.normalize();
     };
-    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, find, exits);
+    auto fail = [&](SubsurfaceExitFailure reason, double distance)
+    {
+        char text[400];
+        std::snprintf(text, sizeof(text), "%s; the ray from <%.9g, %.9g, %.9g> along <%.9g, %.9g, %.9g> reached %.6g units of the "
+                      "material's %.6g-unit bounds.", SubsurfaceExitFailureText(reason), point[X], point[Y], point[Z],
+                      direction[X], direction[Y], direction[Z], distance, extent);
+        throw POV_EXCEPTION(kUncategorizedError, "Internal subsurface light found no exit from " + DescribeSubsurfaceObject(object) +
+                            ((whole != object) ? " (part of " + DescribeSubsurfaceObject(whole) + ")" : std::string()) + ": " + text);
+    };
+    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, extent, reach, find, owns, contains, outward, fail);
 }
 
 bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
     double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket)
 {
-    if (!light.emitter || !light.emitter->HasVolumeEmission() || object == nullptr || !object->interior) return false;
+    if (!light.emitter || !light.emitter->HasVolumeEmission() || !light.emitterContainer || object == nullptr || !object->interior) return false;
     const Interior* material = object->interior.get();
     if (!SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return false;
+    if (!SubsurfaceSourceOverlaps(light, material, const_cast<ObjectPtr>(whole), ticket.preparedSetId)) return false;
     const double extent = (material->boundsHigh - material->boundsLow).length();
     if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, InterfaceTolerance(point, material), extent),
         material, ticket.preparedSetId)) return false;
@@ -7261,21 +7355,12 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     const Interior* material = out.Object->interior.get();
     if (eye.IsInterior(material) || !SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return result;
     std::vector<const Emitter*> sources;
-    const auto& bounds = SubsurfaceObject(out)->BBox;
     for (const auto* light : lights)
-        if (!light->Photon_Only && light->emitter && light->emitter->HasVolumeEmission())
+        if (!light->Photon_Only && light->emitter && light->emitter->HasVolumeEmission() && light->emitterContainer)
         {
             const auto* emitter = light->emitter.get();
             if (std::find(sources.begin(), sources.end(), emitter) != sources.end()) continue;
-            double distanceSquared = 0.0;
-            for (int axis = 0; bounds.finiteInterior && axis < 3; ++axis)
-            {
-                const double below = double(bounds.lowerLeft[axis]) - emitter->Centre()[axis];
-                const double above = emitter->Centre()[axis] - double(bounds.lowerLeft[axis]) - double(bounds.size[axis]);
-                const double distance = std::max(0.0, std::max(below, above));
-                distanceSquared += distance * distance;
-            }
-            if (distanceSquared <= Sqr(emitter->Radius())) sources.push_back(emitter);
+            if (SubsurfaceSourceOverlaps(*light, material, SubsurfaceObject(out), eye.GetPreparedSetId())) sources.push_back(emitter);
         }
     if (sources.empty()) return result;
     Vector3d normal;
@@ -7580,6 +7665,7 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
             if ((qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE))) ||
                 (lightsource.emitter && qualityFlags.media && lightsource.Media_Interaction && lightsource.Media_Attenuation))
             {
+                SetSubsurfaceShadowOrigin(lightsourceray, whole, point);
                 if (lightsource.emitter)
                 {
                     const Vector3d source = point + lightsourceray.Direction * lightsourcedepth;
@@ -7641,6 +7727,8 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
             double lightsourcedepth;
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, out.IPoint, lightcolour, true);
+            if (SubsurfaceInternalConnection(lightsource, out.IPoint, lightsourceray.Direction, lightsourcedepth,
+                out.Object, SubsurfaceObject(out), ticket)) continue;
             if (lightcolour.IsNearZero(EPSILON))
                 continue;
             if (k == 0)
@@ -7662,6 +7750,7 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
                 else
                 {
                     MathColour unshadowed = lightcolour;
+                    SetSubsurfaceShadowOrigin(lightsourceray, SubsurfaceObject(out), out.IPoint);
                     if (lightsource.emitter)
                     {
                         const Vector3d source = out.IPoint + lightsourceray.Direction * lightsourcedepth;
@@ -8549,7 +8638,9 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     // Normals point out of the object where a step along them leaves it; the step shrinks to a quarter of the wall between
     // a crossing and its neighbours. Inside on both sides, outside on both, or under the floor, a crossing is dropped.
     const double probeMax = 0.05 * h;
-    const double probeMin = max(1e-6, 1e-4 * h);
+    // Thin is width against the cell, never in scene units; the floor is only the coordinates' rounding.
+    const double probeMin = max(1e-4 * h, 64.0 * std::numeric_limits<double>::epsilon() *
+                                          (max(fabs(lo[X]), max(fabs(lo[Y]), fabs(lo[Z]))) + size));
     const double depth = (cloud.flesh != nullptr) && (cloud.flesh->fleshAtDepth || cloud.flesh->emissionAtDepth) ? cloud.flesh->depth : 0.0;
     const BoundingBox& box = cloud.object->BBox;
     Vector3d dir(0.0);
@@ -8763,13 +8854,27 @@ void Trace::AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& c
 
 // Every crossing of the object along a line within [from, to]. One test of some shapes returns only the nearest
 // interval's crossings (a blob's does), so the line is tested again past the farthest crossing found until none is left.
+// Every crossing at float precision: a shape's classic root may stop its stated accuracy short of the surface, in scene
+// units, which leaves the probes either side of a small part on one side of it.
+class SubsurfaceCrossingQuery final : public RayRootQuery
+{
+public:
+    bool Admit(ConstObjectPtr, double) const override { return true; }
+    bool AllRoots() const override { return true; }
+    bool PreciseBoundary() const override { return true; }
+};
+
 void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double from, double to, std::vector<Intersection>& hits, TraceTicket& ticket)
 {
-    double step = max(1e-7, 1e-6 * to);
+    const double reach = max(fabs(origin[X]), max(fabs(origin[Y]), fabs(origin[Z]))) + to;
+    double step = max(64.0 * std::numeric_limits<double>::epsilon() * reach, 1e-6 * to);
     double start = 0.0;
+    const SubsurfaceCrossingQuery query;
     for (int guard = 0; (guard < 256) && (start <= to); guard++)
     {
         Ray ray(ticket, origin + dir * start, dir, Ray::SubsurfaceRay);
+        const RayRootQueryDisabled restoreQuery(ray);
+        ray.SetRootQuery(&query);
         if (!object->Bound.empty() && !Ray_In_Bound(ray, object->Bound, threadData))
             return;
         IStack stack(stackPool);
@@ -8854,7 +8959,7 @@ std::string Trace::DescribeSubsurfaceObject(ConstObjectPtr object)
     std::snprintf(text, sizeof(text), "%s%s%s at <%.4g, %.4g, %.4g>", ShapeName(object), object->tags.empty() ? "" : " tagged ",
                   object->tags.empty() ? "" : object->tags[0].c_str(), box.lowerLeft[X] + 0.5 * box.size[X], box.lowerLeft[Y] + 0.5 * box.size[Y],
                   box.lowerLeft[Z] + 0.5 * box.size[Z]);
-    return text;
+    return object->source ? std::string(text) + " (" + *object->source + ")" : std::string(text);
 }
 
 // A part with no inside for light to diffuse through: a disc, unless it cuts an intersection or difference, or a mesh with
