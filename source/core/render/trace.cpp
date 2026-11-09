@@ -407,8 +407,9 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     if(ray.IsPrimaryRay() || (((unsigned char) nrays & 0x0f) == 0x00))
         cooperate();
 
-    // Check for max. trace level or ADC bailout.
-    if((ray.GetTicket().traceLevel >= ray.GetTicket().maxAllowedTraceLevel) || (weight < ray.GetTicket().adcBailout))
+    // Check for max. trace level or ADC bailout; from #version 4.0 a ray at the level is still traced, without branching.
+    const bool atLimit = (ray.GetTicket().traceLevel >= ray.GetTicket().maxAllowedTraceLevel);
+    if((atLimit && !(sceneData->traceLimitContinues && !ray.IsRadiosityRay())) || (weight < ray.GetTicket().adcBailout))
     {
         if(weight < ray.GetTicket().adcBailout)
             threadData->Stats()[ADC_Saves]++;
@@ -417,9 +418,20 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
         transm = 0.0;
         return HUGE_VAL;
     }
+    struct LimitRestore { bool& slot; bool value; ~LimitRestore() { slot = value; } } limitRestore{ traceLimit, traceLimit };
+    traceLimit = atLimit;
+    // a continued ray takes no level, so a chain of them stops black after as many surfaces as the deepest level allowed
+    struct HopRestore { unsigned& slot; unsigned value; ~HopRestore() { slot = value; } } hopRestore{ continuedHops, continuedHops };
+    continuedHops = continuedRay ? continuedHops + 1 : 0;
+    if (continuedHops > MAX_TRACE_LEVEL_LIMIT)
+    {
+        colour.Clear();
+        transm = 0.0;
+        return HUGE_VAL;
+    }
 
     std::unique_ptr<MediaFunctor::Path> mediaPath = media.BeginPath(ray);
-    if (sceneData->fieldRefraction && (maxDepth < EPSILON) && !missOpen && !ray.IsShadowTestRay() && RefractingRay(ray))
+    if (sceneData->fieldRefraction && !atLimit && (maxDepth < EPSILON) && !missOpen && !ray.IsShadowTestRay() && RefractingRay(ray))
     {
         RefractionField field(ray.GetInteriors());
         if (field.Varies())
@@ -437,7 +449,7 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     found = FindIntersection(bestisect, ray, precond, postcond);
     if (!found && missOpen)
         return HUGE_VAL;
-    const double depth = ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay, fold);
+    const double depth = ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay || atLimit, fold);
     if (mediaPath)
         mediaPath->Finish(colour);
     return depth;
@@ -2189,7 +2201,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         {
             filCol *= layMeans.filters ? layMeans.transmitted : layCol.TransmittedColour();
 
-            if(layer->Finish->Conserve_Energy != 0 && listWNRX->empty() == false)
+            // at max_trace_level no reflection is traced, so none is taken from the light passing through, as for a shadow ray
+            if(layer->Finish->Conserve_Energy != 0 && listWNRX->empty() == false && !traceLimit)
             {
                 // adjust filCol based on reflection
                 // this would work so much better with r,g,b,rt,gt,bt
@@ -2288,7 +2301,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     //
     // If total internal reflection occured all reflections using
     // TopNormal are skipped.
-    if(qualityFlags.reflections)
+    if(qualityFlags.reflections && !traceLimit)
     {
         layer = texture;
         for(i = 0; i < layer_number; i++)
@@ -2577,8 +2590,8 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
 
     bool haveDispersion = (fabs(dispersion - 1.0) >= EPSILON);
 
-    // Do the two mediums traversed have the same indices of refraction?
-    if((fabs(ior - 1.0) < EPSILON) && !haveDispersion)
+    // Do the two mediums traversed have the same indices of refraction? At max_trace_level the ray goes straight on regardless.
+    if(traceLimit || ((fabs(ior - 1.0) < EPSILON) && !haveDispersion))
     {
         // Only transmit the ray.
         nray.Direction = ray.Direction;

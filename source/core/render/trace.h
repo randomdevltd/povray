@@ -457,6 +457,10 @@ class Trace
         const Vector3d *hitFold = nullptr;
         /// The object of the hit being shaded, whose surface its reflected and refracted rays leave.
         ConstObjectPtr hitObject = nullptr;
+        /// Whether the ray being shaded reached max_trace_level: its hit is lit but not reflected, and its transmitted part goes straight on.
+        bool traceLimit = false;
+        /// How many surfaces in a row the ray being shaded has continued through without taking a level.
+        unsigned continuedHops = 0;
 
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;

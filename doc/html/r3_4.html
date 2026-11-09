@@ -624,9 +624,19 @@ ten of them in the union with radius's from 1 to 10 and render the scene.
 The image will show the first few spheres correctly, then black. This is
 because a new level is used every time you pass through a transparent
 surface. Raise <code>max_trace_level</code> to fix this problem.</p>
+<p>With <code>#version 4.0;</code> and in <code>.pov4</code> scenes a ray that reaches <code>max_trace_level</code> is not black.
+It is traced on without branching, through any further clear surfaces, to the first opaque surface or the background.
+Each transparent surface it crosses is lit as usual but not reflected, and the light through it continues in a straight
+line, ignoring refraction, filtered by the surface and absorbed by the interior's <code>fade_distance</code> and media. An
+opaque surface it reaches, a mirror or metal included, shows its own lighting, emission and ambient without reflection.
+This removes the black specks left by rays trapped in thin transparent walls by total internal reflection; raise
+<code>max_trace_level</code> where the bent or reflected image matters. Earlier versions keep black. Radiosity sample
+rays still return black at their limit, and photons still stop at their own <code>max_trace_level</code>.</p>
 <p class="Note"><strong>Note:</strong> Raising <code>max_trace_level</code> will use more memory and time
 and it could cause the program to crash with a stack overflow error, although
-ADC will alleviate this to a large extent.</p>
+ADC will alleviate this to a large extent. A ray passing straight on through a surface with no change of ior, and a ray
+continued past <code>max_trace_level</code>, take no level, so these chains are bounded separately: after 256 surfaces in
+a row such a ray stops black.</p>
 <p>Values for <code>max_trace_level</code> can be set up to a maximum of 256.
 If there is no <code>max_trace_level</code> set and during rendering the default value is reached, a warning is issued.
 </p>
