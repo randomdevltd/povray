@@ -13,6 +13,7 @@
 #include "core/material/media.h"
 #include "core/material/pigment.h"
 #include "core/material/preparedsourcefield.h"
+#include "core/material/texture.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
@@ -23,6 +24,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <unordered_set>
@@ -184,13 +186,58 @@ inline void CollectObjects(ConstObjectPtr object, std::vector<ConstObjectPtr>& o
             CollectObjects(child, objects, seen);
 }
 
+// Whether a texture, its layers or its material map carry a subsurface method 2 finish.
+inline bool CarriesMethod2(const TEXTURE* texture, const SceneData& scene)
+{
+    for (; texture != nullptr; texture = texture->Next)
+    {
+        const FINISH* finish = texture->Finish;
+        if (finish && finish->UseSubsurface &&
+            ((finish->SubsurfaceMethod != 0) ? finish->SubsurfaceMethod : scene.subsurfaceMethod) == kSubsurfaceMethodPointCloud)
+            return true;
+        for (const TEXTURE* material : texture->Materials)
+            if (CarriesMethod2(material, scene))
+                return true;
+    }
+    return false;
+}
+
+// Whether an object or any part of it is a method 2 host.
+inline bool Method2Host(ConstObjectPtr object, const SceneData& scene)
+{
+    if (CarriesMethod2(object->Texture, scene) || CarriesMethod2(object->Interior_Texture, scene))
+        return true;
+    if (const auto compound = dynamic_cast<const CompoundObject*>(object))
+        for (const auto child : compound->children)
+            if (Method2Host(child, scene))
+                return true;
+    return false;
+}
+
+// Whether two world boxes share a volume wider than float rounding, the test the internal source selection makes.
+inline bool BoxesMeet(const BoundingBox& a, const BoundingBox& b)
+{
+    for (int axis = X; axis <= Z; axis++)
+    {
+        const double low = std::max(double(a.lowerLeft[axis]), double(b.lowerLeft[axis]));
+        const double high = std::min(double(a.lowerLeft[axis]) + a.size[axis], double(b.lowerLeft[axis]) + b.size[axis]);
+        const double magnitude = std::max(std::max(fabs(low), fabs(high)), std::max(double(a.size[axis]), double(b.size[axis])));
+        if (!(high - low > 4.0 * std::numeric_limits<float>::epsilon() * magnitude))
+            return false;
+    }
+    return true;
+}
+
+// An emitting surface whose method 2 material holds a volume emitter exports that emitter's escaping light as its own
+// primary; any other surface has none to export and pays nothing for it.
 inline bool InternalPrimary(const LightSource& light, const SceneData& scene)
 {
     const auto owner = light.emitterContainer;
     return scene.useSubsurface && light.emitter && light.emitter->IsSurface() && owner &&
-        owner->surfaceLight && owner->surfaceLight->useEmission &&
-        std::any_of(scene.mediaLights.begin(), scene.mediaLights.end(), [](const LightSource* source)
-            { return !source->Photon_Only && source->emitter && source->emitter->HasVolumeEmission(); });
+        owner->surfaceLight && owner->surfaceLight->useEmission && Method2Host(owner, scene) &&
+        std::any_of(scene.mediaLights.begin(), scene.mediaLights.end(), [&](const LightSource* source)
+            { return !source->Photon_Only && source->emitter && source->emitter->HasVolumeEmission() &&
+                     source->emitterContainer && BoxesMeet(source->emitterContainer->BBox, owner->BBox); });
 }
 
 inline const MediaLight* BounceSettings(const LightSource& light)
