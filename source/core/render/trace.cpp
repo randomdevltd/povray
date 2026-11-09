@@ -7367,13 +7367,25 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     if (samples <= 0) return result;
     const Interior* material = out.Object->interior.get();
     if (eye.IsInterior(material) || !SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return result;
-    std::vector<const Emitter*> sources;
+    // A bounce light in its own material reaches it as its own emission plus the self share of its bounce: the bounced
+    // emitter at the share and the light as it was before bouncing at the rest, as its own media scatter it.
+    struct Source { const Emitter* emitter; MathColour scale; };
+    std::vector<Source> sources;
+    const ObjectPtr whole = SubsurfaceObject(out);
+    auto add = [&](const LightSource& light, const Emitter* emitter, const MathColour& scale)
+    {
+        if ((emitter == nullptr) || !emitter->HasVolumeEmission() || scale.IsZero()) return;
+        if (std::any_of(sources.begin(), sources.end(), [&](const Source& seen) { return seen.emitter == emitter; })) return;
+        if (SubsurfaceSourceOverlaps(light, material, whole, eye.GetPreparedSetId())) sources.push_back({emitter, scale});
+    };
     for (const auto* light : lights)
-        if (!light->Photon_Only && light->emitter && light->emitter->HasVolumeEmission() && light->emitterContainer)
+        if (!light->Photon_Only && light->emitter && light->emitterContainer)
         {
-            const auto* emitter = light->emitter.get();
-            if (std::find(sources.begin(), sources.end(), emitter) != sources.end()) continue;
-            if (SubsurfaceSourceOverlaps(*light, material, SubsurfaceObject(out), eye.GetPreparedSetId())) sources.push_back(emitter);
+            const bool own = (light->selfContainer != nullptr) &&
+                ((light->selfContainer == whole) || IsObjectInCSG(out.Object, light->selfContainer));
+            add(*light, light->emitter.get(), own ? light->selfScale : MathColour(1.0));
+            if (own && light->selfLight)
+                add(*light->selfLight, light->selfLight->emitter.get(), MathColour(1.0) - light->selfScale);
         }
     if (sources.empty()) return result;
     Vector3d normal;
@@ -7406,8 +7418,9 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
             auto source = [&](const Vector3d& point, const Vector3d& direction, double reach, double extinction)
             {
                 double radiance = 0.0;
-                for (const auto* emitter : sources)
-                    radiance += emitter->VolumeEmissionAlong(point, direction, reach, extinction, draw(), threadData)[channel];
+                for (const auto& from : sources)
+                    radiance += from.scale[channel] *
+                        from.emitter->VolumeEmissionAlong(point, direction, reach, extinction, draw(), threadData)[channel];
                 if (!homogeneous && radiance != 0.0)
                     throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
                 return radiance;
@@ -7415,19 +7428,19 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
             auto connect = [&](const Vector3d& point, double extinction)
             {
                 double radiance = 0.0;
-                for (const auto* emitter : sources)
+                for (const auto& from : sources)
                 {
                     const double choose = draw(), x = draw(), y = draw(), z = draw();
                     const auto positionKey = DeriveKey(pathKey, kDrawEmitter, dimension++);
                     const EmitterDraw proposal(choose, x, y, z, positionKey);
                     EmitterSample light;
-                    if (!emitter->SampleToward(point, proposal, threadData, light) || light.weight.IsZero()) continue;
+                    if (!from.emitter->SampleToward(point, proposal, threadData, light) || light.weight.IsZero()) continue;
                     const Vector3d delta = light.position - point;
                     const double distance = delta.length();
                     if (!(distance > 0.0)) continue;
                     const auto hit = boundary(point, delta / distance);
                     if (distance >= hit.distance) continue;
-                    radiance += light.weight[channel] * std::exp(-extinction * distance) / (4.0 * M_PI);
+                    radiance += from.scale[channel] * light.weight[channel] * std::exp(-extinction * distance) / (4.0 * M_PI);
                 }
                 if (!homogeneous && radiance != 0.0)
                     throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
