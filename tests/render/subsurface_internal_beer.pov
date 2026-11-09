@@ -17,7 +17,7 @@ sphere {
   <0, -SourceDepth, 0>, 0.12
   hollow no_image pigment { rgbt 1 } finish { ambient 0 diffuse 0 }
   interior {
-    media { method 4 resolution 0.03 emission 0.5 }
+    media { method 4 domain_cells 512 emission 0.5 }
     light { emission brightness 1 samples 16 attenuation { cutoff 0 } }
   }
 }

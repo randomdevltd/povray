@@ -372,7 +372,6 @@ enum
     kPOVAttrib_ClocklessAnimation    = 'Ckla',
     kPOVAttrib_CameraOutputs         = 'CamO', ///< per collected camera: its own size, window and output file, where given
     kPOVAttrib_FilterTags            = 'FiTa',
-    kPOVAttrib_PreparedMediaCells    = 'PrMC',
     kPOVAttrib_PhotonMemory          = 'PhMC',
     kPOVAttrib_RealTimeRaytracing    = 'RTRa',
     kPOVAttrib_EagerPreparation      = 'EaPr',

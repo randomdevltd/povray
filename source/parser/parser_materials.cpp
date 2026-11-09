@@ -3730,7 +3730,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     TRANSFORM Local_Trans;
     Vector3d Local_Vector;
     MATRIX Local_Matrix;
-    bool resolutionSpecified = false;
+    bool domainCellsSpecified = false;
     const std::string where = CurrentSourceLine();
 
     Parse_Begin();
@@ -3747,6 +3747,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
             IMedia->Max_Samples = 10;
             IMedia->Sample_Method = (sceneData->EffectiveLanguageVersion() >= 400) ? 4 : 3;
         }
+        IMedia->domainCells = sceneData->domainCells;
     }
 
     EXPECT
@@ -3781,13 +3782,6 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (JITTER_TOKEN)
             IMedia->Jitter = Parse_Float();
-        END_CASE
-
-        CASE (RESOLUTION_TOKEN)
-            resolutionSpecified = true;
-            IMedia->SetRequestedFastResolution(Parse_Float());
-            if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
-                Error("media resolution needs a finite positive scene-unit width.");
         END_CASE
 
         CASE (AA_THRESHOLD_TOKEN)
@@ -3919,6 +3913,12 @@ void Parser::Parse_Media(vector<Media>& medialist)
         OTHERWISE
             if (CurrentTokenText() == "light_samples")
                 IMedia->Light_Samples = Parse_Light_Samples();
+            else if (CurrentTokenText() == "domain_cells")
+            {
+                domainCellsSpecified = true;
+                IMedia->domainCells = Parse_Domain_Cells();
+                IMedia->domainCellsStated = true;
+            }
             else
             {
                 Reject_Nested_Item("media", "a media");
@@ -3930,8 +3930,8 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
     Parse_End();
 
-    if (resolutionSpecified && IMedia->Sample_Method != 4)
-        Error("media resolution requires method 4.");
+    if (domainCellsSpecified && IMedia->Sample_Method != 4)
+        Error("media domain_cells requires method 4.");
 
     IMediaObj.where = where;
     medialist.push_back(IMediaObj);

@@ -65,12 +65,12 @@ for block in "8 23 8 23" "24 39 24 39"; do
     done
 done
 
-# 4. the grid: the emitter's resolution changes its cost, never its power; the absorption-1 ball with
+# 4. the grid: the emitter's domain_cells changes its cost, never its power; the absorption-1 ball with
 #    j = L/(4R/3) reads (j/sigma)*[R^2-(1-(1+2*sigma*R)*exp(-2*sigma*R))/(2*sigma^2)]/height^2
-render grid_fine Declare=Case=4 Declare=Res=0.06
-render grid_coarse Declare=Case=4 Declare=Res=0.25
+render grid_fine Declare=Case=4 Declare=Cells=729
+render grid_coarse Declare=Case=4 Declare=Cells=8
 for block in "30 33 30 33" "24 39 24 39" "8 23 8 23"; do
-    near "the grid's resolution, block $block" "$(mean grid_fine $block)" "$(mean grid_coarse $block)" 0.06
+    near "the grid's cell count, block $block" "$(mean grid_fine $block)" "$(mean grid_coarse $block)" 0.06
 done
 near "the fine grid against the analytic point" "$(mean grid_fine 30 33 30 33)" \
     "$(awk 'BEGIN { s = 1; R = 0.25; printf "%.5f", 16 * 3 / (4 * s * R) * (R * R - (1 - (1 + 2 * s * R) * exp(-2 * s * R)) / (2 * s * s)) / 4 }')" 0.06

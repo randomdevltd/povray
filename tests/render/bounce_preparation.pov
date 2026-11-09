@@ -60,7 +60,7 @@ background { rgb 0 }
   Wall(<-1.5, -0.1, -1.5>, <1.5, 0, 1.5>, <0.8, 0.6, 0.4>)
   sphere { <0, 1, 0>, 0.6 pigment { rgbt 1 } hollow
     interior {
-      media { method 4 resolution 0.08 scattering { 1, rgb 0.6 } absorption rgb 0.2
+      media { method 4 domain_cells 3375 scattering { 1, rgb 0.6 } absorption rgb 0.2
         density { spherical color_map { [0 rgb 0] [1 rgb 1] } scale 0.6 } }
       light { brightness 1 samples Samples bounce { passes Passes } }
     }
@@ -101,7 +101,7 @@ background { rgb 0 }
   #declare CoreDensity = function { pigment { object { Core rgb 0.2 rgb 1 } } };
   sphere { <0.6, 1, 0>, 0.45 pigment { rgbt 1 } hollow
     interior {
-      media { method 4 resolution 0.08 scattering { 1, rgb 0.6 }
+      media { method 4 domain_cells 1728 scattering { 1, rgb 0.6 }
         density { function { CoreDensity(x, y, z).red } } }
       light { brightness 1 samples Samples bounce { passes Passes } }
     }
@@ -153,7 +153,7 @@ background { rgb 0 }
   light_source { <Offset, 0, 0>, rgb 1 fade_power 2 media_interaction on media_attenuation on }
   sphere { 0, 1 pigment { rgbt 1 } hollow
     interior {
-      media { method 4 resolution 0.1 scattering { 5, rgb 0.5 eccentricity 0.6 } }
+      media { method 4 domain_cells 8000 scattering { 5, rgb 0.5 eccentricity 0.6 } }
       light { brightness Gain samples Samples bounce { passes 1 } }
     }
   }

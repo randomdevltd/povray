@@ -26,7 +26,7 @@ render plate Declare=Case=3
 check plate 3 0
 render phase Declare=Case=0 Declare=Phase=0.4
 check phase 0 0.4
-render subdivision Declare=Case=0 Declare=Resolution=0.025
+render subdivision Declare=Case=0 Declare=Cells=2560
 check subdivision 0 0
 image_awk '
 BEGIN {

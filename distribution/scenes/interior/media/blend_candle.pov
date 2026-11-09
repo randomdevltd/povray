@@ -23,8 +23,10 @@
 #declare WickY = Wick.y;
 #declare Back = 1.6;
 #include "functions.inc"
+// the heat-shimmer refraction fields need 3.2 million cells each, within twice this default
+#default { media { domain_cells 2000000 } }
 global_settings { assumed_gamma 1
- #if (Caustics & RenderView!=2) photons { method 2 quality PhotonQuality } #end prepared_media_cells 4000000 atmospheric_ior 1.000277 max_trace_level 24
+ #if (Caustics & RenderView!=2) photons { method 2 quality PhotonQuality } #end atmospheric_ior 1.000277 max_trace_level 24
  #if (WaxSSLT & RenderView!=2) mm_per_unit 1000 subsurface { method 2 samples 12,2 spacing 0.35 error_bound 0.1 memory 128 } #end
  #if (Radio & RenderView!=2) radiosity { count 180 error_bound 0.45 nearest_count 6 pretrace_start 0.32 pretrace_end 0.03 media on } #end
 }
@@ -127,7 +129,7 @@ union {
 #end
 #declare EmissionAmplitude = 941729.020334*VisibleEmissionScale;
 box { <-0.018,0,-0.014>, <0.020,0.057,0.014> pigment { rgbt 1 }
- interior { media { mix add method 4 resolution 0.00045 emission EmissionAmplitude density { FlameColour() } }
+ interior { media { mix add method 4 domain_cells 680085 emission EmissionAmplitude density { FlameColour() } }
  #if (FlameLight & RenderView!=2) light { emission brightness CandleLumens lumens samples FlameSamples #if (FlameDomainCells > 0) domain_cells FlameDomainCells #end photons { reflection on refraction on } } #end
  } translate Wick
 }
@@ -163,11 +165,11 @@ box { <-0.15,0,-0.15>, <0.15,0.4,0.15> pigment { rgbt 1 } hollow
 #declare SmokeField = function(X,Y,Z) { (SmokeC(X,Y,Z)+LayerC*pow(min(1,max(0,(Y-(2.845-CeilingLayer))/CeilingLayer)),2)) };
 #if (Smoke)
 box { <-2.99,0,-3.99>, <2.99,2.845,1.59> pigment { rgbt 1 } hollow
- interior { media { mix add method 4 resolution 0.04 scattering { 1,rgb (SmokeExtinction*SmokeBoost*SmokeSSA) } absorption SmokeExtinction*SmokeBoost*(1-SmokeSSA) density { function { SmokeField(x,y,z) } } } }
+ interior { media { mix add method 4 domain_cells 1512000 scattering { 1,rgb (SmokeExtinction*SmokeBoost*SmokeSSA) } absorption SmokeExtinction*SmokeBoost*(1-SmokeSSA) density { function { SmokeField(x,y,z) } } } }
  translate Wick
 }
 #end
 box { <-2.99,0.01,-3.99>, <2.99,3.98,Back-0.01> pigment { rgbt 1 } hollow
- interior { media { mix add method 4 resolution 0.16 scattering { 1,rgb 0.012 } absorption 0.003 } }
+ interior { media { mix add method 4 domain_cells 33250 scattering { 1,rgb 0.012 } absorption 0.003 } }
 }
 #end
