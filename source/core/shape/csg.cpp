@@ -279,6 +279,23 @@ inline void ForEachRayChild(const CSG& csg, const Ray& ray, TraceThreadData *thr
     }
 }
 
+/// For a precise boundary query, whether the solid's inside changes across a hit along the ray. A child's hit that lies,
+/// within rounding, inside another child (coincident or tangent faces, halves cut on one plane) is still on the surface
+/// when it does, so it is kept; a face buried in the solid stays dropped, being inside on both sides.
+static bool PreciseCrossing(CSG& csg, const Ray& ray, const Vector3d& p, TraceThreadData *thread)
+{
+    if ((ray.GetRootQuery() == nullptr) || !ray.GetRootQuery()->PreciseBoundary() || !FinitePoint(p))
+        return false;
+    const double length = ray.Direction.length();
+    if (!(length > 0.0))
+        return false;
+    const double scale = std::max(std::fabs(p[X]), std::max(std::fabs(p[Y]), std::fabs(p[Z])));
+    const Vector3d step = ray.Direction * (256.0 * std::numeric_limits<double>::epsilon() * scale / length);
+    // the probes sit within rounding of the face, inside every shape's legacy inside band, so the test is band-free
+    const PreciseInsideScope precision(thread);
+    return Inside_Object(p - step, &csg, thread) != Inside_Object(p + step, &csg, thread);
+}
+
 /// Whether `p` is inside a child other than `skip` that `asked` admits: the inside test of unions, and of merges per hit.
 template <typename Asked>
 inline bool AnyChildInside(const CSG& csg, const Vector3d& p, TraceThreadData *thread, ConstObjectPtr skip, const Asked& asked)
@@ -479,7 +496,8 @@ bool CSGIntersection::All_Intersections(const Ray& ray, IStack& Depth_Stack, Tra
             {
                 while(Local_Stack->size() > 0)
                 {
-                    Maybe_Found = AllChildrenInside(*this, Local_Stack->top().IPoint, Thread, *Current_Sib);
+                    Maybe_Found = AllChildrenInside(*this, Local_Stack->top().IPoint, Thread, *Current_Sib) ||
+                                  PreciseCrossing(*this, ray, Local_Stack->top().IPoint, Thread);
 
                     if(Maybe_Found)
                     {
@@ -566,7 +584,8 @@ bool CSGMerge::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
                         {
                             // a hit inside another child is not on the merge's surface
                             inside_flag = !AnyChildInside(*this, Local_Stack->top().IPoint, Thread, *Sib1,
-                                                          [&ray](ConstObjectPtr Sib2) { return Test_Ray_Flags_Shadow(ray, Sib2); });
+                                                          [&ray](ConstObjectPtr Sib2) { return Test_Ray_Flags_Shadow(ray, Sib2); }) ||
+                                          PreciseCrossing(*this, ray, Local_Stack->top().IPoint, Thread);
 
                             if (inside_flag == true)
                             {

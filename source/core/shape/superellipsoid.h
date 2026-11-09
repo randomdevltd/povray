@@ -85,6 +85,7 @@ class Superellipsoid final : public ObjectBase
         virtual bool ReturnsAllRoots() const override { return (Type & IS_CHILD_OBJECT) != 0; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        double SurfaceTolerance() const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;
@@ -98,8 +99,8 @@ class Superellipsoid final : public ObjectBase
         DBL evaluate_superellipsoid(const Vector3d& P) const;
         static int compdists(const void *in_a, const void *in_b);
         int find_ray_plane_points(const Vector3d& P, const Vector3d& D, int cnt, DBL *dists, DBL mindist, DBL maxdist) const;
-        void solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P) const;
-        bool check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q) const;
+        void solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P, bool precise = false) const;
+        bool check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q, bool precise = false) const;
         bool insert_hit(const Ray& ray, DBL Depth, IStack& Depth_Stack, TraceThreadData *Thread);
 };
 

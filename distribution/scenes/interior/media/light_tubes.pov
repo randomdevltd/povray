@@ -72,7 +72,7 @@ union {
     cylinder {
       <0, 0, -Length / 2>, <0, 0, Length / 2>, 0.028
       pigment { rgbt 1 }
-      interior { media { mix add method 4 resolution 0.009 emission Colour * 1200 * Strength } light { pigment { Colour * Strength } brightness 205 samples Samples } }
+      interior { media { mix add method 4 domain_cells 13083 emission Colour * 1200 * Strength } light { pigment { Colour * Strength } brightness 205 samples Samples } }
       translate P
     }
   #end
@@ -85,7 +85,7 @@ union {
 cylinder {
   <-Half + 0.08, 2.25, -1>, <-Half + 0.08, 2.25, 28>, 0.024
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.012 emission rgb <1, 0.02, 0.3> * 160 } light { pigment { rgb <1, 0.02, 0.3> } brightness 28 samples Samples } }
+  interior { media { mix add method 4 domain_cells 38672 emission rgb <1, 0.02, 0.3> * 160 } light { pigment { rgb <1, 0.02, 0.3> } brightness 28 samples Samples } }
 }
 union {
   #for (Z, -1, 28, 1.5) cylinder { <-Half, 2.25, Z>, <-Half + 0.1, 2.25, Z>, 0.008 } #end
@@ -95,7 +95,7 @@ sphere_sweep {
   linear_spline 12,
   #for (I, 0, 11) <Half - 0.08, 1.3 + 0.55 * mod(I, 2) + 0.1 * sin(I), 7.2 + I * 0.55>, 0.024 #end
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.012 emission rgb <0.04, 0.75, 1> * 160 } light { pigment { rgb <0.04, 0.75, 1> } brightness 28 samples Samples } }
+  interior { media { mix add method 4 domain_cells 130304 emission rgb <0.04, 0.75, 1> * 160 } light { pigment { rgb <0.04, 0.75, 1> } brightness 28 samples Samples } } // 0.048 x 0.758 x 6.098 at 0.012
 }
 
 #macro Chair(P, A)

@@ -482,7 +482,6 @@ const RESERVED_WORD Reserved_Words[] = {
     { TAGS_TOKEN,          "tags" },
     { FILTER_TAGS_TOKEN,            "filter_tags" },
     { REPEAT_TOKEN,                 "repeat" },
-    { RESOLUTION_TOKEN,             "resolution" },
     { RGB_TOKEN,                    "rgb" },
     { RGBF_TOKEN,                   "rgbf" },
     { RGBFT_TOKEN,                  "rgbft" },

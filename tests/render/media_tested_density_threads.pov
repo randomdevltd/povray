@@ -8,7 +8,7 @@ plane { y, -1.5 pigment { checker rgb 0.8, rgb 0.3 } }
 sphere {
     0, 1.6 hollow pigment { rgbt 1 }
     interior { media {
-        method 4 resolution 0.06
+        method 4 domain_cells 157464
         absorption 0.6 scattering { 1, 0.4 } emission 0.05
         density { function { 0.5 + 0.5 * sin(x * 5) * cos(y * 4 + z * 3) } }
         density { potential { blob { threshold 0.5 sphere { <-0.5, 0, 0>, 1.2, 1 } sphere { <0.6, 0.3, 0>, 1.0, 1 } } }

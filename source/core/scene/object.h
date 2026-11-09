@@ -204,6 +204,8 @@ class ObjectBase
         bool inheritTags = true;
         /// Shared by the members of a split union that was one photon target, so method 2 keeps them one target.
         std::shared_ptr<const PhotonTargetGroup> photonTargetGroup;
+        /// Where the scene wrote it ("line N of file", with its declared name if placed by name), for messages; may be null.
+        std::shared_ptr<const std::string> source;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -230,7 +232,7 @@ class ObjectBase
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
-            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup)
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup), source(o.source)
         {
             if (transplant)
             {
@@ -364,6 +366,8 @@ class LightSource final : public CompoundObject
         /// an emitter light's distance law: factor A'(r) = A·(1/scale)^(1−A) over Radius², A = (Radius/max(r,Radius))^power
         DBL attenuationScale = 1.0, attenuationPower = 2.0, lawRadius = 0.0;
         DBL cutoff = 0.0; ///< an emitter light leaves out points its bound lights less than this
+        /// an interior light's own domain_cells; 0 = its medium's, else the scene default
+        double sourceDomainCells = 0.0;
         int Area_Size1, Area_Size2;
         int Adaptive_Level;
         ObjectPtr Projected_Through_Object;

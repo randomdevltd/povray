@@ -122,8 +122,6 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     sceneData->warningLevel = clip(parseOptions.TryGetInt(kPOVAttrib_WarningLevel, 9), 0, 9);
 
-    // the machine's prepared media cell limit; the scene's prepared_media_cells raises it, never lowers it
-    sceneData->machinePreparedMediaCells = clip<double>(parseOptions.TryGetFloat(kPOVAttrib_PreparedMediaCells, 1000000.0), 1.0, 1.0e9);
     // the frontend has checked it is a positive number; it overrides POV_PHOTON_MEMORY and the scene's photons memory
     sceneData->machinePhotonMemory = parseOptions.TryGetFloat(kPOVAttrib_PhotonMemory, 0.0);
 
@@ -494,7 +492,11 @@ void Scene::ParserControlThread()
         if((parserTasks.IsDone() == true) && (parserTasks.Failed() == true) && (sentFailedResult == false))
         {
             StopMeshPool();
-            RenderBackend::SendSceneFailedResult(sceneData->sceneId, parserTasks.FailureCode(kUncategorizedError), sceneData->frontendAddress);
+            const std::string text = parserTasks.FailureText();
+            if (text.empty())
+                RenderBackend::SendSceneFailedResult(sceneData->sceneId, parserTasks.FailureCode(kUncategorizedError), sceneData->frontendAddress);
+            else
+                RenderBackend::SendSceneFailedResult(sceneData->sceneId, POV_EXCEPTION(parserTasks.FailureCode(kUncategorizedError), text), sceneData->frontendAddress);
             sentFailedResult = true;
         }
 

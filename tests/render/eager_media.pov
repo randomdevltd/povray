@@ -1,5 +1,6 @@
 #version 4.0;
-// Method 4 haze before a parse tail. Late changes after it 1 the cell limit, 2 the noise generator, 4 the wave count;
+// Method 4 haze before a parse tail. Late changes after it 1 the default domain_cells (which governs only later media),
+// 2 the noise generator, 4 the wave count;
 // Kind 1 nests a function and 2 tests an object in the density, 3 shares a declared interior, 4 is a merge's; Tagged filters it.
 #ifndef (Late) #declare Late = 0; #end
 #ifndef (Tail) #declare Tail = 0; #end
@@ -14,7 +15,7 @@ light_source { <260, 710, 230> rgb 0.9 parallel point_at 0 }
 plane { y, -0.2 pigment { rgb 0.4 } }
 #declare Inside = function { pattern { object { sphere { 0, 1 } } } }
 #declare Haze = interior { media {
-  method 4 resolution 0.08
+  method 4 domain_cells 50000
   scattering { 1, 0.4 extinction 0.5 }
   density { function { 0.5 + 0.5 * f_noise3d(x * 3, y * 3, z * 3) } }
   density { crackle turbulence 0.4 density_map { [0 rgb 0.2] [1 rgb 1] } scale 0.4 }
@@ -39,7 +40,7 @@ plane { y, -0.2 pigment { rgb 0.4 } }
 #end
 #debug "eager media: recorded\n"
 #switch (Late)
-  #case (1) global_settings { prepared_media_cells 2000000 } #break
+  #case (1) #default { media { domain_cells 1000000 } } #break
   #case (2) global_settings { noise_generator 1 } #break
   #case (4) global_settings { number_of_waves 3 } #break
 #end

@@ -83,7 +83,7 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck, 0)
     0, 1 pigment { rgbt 1 }
     interior {
       media {
-        mix add method 4 resolution 0.008
+        mix add method 4 domain_cells 4732 // 0.1 x 0.22 x 0.1 at 0.008, before the small tilt
         emission rgb <1, 0.6, 0.25> * 20000
         density { spherical color_map { [0 rgb 0] [0.5 rgb 0.3] [1 rgb 1] } }
       }
@@ -130,7 +130,7 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck, 0)
     0, 1 pigment { rgbt 1 }
     interior {
       media {
-        mix add method 4 resolution 0.25
+        mix add method 4 domain_cells 46656
         emission rgb FlashColour * 0.35
         density { spherical turbulence 0.3 color_map { [0 rgb 0] [1 rgb 1] } }
       }

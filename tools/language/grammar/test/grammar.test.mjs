@@ -57,8 +57,11 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(w), `invalid refraction item '${w}'`);
     for (const w of ['agate', 'granite', 'marble', 'wrinkles', 'turbulence']) assert.ok(blocks.pigment.items.includes(w));
     // Contextual keywords, matched by text in the parser, are items too.
-    for (const w of ['prepared_media_cells', 'atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])
+    for (const w of ['atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])
         assert.ok(blocks.global_settings.items.includes(w), `global_settings item '${w}'`);
+    assert.ok(blocks.media.items.includes('domain_cells') && !blocks.media.items.includes('resolution'), 'media domain_cells');
+    for (const w of ['prepared_media_cells', 'prepared_source_cells'])
+        assert.ok(!blocks.global_settings.items.includes(w), `deleted global_settings item '${w}'`);
     for (const w of ['method', 'quality'])
         assert.ok(blocks.global_settings.nested.photons.includes(w), `photon item '${w}'`);
     assert.ok(!JSON.parse(read('tools/language/keywords.json')).some((k) => k.word === 'quality'));

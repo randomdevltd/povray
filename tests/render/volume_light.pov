@@ -1,6 +1,6 @@
 // volume_light.pov: the radiance law of interior lights; volume_light.sh names the cases.
 // Case: 1 a probe on an emitting slab, 2 the same scene at half scale, 3 a gas ball against an
-// equal-silhouette area light, 4 the emitter's grid resolution, 5 the slab at another attenuation
+// equal-silhouette area light, 4 the emitter's grid cell count, 5 the slab at another attenuation
 // scale, 6 a ball's tangent point at the pivot radius. Shape in case 3: the same cylinder as a cylinder, lathe or sor.
 #version 3.8;
 #ifndef (Case) #declare Case = 1; #end
@@ -20,7 +20,7 @@ background { rgb 0 }
   #declare Lum = 1;
   #declare Half = 64;
   box { <-Half, 0, -Half>, <Half, Depth, Half> pigment { rgbt 1 } hollow
-    interior { media { method 4 resolution 0.5 absorption rgb Sigma }
+    interior { media { method 4 domain_cells 262144 absorption rgb Sigma }
       light { brightness Lum samples 512 attenuation { scale Att } } } }
   plane { y, Depth + 0.002 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow hollow }
 #end
@@ -33,7 +33,7 @@ background { rgb 0 }
   #declare S = 0.5;
   camera { orthographic location <0, 10 * S, 0> sky z look_at 0 right x * 4 * S up z * 4 * S }
   box { <-64 * S, 0, -64 * S>, <64 * S, Depth * S, 64 * S> pigment { rgbt 1 } hollow
-    interior { media { method 4 resolution 0.25 absorption rgb Sigma }
+    interior { media { method 4 domain_cells 262144 absorption rgb Sigma }
       light { brightness Lum samples 512 } } }
   plane { y, Depth * S + 0.001 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow hollow }
 #end
@@ -60,7 +60,7 @@ background { rgb 0 }
     #end
   #else
     sphere { 0, R pigment { rgbt 1 } hollow no_image
-      interior { media { method 4 resolution Res absorption rgb 1 } light { brightness Lum samples 128 } } translate y * Height }
+      interior { media { method 4 domain_cells Cells absorption rgb 1 } light { brightness Lum samples 128 } } translate y * Height }
   #end
 #end
 

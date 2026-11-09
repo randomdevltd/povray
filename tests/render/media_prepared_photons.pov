@@ -34,7 +34,7 @@ box {
     interior {
         ior 1
         media {
-            method 4 resolution 0.025 absorption Absorbing * <0.2, 0.4, 0.6>
+            method 4 domain_cells 1024000 absorption Absorbing * <0.2, 0.4, 0.6>
             #if (NativePointInside) scattering { 1, rgb 0.01 extinction 0 } #end
             #if (Varying) density { function { 0.25 + 0.25*y } } #end
         }

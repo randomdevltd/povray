@@ -69,6 +69,8 @@
 
 // C++ variants of C standard header files
 #include <cstdlib>
+#include <algorithm>
+#include <cmath>
 
 // C++ standard header files
 //  (none at the moment)
@@ -218,6 +220,10 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
     DBL t, t1, t2, v0, v1, len;
     Vector3d P, D, P0, P1, P2, P3;
 
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+    // a CSG child or an all-roots query takes every crossing, not just the first
+    const bool collect = (Type & IS_CHILD_OBJECT) || (ray.GetRootQuery() && ray.GetRootQuery()->AllRoots());
+
     /* Transform the ray into the superellipsoid space. */
 
     MInvTransPoint(P, ray.Origin, Trans);
@@ -237,16 +243,19 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
     /* Test if superellipsoid lies 'behind' the ray origin. */
 
-    if (t2 < DEPTH_TOLERANCE)
+    // A boundary query admits roots itself: an object-space floor would drop crossings near its origin once scaled.
+    const DBL nearest = precise ? 0.0 : DEPTH_TOLERANCE;
+
+    if (t2 < nearest)
     {
         return(false);
     }
 
     cnt = 0;
 
-    if (t1 < DEPTH_TOLERANCE)
+    if (t1 < nearest)
     {
-        t1 = DEPTH_TOLERANCE;
+        t1 = nearest;
     }
 
     dists[cnt++] = t1;
@@ -269,7 +278,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
     {
         if (insert_hit(ray, dists[0] / len, Depth_Stack, Thread))
         {
-            if (Type & IS_CHILD_OBJECT)
+            if (collect)
             {
                 Found = true;
             }
@@ -290,7 +299,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
         {
             if (insert_hit(ray, dists[i] / len, Depth_Stack, Thread))
             {
-                if (Type & IS_CHILD_OBJECT)
+                if (collect)
                 {
                     Found = true;
                 }
@@ -306,7 +315,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
             {
                 /* Opposite signs, there must be a root between */
 
-                solve_hit1(v0, P0, v1, P1, P2);
+                solve_hit1(v0, P0, v1, P1, P2, precise);
 
                 P3 = P2 - P;
 
@@ -314,7 +323,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
                 if (insert_hit(ray, t / len, Depth_Stack, Thread))
                 {
-                    if (Type & IS_CHILD_OBJECT)
+                    if (collect)
                     {
                         Found = true;
                     }
@@ -332,23 +341,50 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                  * surface into thinking there isn't a root between sample points.
                  */
 
-                if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2))
+                if (precise)
                 {
-                    if (insert_hit(ray, t / len, Depth_Stack, Thread))
+                    // A boundary query needs every crossing between two samples on one side. Between neighbouring
+                    // planes each coordinate keeps its sign, so the field along the ray turns once there: a golden-
+                    // section search finds how far it turns toward the other side, and a turn past the surface is a dip
+                    // with one crossing on each side of it.
+                    const double side = (v0 > 0.0) ? 1.0 : -1.0;
+                    auto toward = [&](double s) { return side * evaluate_superellipsoid(P + s * D); };
+                    const double golden = 0.5 * (std::sqrt(5.0) - 1.0);
+                    double a = dists[i-1], b = dists[i];
+                    double c = b - golden * (b - a), d = a + golden * (b - a), fc = toward(c), fd = toward(d);
+                    for (int k = 0; (k < 200) && (a < c) && (c < d) && (d < b); ++k)
                     {
-                        if (Type & IS_CHILD_OBJECT)
-                        {
-                            Found = true;
-                        }
-                        else
-                        {
-                            return(true);
-                        }
+                        if (fc < fd) { b = d; d = c; fd = fc; c = b - golden * (b - a); fc = toward(c); }
+                        else { a = c; c = d; fc = fd; d = a + golden * (b - a); fd = toward(d); }
                     }
+                    const double turn = (fc < fd) ? c : d;
+                    if (std::min(fc, fd) < 0.0)
+                        for (int end = 0; end < 2; ++end)
+                        {
+                            // bisect between the turn, past the surface, and the sample at this end, on the near side
+                            double outside = end ? dists[i] : dists[i-1], across = turn;
+                            for (int k = 0; k < 200; ++k)
+                            {
+                                const double middle = 0.5 * (outside + across);
+                                if ((middle == outside) || (middle == across)) break;
+                                (toward(middle) > 0.0 ? outside : across) = middle;
+                            }
+                            if (insert_hit(ray, 0.5 * (outside + across) / len, Depth_Stack, Thread))
+                            {
+                                if (collect) Found = true;
+                                else return(true);
+                            }
+                        }
+                }
+                else if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2, precise))
+                {
+                    const bool inserted = insert_hit(ray, t / len, Depth_Stack, Thread);
+                    if (inserted && !collect)
+                        return(true);
+                    if (inserted)
+                        Found = true;
                     else
-                    {
                         break;
-                    }
                 }
             }
         }
@@ -1174,7 +1210,8 @@ bool Superellipsoid::insert_hit(const Ray &ray, DBL Depth, IStack& Depth_Stack, 
 {
     Vector3d IPoint;
 
-    if ((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth) && ray.AdmitRoot(this, Depth))
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+    if ((Depth > (precise ? 0.0 : DEPTH_TOLERANCE)) && IsFiniteIntersectionDepth(Depth) && ray.AdmitRoot(this, Depth))
     {
         IPoint = ray.Evaluate(Depth);
 
@@ -1342,7 +1379,14 @@ int Superellipsoid::find_ray_plane_points(const Vector3d& P, const Vector3d& D, 
 *
 ******************************************************************************/
 
-void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P) const
+double Superellipsoid::SurfaceTolerance() const
+{
+    double squared = 0.0;
+    for (int axis = 0; axis < 3; ++axis) squared += Sqr(double(BBox.size[axis]));
+    return 2.0 * ZERO_TOLERANCE * std::sqrt(squared);
+}
+
+void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P, bool precise) const
 {
     int i;
     DBL x, v2, v3;
@@ -1350,6 +1394,19 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
 
     P0 = tP0;
     P1 = tP1;
+    if (precise)
+    {
+        for (int step = 0; step < 128; ++step)
+        {
+            P = 0.5 * (P0 + P1);
+            if ((P - P0).lengthSqr() == 0.0 || (P - P1).lengthSqr() == 0.0) return;
+            const double value = evaluate_superellipsoid(P);
+            if (value == 0.0) return;
+            if ((value < 0.0) == (v0 < 0.0)) { P0 = P; v0 = value; }
+            else { P1 = P; v1 = value; }
+        }
+        return;
+    }
 
     /* The sign of v0 and v1 changes between P0 and P1, this
        means there is an intersection point in there somewhere. */
@@ -1438,20 +1495,7 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
     }
 
     if (i == MAX_ITERATIONS)
-    {
-        // The loop never quite closed in on the result - just use the point
-        // closest to zero.  This really shouldn't happen since the max number
-        // of iterations is enough to converge with straight bisection.
-
-        if (fabs(v0) < fabs(v1))
-        {
-            P = P0;
-        }
-        else
-        {
-            P = P1;
-        }
-    }
+        solve_hit1(v0, P0, v1, P1, P, true);
 }
 
 
@@ -1483,7 +1527,7 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
 *
 ******************************************************************************/
 
-bool Superellipsoid::check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q) const
+bool Superellipsoid::check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q, bool precise) const
 {
     int i;
     DBL dt0, dt1, v1, deltat, maxdelta;
@@ -1504,7 +1548,7 @@ bool Superellipsoid::check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Ve
         {
             /* Found a crossing point, go back and use normal root solving. */
 
-            solve_hit1(v0, P0, v1, P1, Q);
+            solve_hit1(v0, P0, v1, P1, Q, precise);
 
             P0 = Q - P;
 

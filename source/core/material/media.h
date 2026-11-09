@@ -326,8 +326,8 @@ void CollectPreparedCaches(ConstObjectPtr object, std::unordered_set<const void 
 /// Whether the medium it was planned for still has its cache, and that cache is one of `caches`.
 bool EagerFieldKept(const Media::EagerField& field, const std::unordered_set<const void *>& caches);
 /// For a kept field only: fills what the eager threads left on `threads`, then gives the grid to its medium if the container's bounds
-/// and `cellLimit` still match and `changed` finds no setting it read changed; returns whether it did. Else the render builds it.
-bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, DBL cellLimit, const std::vector<TraceThreadData *>& threads,
+/// still match and `changed` finds no setting it read changed; returns whether it did. Else the render builds it.
+bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, const std::vector<TraceThreadData *>& threads,
                       const std::function<bool(unsigned char)>& changed, const std::function<void()>& cooperate);
 
 /// @}

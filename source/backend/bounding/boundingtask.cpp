@@ -707,7 +707,7 @@ void MeshBuildTask::FinishMediaFields(const TraceThreadData& final, const std::u
             const MeshBuildGlobals& recorded = media.first->recordedGlobals;
             for (TraceThreadData *helper : helpers)
                 helper->FreezeGlobals(recorded.noiseGenerator, recorded.workingGamma, recorded.numberOfWaves);
-            if (FinishEagerField(media.second, sceneData->EffectivePreparedMediaCells(), helpers,
+            if (FinishEagerField(media.second, helpers,
                                  [&](unsigned char reads) { return recorded.Differs(now, reads); }, cooperate))
                 ++prepared;
             cpu += EagerFieldCpuTime(*media.second);

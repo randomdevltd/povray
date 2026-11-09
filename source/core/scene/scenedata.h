@@ -180,8 +180,8 @@ class SceneData
         mutable std::atomic<unsigned> mediaWarningFlags{0};
 
         /// the prepared media cell limit in effect: the larger of the scene's and the machine's
-        double EffectivePreparedMediaCells() const
-        { return (preparedMediaCells > machinePreparedMediaCells) ? preparedMediaCells : machinePreparedMediaCells; }
+        /// The cap on a prepared grid that belongs to no single medium or light: twice the scene's default domain_cells.
+        double PreparedCellLimit() const { return 2.0 * domainCells; }
 
         typedef std::map<std::string, std::string> DeclaredVariablesMap;
 
@@ -315,10 +315,10 @@ class SceneData
         bool traceLimitContinues;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
-        /// the scene's prepared media cell limit (global_settings prepared_media_cells)
-        double preparedMediaCells;
-        /// the machine's prepared media cell limit (INI/CLI Prepared_Media_Cells)
-        double machinePreparedMediaCells;
+        /// the default cell budget of a medium's domain (#default { media { domain_cells } })
+        double domainCells;
+        /// the default cell budget of an interior light's domain (#default { light { domain_cells } })
+        double lightDomainCells;
         /// the machine's method 2 photon memory ceiling in GB (INI/CLI Photon_Memory); zero when not given
         double machinePhotonMemory;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media

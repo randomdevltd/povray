@@ -1,5 +1,16 @@
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
+
+- Media `resolution`, `global_settings { prepared_media_cells N }`, `global_settings { prepared_source_cells N }` and the INI and command-line option `Prepared_Media_Cells` are removed: each is now an unknown word and a parse error, with no conversion or warning. Convert `resolution r` by hand to `domain_cells` = the product over the three axes of ceil(container bounding-box extent / r).
+- `media { method 4 domain_cells N }`, an integer from 1 to 1000000000 and method 4 only, is the cell count of the medium's prepared grid, spread evenly over its container's bounding box as cubic cells of width cbrt(V/N); whole cells per axis round the count up by under one layer per axis. Rescaling a scene or transforming a container keeps the grid's cell count and quality. The default is 500000 (80 x 80 x 80 in a cube). A grid is capped at twice its `domain_cells` and coarsened with a warning past that. A constant medium whose interior's grid follows a varying medium, a light or a refraction field ignores its `domain_cells`, with a warning.
+- `#default { media { domain_cells N } }`, beside `mix`, sets the count for media parsed after it, 500000 by default. Twice the scene default caps the prepared grids that belong to no single medium or light (the shared budget of surface bounce fields, refraction-detail interior fields, light-aligned optical-depth tables), 1000000 by default.
+- An interior `light { domain_cells N }` sets the light's prepared source domain, the source lattice that also lays out its prepared light and bounce grid; without it the light takes the scene's light default, `#default { light { domain_cells N } }`, 500000 by default; a light never takes its medium's count, so it may be coarser or finer than the medium. The lattice targets N cells with at most 128 x cbrt(max(1, N/500000)) per axis, refining thin domains as the count grows; a surface light refuses it. `domain_cells` is matched by its text and stays free as an identifier.
+- Carry finite volume light emission through homogeneous method 2 subsurface solids, with direct source sampling, internal Fresnel reflection and flux-conserving diffuse bounce export. Existing emission syntax remains available.
+- Buried volume lights find where their paths leave any method 2 host (blob, isosurface, mesh, superellipsoid, CSG, text, sphere sweeps, thin sheets, touching shells) from the material between crossings; a fault names the host, its source line and the ray in the fatal error.
+- A volume light inside a method 2 subsurface part that cannot enclose a volume (an open inside_vector mesh or a disc), or on one, is a parse error naming both source lines; it used to render without its internal light.
+- Where a subsurface block gives the flesh its own colour or pigment, light from a buried source crosses the texture pigment's skin (transmittance tint^(thickness/2) per crossing) at every crossing of its path: at the exit, twice at each internal reflection off the boundary, and at the far end of the unscattered straight-through path, where it is now evaluated instead of at the near point. Materials without their own flesh colour are unchanged.
+- A surface `light { emission }` on a method 2 subsurface host exports the flux its buried volume sources send out through the surface, beside the material's own emission; a `bounce` block exports it in its first order, and with both it is exported once. The host's camera radiance is unchanged.
+- Texture normals now affect method 2 subsurface entry illumination over each estimate's surface area; geometry and outgoing transmission retain surface normals.
 ------------------------------------------------------------------------------
 Notes:
 
@@ -114,6 +125,12 @@ Changed Behaviour
     of acceleration size heuristics. Large translated emitters and rotated
     plane intersections retain finite domains; open mesh interiors require
     finite clipping. Framing uses finite surface bounds independently.
+
+  - A mesh counts as closed when every edge appears an even number of
+    times, the same parity the subsurface sheet test uses, so shells
+    touching along a pinched edge, where one edge is shared four times,
+    qualify for interior media, inside tests and photon boundaries. A mesh
+    with an odd edge count is still open and needs finite clipping.
 
   - Requested method 4 constant media own prepared layout metadata without
     allocating constant density cells. Prepared modifier fields also select
@@ -564,6 +581,13 @@ New Features
     scene's request without editing it. Long marches are coarsened to fit a
     step budget; splitting long containers or a coarser resolution avoids
     that.
+  - `media { method 4 domain_cells N }` sets the cell count of a medium's
+    prepared grid, cubic cells spread evenly over its container's bounding
+    box, so a grid keeps its quality when a scene is rescaled; 500000 by
+    default, or `#default { media { domain_cells N } }`. An interior light
+    states its prepared source domain the same way, in its `light { }` block,
+    else `#default { light { domain_cells N } }`, never its medium's count.
+    `domain_cells` is matched by text and stays free as an identifier.
   - A finite object can be an independent volume light: `interior { light { } }`.
     Its pigment and declared emitting region define its source; media density,
     extinction and prepared grids affect transport separately. Nits use

@@ -52,6 +52,35 @@ static void Tetrahedron(Mesh& mesh, bool closed, bool duplicatePositions)
     builder.Finish(true);
 }
 
+// Two tetrahedra touching along one edge: every other edge twice, the shared edge four times.
+static void Pinched_Tetrahedra(Mesh& mesh)
+{
+    const std::array<Vector3d, 6> positions = {{Vector3d(0, 0, 0), Vector3d(1, 0, 0), Vector3d(0, 1, 0), Vector3d(0, 0, 1),
+                                                Vector3d(0, -1, 0), Vector3d(0, 0, -1)}};
+    const int faces[8][3] = {{0, 2, 1}, {0, 1, 3}, {0, 3, 2}, {1, 2, 3}, {0, 1, 4}, {0, 5, 1}, {0, 4, 5}, {1, 4, 5}};
+    MeshBuilder builder(mesh, false);
+    std::array<MeshIndex, 6> shared;
+    for (int vertex = 0; vertex < 6; ++vertex)
+        shared[vertex] = builder.Vertex(positions[vertex], Vector3d(0, 0, 1));
+    for (const auto& face : faces)
+        assert(builder.Triangle(shared[face[0]], shared[face[1]], shared[face[2]]));
+    builder.Finish(true);
+}
+
+// Three triangles sharing one edge three ways: an odd edge count is not closed.
+static void Edge_Thrice_Triangles(Mesh& mesh)
+{
+    const std::array<Vector3d, 5> positions = {{Vector3d(0, 0, 0), Vector3d(1, 0, 0), Vector3d(0, 1, 0), Vector3d(0, 0, 1), Vector3d(0, -1, 0)}};
+    const int faces[3][3] = {{0, 1, 2}, {0, 1, 3}, {0, 1, 4}};
+    MeshBuilder builder(mesh, false);
+    std::array<MeshIndex, 5> shared;
+    for (int vertex = 0; vertex < 5; ++vertex)
+        shared[vertex] = builder.Vertex(positions[vertex], Vector3d(0, 0, 1));
+    for (const auto& face : faces)
+        assert(builder.Triangle(shared[face[0]], shared[face[1]], shared[face[2]]));
+    builder.Finish(true);
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
@@ -124,6 +153,18 @@ int main(int argc, char **argv)
     open->Compute_BBox();
     assert(open->BBox.finiteInterior);
     Destroy_Object(open);
+    Mesh *pinched = new Mesh();
+    Pinched_Tetrahedra(*pinched);
+    pinched->Compute_BBox();
+    // Touching shells share an edge four times; even edge parity counts that closed (SubsurfaceSheet, trace.cpp).
+    assert(pinched->BBox.finiteInterior);
+    assert(!pinched->Inside(Vector3d(1e6), nullptr));
+    Destroy_Object(pinched);
+    Mesh *thrice = new Mesh();
+    Edge_Thrice_Triangles(*thrice);
+    thrice->Compute_BBox();
+    assert(thrice->BBox.finite && !thrice->BBox.finiteInterior);
+    Destroy_Object(thrice);
     const auto key = pov_parser::Generated_Mesh_Key(pov_base::SysToUCS2String(argv[1]), "finite geometry closed duplicate-position tetrahedron");
     pov::DeferredMeshState write, read;
     pov_parser::Write_Generated_Mesh(key, *closed, write, 0);

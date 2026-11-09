@@ -313,7 +313,6 @@ static const char *const KEYWORDS[] = {
   "refraction_angle",
   "render",
   "repeat",
-  "resolution",
   "right",
   "ripples",
   "rotate",

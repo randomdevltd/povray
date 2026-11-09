@@ -313,12 +313,12 @@ bool EagerFieldKept(const Media::EagerField& field, const std::unordered_set<con
     return target && (caches.count(target.get()) != 0);
 }
 
-bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, DBL cellLimit, const std::vector<TraceThreadData *>& threads,
+bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, const std::vector<TraceThreadData *>& threads,
                       const std::function<bool(unsigned char)>& changed, const std::function<void()>& cooperate)
 {
     const std::shared_ptr<Media::FastCache> target = field->target.lock();
     if (!target || target->prepared || !UsablePreparedContainer(target->container) ||
-        (target->step != field->requestedStep) || (cellLimit != field->cellLimit))
+        (target->step != field->requestedStep))
         return false;
     Vector3d lo, hi;
     Make_min_max_from_BBox(lo, hi, target->container->BBox);
@@ -404,9 +404,9 @@ static DBL FitGridStep(const Vector3d& size, DBL step, DBL limit, DBL& cellsNeed
 static void CoarseGridDetail(char *detail, size_t length, const char *what, DBL requested, DBL needed, DBL limit, DBL fitted)
 {
     std::snprintf(detail, length,
-        "The %s at the requested resolution %.6g needs %.0f cells, above the limit of %.0f, so it is built at %.6g instead. "
-        "Set prepared_media_cells to at least %.0f to avoid this coarsening.",
-        what, requested, needed, limit, fitted, needed);
+        "The %s at its domain_cells width %.6g needs %.0f cells, above the limit of %.0f (twice domain_cells), so it is "
+        "built at %.6g instead. Set domain_cells to at least %.0f to avoid this coarsening.",
+        what, requested, needed, limit, fitted, std::ceil(0.5 * needed));
 }
 
 bool Media::FastCache::EnsureField(Media&, TraceThreadData *)
@@ -465,7 +465,7 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     {
         step = media.FastResolution;
         density.clear();
-        if (!SizeGrid(media, container->BBox, td->GetSceneData()->EffectivePreparedMediaCells()))
+        if (!SizeGrid(media, container->BBox, media.PreparedCellLimit()))
             throw POV_EXCEPTION_STRING("Prepared density cannot be published for this configuration.");
         std::atomic<bool> unusable(false);
         const size_t count = std::max<size_t>(1, std::min<size_t>(nz, td->GetSceneData()->workThreads));
@@ -488,8 +488,8 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     {
         char detail[512];
         DBL needed;
-        const DBL limit = td->GetSceneData()->EffectivePreparedMediaCells();
-        // the resolution to write to get this grid, not the layout's cell width it was built on
+        const DBL limit = media.PreparedCellLimit();
+        // the width domain_cells asked for to get this grid, not the layout's cell width it was built on
         CoarseGridDetail(detail, sizeof(detail), "density grid", coarseStep, coarseCells, limit,
                          FitGridStep(size, coarseStep, limit, needed));
         WarnFastMedia(td, media, kFastCoarse, detail, container);
@@ -681,7 +681,7 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
         span[axis] = hi - grid->lo[axis];
     }
     // A single uniform scale coarsens ds until every count and the total fit, so the table is built, not dropped.
-    const DBL limit = ttd->GetSceneData()->EffectivePreparedMediaCells();
+    const DBL limit = ttd->GetSceneData()->PreparedCellLimit();
     DBL total = 1.0;
     for (int axis = 0; axis < 3; axis++)
         total *= std::max(1.0, ceil(span[axis] / step));
@@ -881,8 +881,8 @@ Media& Media::operator=(const Media& source)
         AA_Level = source.AA_Level;
         Light_Samples = source.Light_Samples;
         FastResolution = source.FastResolution;
-        requestedFastResolution = source.requestedFastResolution;
-        fastResolutionRecorded = source.fastResolutionRecorded;
+        domainCells = source.domainCells;
+        domainCellsStated = source.domainCellsStated;
         mix = source.mix;
         priority = source.priority;
         where = source.where;
@@ -922,8 +922,9 @@ void Media::Transform(const TRANSFORM *Trans)
     preparedBindings.clear();
 }
 
-// The prepared grid's width for a container when none is given: 0 for an unbounded one.
-static DBL AutomaticResolution(ObjectPtr object)
+// The width of cubic cells that spread `cells` evenly over a container's box; 0 for an unbounded container. Whole cells
+// per axis round the count up by under one layer along each axis.
+static DBL DomainCellWidth(ObjectPtr object, DBL cells)
 {
     Vector3d low, high;
     Make_min_max_from_BBox(low, high, object->BBox);
@@ -931,7 +932,15 @@ static DBL AutomaticResolution(ObjectPtr object)
     const DBL volume = size[X] * size[Y] * size[Z];
     if (!IsFiniteNumber(volume) || (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
         return 0.0;
-    return std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0, std::cbrt(volume / 500000.0));
+    return std::cbrt(volume / cells);
+}
+
+// A light's domain cells: its own, else the scene's light default; never its medium's.
+static DBL LightDomainCells(const MediaLight* light, const SceneData& scene)
+{
+    if ((light != nullptr) && (light->domainCells > 0.0))
+        return light->domainCells;
+    return scene.lightDomainCells;
 }
 
 // A container's bounding-box size, the extent measure the detail rules share.
@@ -968,14 +977,19 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         }
     const auto scene = td->GetSceneData();
     DBL requested = HUGE_VAL;
+    DBL limit = scene->PreparedCellLimit();
     bool needed = owner->interior->light != nullptr;
     if (needed)
-        requested = AutomaticResolution(owner);
+    {
+        const DBL cells = LightDomainCells(owner->interior->light.get(), *scene);
+        requested = DomainCellWidth(owner, cells);
+        limit = std::max(limit, 2.0 * cells);
+    }
     if (owner->interior->refraction && !owner->interior->refraction->functions.empty())
     {
         needed = true;
         const DBL detail = owner->interior->refraction->detail;
-        requested = std::min(requested, detail > 0.0 ? detail * 0.5 : AutomaticResolution(owner));
+        requested = std::min(requested, detail > 0.0 ? detail * 0.5 : DomainCellWidth(owner, scene->domainCells));
     }
     // a constant medium owns no grid, so its step sets the layout only when nothing that varies does
     DBL constantStep = HUGE_VAL;
@@ -984,8 +998,8 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         if (medium.Sample_Method != 4)
             continue;
         needed = true;
-        const DBL authored = medium.AuthoredFastResolution();
-        const DBL step = authored > 0.0 ? authored : AutomaticResolution(owner);
+        const DBL step = DomainCellWidth(owner, medium.domainCells);
+        limit = std::max(limit, medium.PreparedCellLimit());
         DBL& target = ConstantDensity(medium) ? constantStep : requested;
         if (step > 0.0)
             target = std::min(target, step);
@@ -1000,7 +1014,7 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         if (!(requested > 0.0) || !IsFiniteNumber(requested))
             throw POV_EXCEPTION_STRING("Prepared interior grid has no usable sampling step.");
         DBL neededCells = 0.0;
-        const DBL step = FitGridStep(size, requested, scene->EffectivePreparedMediaCells(), neededCells);
+        const DBL step = FitGridStep(size, requested, limit, neededCells);
         std::array<size_t, 3> counts;
         for (int axis = 0; axis < 3; axis++)
             counts[axis] = size_t(std::max(1.0, std::ceil(size[axis] / step)));
@@ -1013,18 +1027,12 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
     return layout;
 }
 
-void Media::SetFastContainer(ObjectPtr object, DBL cellLimit)
+void Media::SetFastContainer(ObjectPtr object)
 {
     if (Sample_Method != 4)
         return;
-    if (!fastResolutionRecorded)
-    {
-        requestedFastResolution = FastResolution;
-        fastResolutionRecorded = true;
-    }
-    FastResolution = requestedFastResolution;
-    if (FastResolution == -1.0)
-        FastResolution = AutomaticResolution(object);
+    const DBL cellLimit = PreparedCellLimit();
+    FastResolution = DomainCellWidth(object, domainCells);
     if ((FastResolution <= 0.0) || !IsFiniteNumber(FastResolution))
         return;
     for (const auto& binding : preparedBindings)
@@ -1082,7 +1090,7 @@ void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const st
     if (owner != nullptr)
     {
         const auto scene = td->GetSceneData();
-        SetFastContainer(owner, scene->EffectivePreparedMediaCells());
+        SetFastContainer(owner);
     }
     else if (!fastCache)
     {
@@ -1757,13 +1765,25 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         progress->Begin("lights", refracting.size() + scene->mediaLights.size());
     PrepareRefractionDefinitions(refracting, td, cooperate);
     std::vector<ConstObjectPtr> sourceOwners;
+    std::map<ConstObjectPtr, double> statedDomainCells;
     for (const LightSource* light : scene->mediaLights)
         if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
+        {
             sourceOwners.push_back(light->emitterContainer);
+            if (light->sourceDomainCells > 0.0)
+                statedDomainCells.emplace(light->emitterContainer, light->sourceDomainCells);
+        }
+    // a light's domain_cells, else the scene's light default; the first light wins a shared container
     std::map<ConstObjectPtr, std::shared_ptr<const PreparedSourceDomain>> sourceDomains;
-    for (const auto& group : PrepareSourceDomains(sourceOwners))
-        for (ConstObjectPtr owner : group.owners)
-            sourceDomains.emplace(owner, group.domain);
+    for (ConstObjectPtr owner : sourceOwners)
+    {
+        if (sourceDomains.count(owner) != 0)
+            continue;
+        PreparedSourceDomainPolicy policy = SceneSourceDomainPolicy(*scene);
+        const auto stated = statedDomainCells.find(owner);
+        policy.automaticCells = (stated != statedDomainCells.end()) ? stated->second : LightDomainCells(nullptr, *scene);
+        sourceDomains.emplace(owner, PrepareSourceDomain(owner, policy));
+    }
     for (LightSource *light : scene->mediaLights)
     {
         if (!light->emitter || !light->emitterContainer)
@@ -1865,7 +1885,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
     bouncePasses(source.bouncePasses), bounceSelf(source.bounceSelf), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
-    samples(source.samples),
+    samples(source.samples), domainCells(source.domainCells),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
     photonOptions(source.photonOptions), where(source.where)
@@ -2128,6 +2148,32 @@ class VolumeEmitter final : public Emitter
         double Reach(const Vector3d& from) const override { return BoxReach(from, low, size); }
 
         bool HasVolumeEmission() const override { return volumeEmission; }
+        MathColour VolumeEmissionAlong(const Vector3d& from, const Vector3d& direction, double reach,
+            double extinction, double draw, TraceThreadData* td) const override
+        {
+            vector<std::pair<double, double>> pieces;
+            const double length = Chord(from, direction, reach, td, pieces);
+            if (!(length > 0.0)) return MathColour();
+            double integral = 0.0;
+            for (const auto& piece : pieces)
+                integral += std::exp(-extinction * piece.first) * -std::expm1(-extinction * (piece.second - piece.first)) / extinction;
+            double at = draw * integral;
+            for (const auto& piece : pieces)
+            {
+                const double start = std::exp(-extinction * piece.first);
+                const double span = -std::expm1(-extinction * (piece.second - piece.first));
+                const double weight = start * span / extinction;
+                if (at < weight)
+                {
+                    const double fraction = std::min(std::nextafter(1.0, 0.0), at * extinction / start);
+                    const double distance = piece.first - std::log1p(-fraction) / extinction;
+                    const Vector3d outgoing = -direction;
+                    return EmissionAt(from + direction * distance, td, &outgoing) * integral;
+                }
+                at -= weight;
+            }
+            return MathColour();
+        }
 
         MathColour EmissionAt(const Vector3d& p, TraceThreadData *td, const Vector3d *outgoing = nullptr) const
         {

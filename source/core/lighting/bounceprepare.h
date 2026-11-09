@@ -13,6 +13,7 @@
 #include "core/material/media.h"
 #include "core/material/pigment.h"
 #include "core/material/preparedsourcefield.h"
+#include "core/material/texture.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
@@ -23,6 +24,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <unordered_set>
@@ -143,6 +145,7 @@ struct Target final
     double gain = 1.0;
     bool surface = false;
     MathColour self = MathColour(1.0);
+    bool internalPrimary = false;
     std::size_t part = 0;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
 };
@@ -181,6 +184,60 @@ inline void CollectObjects(ConstObjectPtr object, std::vector<ConstObjectPtr>& o
     if (const auto compound = dynamic_cast<const CompoundObject*>(object))
         for (const auto child : compound->children)
             CollectObjects(child, objects, seen);
+}
+
+// Whether a texture, its layers or its material map carry a subsurface method 2 finish.
+inline bool CarriesMethod2(const TEXTURE* texture, const SceneData& scene)
+{
+    for (; texture != nullptr; texture = texture->Next)
+    {
+        const FINISH* finish = texture->Finish;
+        if (finish && finish->UseSubsurface &&
+            ((finish->SubsurfaceMethod != 0) ? finish->SubsurfaceMethod : scene.subsurfaceMethod) == kSubsurfaceMethodPointCloud)
+            return true;
+        for (const TEXTURE* material : texture->Materials)
+            if (CarriesMethod2(material, scene))
+                return true;
+    }
+    return false;
+}
+
+// Whether an object or any part of it is a method 2 host.
+inline bool Method2Host(ConstObjectPtr object, const SceneData& scene)
+{
+    if (CarriesMethod2(object->Texture, scene) || CarriesMethod2(object->Interior_Texture, scene))
+        return true;
+    if (const auto compound = dynamic_cast<const CompoundObject*>(object))
+        for (const auto child : compound->children)
+            if (Method2Host(child, scene))
+                return true;
+    return false;
+}
+
+// Whether two world boxes share a volume wider than float rounding, the test the internal source selection makes.
+inline bool BoxesMeet(const BoundingBox& a, const BoundingBox& b)
+{
+    for (int axis = X; axis <= Z; axis++)
+    {
+        const double low = std::max(double(a.lowerLeft[axis]), double(b.lowerLeft[axis]));
+        const double high = std::min(double(a.lowerLeft[axis]) + a.size[axis], double(b.lowerLeft[axis]) + b.size[axis]);
+        const double magnitude = std::max(std::max(fabs(low), fabs(high)), std::max(double(a.size[axis]), double(b.size[axis])));
+        if (!(high - low > 4.0 * std::numeric_limits<float>::epsilon() * magnitude))
+            return false;
+    }
+    return true;
+}
+
+// An emitting surface whose method 2 material holds a volume emitter exports that emitter's escaping light as its own
+// primary; any other surface has none to export and pays nothing for it.
+inline bool InternalPrimary(const LightSource& light, const SceneData& scene)
+{
+    const auto owner = light.emitterContainer;
+    return scene.useSubsurface && light.emitter && light.emitter->IsSurface() && owner &&
+        owner->surfaceLight && owner->surfaceLight->useEmission && Method2Host(owner, scene) &&
+        std::any_of(scene.mediaLights.begin(), scene.mediaLights.end(), [&](const LightSource* source)
+            { return !source->Photon_Only && source->emitter && source->emitter->HasVolumeEmission() &&
+                     source->emitterContainer && BoxesMeet(source->emitterContainer->BBox, owner->BBox); });
 }
 
 inline const MediaLight* BounceSettings(const LightSource& light)
@@ -287,7 +344,7 @@ struct SubsurfaceScope final
 // entering each; the workers share one cache of boundary and layer tables.
 inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     Workers& workers, const std::shared_ptr<SceneData>& scene, const surface_refine::Result& result,
-    const std::function<void()>& cooperate, std::size_t units)
+    const Sources& sources, const std::function<void()>& cooperate, std::size_t units, bool boundary = true)
 {
     const SubsurfaceScope scope(workers, scene);
     std::vector<std::unique_ptr<Trace>> traces;
@@ -326,7 +383,7 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     std::vector<std::vector<std::size_t>> found(keys.size());
     std::vector<std::shared_ptr<const SurfaceNodeIndex>> foundIndex(keys.size());
     std::vector<std::size_t> later;
-    for (double level : levels)
+    for (double level : boundary ? levels : std::vector<double>())
     {
         std::vector<std::size_t> now;
         for (std::size_t i = 0; i < count; ++i)
@@ -363,6 +420,30 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
         foundIndex[g]->Interpolate(nodes[i].intersection.IPoint, nodes[i].normal, weights);
         radiance[i] = Blend(weights, [&](std::uint32_t t) -> const MathColour& { return radiance[found[g][foundIndex[g]->Source()[t]]]; });
     }, 0);
+    // Light emitted within the material, each source at its share: a light's own earlier bounce at its self share.
+    std::vector<MathColour> shares;
+    for (std::size_t s = 0; s < sources.lights.size(); ++s)
+    {
+        const MathColour share = sources.scales.empty() ? MathColour(1.0) : sources.scales[s];
+        const LightSource* light = sources.lights[s];
+        if (light->emitter && light->emitter->HasVolumeEmission() && !share.IsZero() &&
+            std::none_of(shares.begin(), shares.end(), [&](const MathColour& seen) { return (seen - share).IsZero(); }))
+            shares.push_back(share);
+    }
+    for (const MathColour& share : shares)
+    {
+        std::vector<LightSource*> lights;
+        for (std::size_t s = 0; s < sources.lights.size(); ++s)
+            if (((sources.scales.empty() ? MathColour(1.0) : sources.scales[s]) - share).IsZero())
+                lights.push_back(sources.lights[s]);
+        for (const auto& trace : traces)
+            trace->BeginSurfaceSubsurface(field, lights, true);
+        workers.For(count, cooperate, [&](size_t i, size_t worker)
+        {
+            double unused;
+            radiance[i] += share * traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused);
+        }, 0);
+    }
     AdvancePreparation(workers.td->preparationProgress, units);
     traces.clear();
     return Trace::SurfaceSubsurfaceRadiance(result.index, radiance, result.etas, result.areas);
@@ -376,11 +457,13 @@ inline std::size_t BounceUnits(const SceneData& scene)
     for (const LightSource* light : scene.mediaLights)
     {
         const MediaLight* const settings = BounceSettings(*light);
-        if (!settings)
+        const bool primary = InternalPrimary(*light, scene);
+        if (!settings && !primary)
             continue;
         if (light->emitter->IsSurface())
         {
-            units += 1 + settings->bouncePasses * (kSurfaceUnits * (scene.useSubsurface ? 2 : 1) + 1);
+            units += 1 + (primary ? 2 * kSurfaceUnits : 0) +
+                (settings ? settings->bouncePasses : 0) * (kSurfaceUnits * (scene.useSubsurface ? 2 : 1) + 1);
             continue;
         }
         const auto axis = light->emitter->PreparedAxis();
@@ -435,7 +518,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     using namespace bounce_prepare;
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
     if (std::none_of(scene->mediaLights.begin(), scene->mediaLights.end(),
-                     [](const LightSource* light) { return BounceSettings(*light) != nullptr; }))
+                     [&](const LightSource* light) { return BounceSettings(*light) != nullptr || InternalPrimary(*light, *scene); }))
         return;
     if (td->preparationProgress)
         td->preparationProgress->Begin("bounce", BounceUnits(*scene));
@@ -452,15 +535,17 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         LightSource* const light = scene->mediaLights[lightIndex];
         const auto owner = light->emitterContainer;
         const auto settings = BounceSettings(*light);
-        if (!settings)
+        const bool internalPrimary = InternalPrimary(*light, *scene);
+        if (!settings && !internalPrimary)
             continue;
         const bool surface = light->emitter->IsSurface();
         Target target;
         target.light = light;
         target.primary = light->emitter;
-        target.passes = settings->bouncePasses;
-        target.gain = settings->BounceGain();
-        target.self = settings->bounceSelf;
+        target.passes = settings ? settings->bouncePasses : 0;
+        target.gain = settings ? settings->BounceGain() : 1.0;
+        target.self = settings ? settings->bounceSelf : MathColour(1.0);
+        target.internalPrimary = internalPrimary;
         maximum = std::max(maximum, target.passes);
         if (surface)
         {
@@ -470,7 +555,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             if (!part.sampler->IsValid())
                 throw std::invalid_argument("Surface bounce requires finite surface geometry");
             part.sampler->ResolveDeferred();
-            part.classes = SurfaceDiffuseClasses(owner);
+            part.classes = settings ? SurfaceDiffuseClasses(owner) : std::vector<double>{1.0};
             for (const auto object : scene->objects)
                 if (object->IsOpaque() && !Test_Flag(object, NO_SHADOW_FLAG))
                     part.cover.solids.push_back(object);
@@ -499,8 +584,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             td->preparationProgress->End();
         return;
     }
-    // Surface bounce fields draw on the prepared media cell budget, as many bytes as that many colours, over all orders.
-    const std::size_t budget = std::size_t(scene->EffectivePreparedMediaCells()) * sizeof(MathColour);
+    // Surface bounce fields share the scene's prepared cell limit, as many bytes as that many colours, over all orders.
+    const std::size_t budget = std::size_t(scene->PreparedCellLimit()) * sizeof(MathColour);
     std::size_t used = 0, baseline = surface_refine::kBaseline;
     double spacing = 0.0;
     if (!parts.empty())
@@ -508,7 +593,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         std::size_t nodeBytes = 0;
         for (const auto& part : parts)
             nodeBytes = std::max(nodeBytes, part.NodeBytes(scene->useSubsurface));
-        const std::size_t first = budget / std::max(1u, maximum) / 2 / nodeBytes;
+        const bool primary = std::any_of(targets.begin(), targets.end(), [](const Target& target) { return target.internalPrimary; });
+        const std::size_t first = budget / std::max(1u, maximum + unsigned(primary)) / 2 / nodeBytes;
         if (first < baseline)
         {
             baseline = std::max<std::size_t>(1, first);
@@ -531,6 +617,52 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         previous.push_back(Clone(light));
         previousOriginal.push_back(light);
     }
+    std::vector<std::size_t> primaryParts, primaryTargets;
+    std::vector<Sources> primarySources;
+    for (std::size_t t = 0; t < targets.size(); ++t)
+        if (targets[t].internalPrimary)
+        {
+            primaryParts.push_back(targets[t].part);
+            primaryTargets.push_back(t);
+            primarySources.emplace_back();
+            for (std::size_t source = 0; source < previous.size(); ++source)
+                if (!previous[source]->Photon_Only && previous[source]->emitter &&
+                    previous[source]->emitter->HasVolumeEmission() &&
+                    Receives(targets[t].light->emitterContainer, previousOriginal[source]))
+                    primarySources.back().lights.push_back(previous[source].get());
+        }
+    if (!primaryParts.empty())
+    {
+        const SubsurfaceScope scope(workers, scene);
+        Trace::SurfaceSubsurfaceField bridge;
+        std::vector<std::unique_ptr<Trace>> traces;
+        std::vector<Trace*> entries;
+        for (std::size_t worker = 0; worker < workers.Count(); ++worker)
+        {
+            Context& context = workers[worker];
+            traces.emplace_back(new Trace(scene, workers.Thread(worker), QualityFlags(9), context.cooperate, context.media,
+                                          context.radiosity));
+            traces.back()->BeginSurfaceSubsurface(bridge);
+            entries.push_back(traces.back().get());
+        }
+        surface_refine::Order<Workers> refine(workers, parts, primaryParts, primarySources, 0, spacing, budget / (maximum + 1),
+                                              entries, cooperate, kSurfaceUnits * primaryParts.size());
+        const auto results = refine.Run("internal emission");
+        used += refine.Bytes();
+        for (std::size_t a = 0; a < primaryParts.size(); ++a)
+        {
+            Target& target = targets[primaryTargets[a]];
+            workers.Step("internal emission " + Of("t", a, primaryParts.size()));
+            const auto field = PrepareSubsurfaceBounce(workers, scene, results[a], primarySources[a], cooperate,
+                                                       kSurfaceUnits, false);
+            target.primary = MakeBouncedSurfaceEmitter(target.primary, const_cast<ObjectPtr>(target.light->emitterContainer),
+                                                       field, true);
+            target.light->emitter = target.primary;
+            target.light->colour = target.primary->Intensity() / M_PI;
+        }
+        for (std::size_t source = 0; source < previous.size(); ++source)
+            previous[source] = Clone(previousOriginal[source]);
+    }
     for (unsigned int index = 0; index < maximum; ++index)
     {
         const unsigned int order = index + 1;
@@ -549,6 +681,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         std::vector<SharedGroup> groups;
         std::vector<std::size_t> active, activeTarget(targets.size(), SIZE_MAX);
         std::vector<double> activeGain;
+        std::vector<char> activeInternalPrimary;
         std::vector<Sources> activeSources;
         for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex)
         {
@@ -569,6 +702,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             activeTarget[targetIndex] = active.size();
             active.push_back(target.part);
             activeGain.push_back(target.gain);
+            activeInternalPrimary.push_back(target.internalPrimary);
             activeSources.push_back(std::move(sources));
         }
         std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceFields(active.size());
@@ -618,7 +752,9 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 if (scene->useSubsurface)
                 {
                     workers.Step(orderItem + " " + Of("t", a, active.size()) + " subsurface");
-                    subsurface = PrepareSubsurfaceBounce(workers, scene, results[a], cooperate, kSurfaceUnits);
+                    const Sources noSources;
+                    subsurface = PrepareSubsurfaceBounce(workers, scene, results[a],
+                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a], cooperate, kSurfaceUnits);
                 }
                 surfaceFields[a] = std::make_shared<const SumSurfaceBounceRadiance>(
                     std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{results[a].diffuse, subsurface}, activeGain[a]);

@@ -60,7 +60,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `disc` | 32 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
 | `finish` | 22 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
-| `global_settings` | 25 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
+| `global_settings` | 24 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
 | `height_field` | 58 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
 | `interior` | 15 | Inside-the-surface properties: ior, caustics, fading, media, and the volume light of a light block. |
@@ -70,7 +70,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `julia_fractal` | 55 | 3-D slice of a 4-D quaternion Julia set. |
 | `lathe` | 36 | Solid of revolution: a 2-D profile curve spun about y. |
 | `lemon` | 33 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
-| `light` | 12 | A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling. |
+| `light` | 13 | A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling. |
 | `light_group` | 75 | Objects lit only by the lights named inside it. |
 | `light_source` | 54 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
@@ -118,6 +118,8 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 - A classic twin of a `.pov4` scene is `#version 4.0;` classic syntax — same semantics, two spellings. A `#version 3.7` twin does not match: 4.0 changed defaults (gamma among them).
 - `finish { light_samples M [full | by_contribution] }`: `M` multiplies every surface and volume light's `samples`; `by_contribution` (the 4.0 default) scales each hit's samples by its share of the pixel, so hits seen through reflections or clear layers take fewer while directly seen surfaces keep all. `full` is the classic sampling: choose it where reflections or refractions carry the look and their noise shows. Scene-wide: `default { finish { light_samples 1 full } }`.
 - `max_trace_level` (4.0 default): a ray that reaches it is not black. Its hit is lit without reflection, and through transparent surfaces it goes straight on, filtered and faded, to the first opaque surface or the background. Raise the level where the bent or reflected image itself matters.
+- `media { method 4 domain_cells N }` is the prepared grid's cell count (500000 by default), cubic cells spread over the container's box, so quality survives rescaling; the grid is capped at 2N. Media take no cell width: for cells about `w` wide write the product over the axes of ceil(box extent / w). Scene-wide: `default { media { domain_cells N } }`, which also sets (doubled) the cap of ownerless grids. An interior `light { domain_cells N }` sets the light's source domain, else `default { light { domain_cells N } }`, 500000; a light never takes its medium's count.
+- A volume `light` inside a closed subsurface method 2 solid lights it from within (homogeneous material, one texture layer); `subsurface { samples D, S }`'s S is the internal paths per shaded point. A surface `light { emission }` (or `bounce`) on the host exports the light that escapes. A volume light in or on an open mesh or a disc host is a parse error.
 
 ## Canonical examples
 

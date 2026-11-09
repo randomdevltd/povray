@@ -227,7 +227,9 @@ bool Plane::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
         Temp = dot(P, Normal_Vector);
     }
 
-    return((Temp + Distance) < EPSILON);
+    // A precise boundary query asks which side the point is on exactly, as the other shapes answer it.
+    const DBL tolerance = ((Thread != nullptr) && Thread->preciseInside) ? 0.0 : EPSILON;
+    return((Temp + Distance) < tolerance);
 }
 
 

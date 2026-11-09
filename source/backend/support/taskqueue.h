@@ -108,6 +108,8 @@ class TaskQueue final
         bool Failed();
 
         int FailureCode(int defval = kNoError);
+        /// The first failed task's message, empty if it gave none.
+        std::string FailureText();
         /// Fails the queue from a queued function; the queue stops before its next entry.
         void Fail(int code);
 
@@ -142,6 +144,8 @@ class TaskQueue final
         std::recursive_mutex queueMutex;
         /// failed code
         int failed;
+        /// failed task's message
+        std::string failedText;
 
         TaskQueue(const TaskQueue&) = delete;
         TaskQueue& operator=(const TaskQueue&) = delete;

@@ -191,10 +191,6 @@
    "kind": "item",
    "text": "In a tags list: adds the parent's effective tags, as in tags { \"leaf\", inherit }. Matched by text, so inherit stays free as a name."
   },
-  "prepared_media_cells": {
-   "kind": "item",
-   "text": "Cell limit for a medium's prepared density grid; grids coarsen to fit, and a warning names the fitted resolution."
-  },
   "atmospheric_dispersion": {
    "kind": "item",
    "text": "Wavelength-dependent spread of the atmosphere's refraction."
