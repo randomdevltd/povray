@@ -813,6 +813,7 @@ class Trace
     ///
 
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
+        MathColour PlainDiffuseChannels(const FINISH *finish) const;
         bool LightsAddNothing(const FINISH *finish, double attenuation) const;
         void ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const  Ray& eye, const Vector3d& layer_normal, const MathColour& layer_pigment_colour,
                                  MathColour& colour, double attenuation, ObjectPtr object, double relativeIor, const Vector3d& geometricNormal);
@@ -1473,7 +1474,8 @@ class Trace
         std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr, const LightSource*>, bool> ssltSourceOverlaps;
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous);
+            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous,
+            const SubsurfaceFlesh* skin);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
