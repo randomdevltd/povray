@@ -6331,7 +6331,7 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const st
     for (const BounceIncidentBeam& beam : incident)
     {
         if (beam.source && SubsurfaceInternalConnection(*beam.source, hit.IPoint, -beam.direction,
-                beam.distance, hit.Object, SubsurfaceObject(hit), ticket))
+                beam.distance, hit.Object, SubsurfaceObject(hit), ticket, node.normal))
             continue;
         if (!taps.empty())
         {
@@ -6905,7 +6905,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
         ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, bend_point);
 
     if (internalSources && SubsurfaceInternalConnection(lightsource, bend_point, lightsourceray.Direction,
-        lightsourcedepth, out.Object, SubsurfaceObject(out), ticket)) return;
+        lightsourcedepth, out.Object, SubsurfaceObject(out), ticket, Vector3d())) return;
 
     // Where light from the source enters the object, ignoring refraction; mostly for the surface normal there.
     Intersection xi;
@@ -7334,14 +7334,19 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
 }
 
 bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
-    double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket)
+    double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket, const Vector3d& face)
 {
     if (!light.emitter || !light.emitter->HasVolumeEmission() || !light.emitterContainer || object == nullptr || !object->interior) return false;
     const Interior* material = object->interior.get();
     if (!SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return false;
     if (!SubsurfaceSourceOverlaps(light, material, const_cast<ObjectPtr>(whole), ticket.preparedSetId)) return false;
     const double extent = (material->boundsHigh - material->boundsLow).length();
-    if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, InterfaceTolerance(point, material), extent),
+    const double tolerance = InterfaceTolerance(point, material);
+    // A connection that stays within the interface tolerance of its start face's plane has no decidable side: the probe
+    // never leaves the face, so rounding alone would choose. That measure-zero set of directions takes the ordinary path.
+    const double faceLength = face.length();
+    if ((faceLength > 0.0) && (std::abs(dot(face, toward)) / faceLength * distance <= tolerance)) return false;
+    if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, tolerance, extent),
         material, ticket.preparedSetId)) return false;
     return distance < SubsurfaceInternalBoundaryAt(point, toward, object, const_cast<ObjectPtr>(whole), ticket).distance;
 }
@@ -7653,7 +7658,8 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
             double lightsourcedepth;
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, point, lightcolour, true);
-            if (SubsurfaceInternalConnection(lightsource, point, lightsourceray.Direction, lightsourcedepth, object, whole, ticket))
+            if (SubsurfaceInternalConnection(lightsource, point, lightsourceray.Direction, lightsourcedepth, object, whole, ticket,
+                    geometricNormal))
                 continue;
             if (lightcolour.IsNearZero(EPSILON))
             {
@@ -7728,7 +7734,7 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, out.IPoint, lightcolour, true);
             if (SubsurfaceInternalConnection(lightsource, out.IPoint, lightsourceray.Direction, lightsourcedepth,
-                out.Object, SubsurfaceObject(out), ticket)) continue;
+                out.Object, SubsurfaceObject(out), ticket, out.INormal)) continue;
             if (lightcolour.IsNearZero(EPSILON))
                 continue;
             if (k == 0)
@@ -8870,6 +8876,8 @@ void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vec
     double step = max(64.0 * std::numeric_limits<double>::epsilon() * reach, 1e-6 * to);
     double start = 0.0;
     const SubsurfaceCrossingQuery query;
+    // a precise query: every inside test under it, a CSG's per-hit tests included, is band-free
+    const PreciseInsideScope precision(threadData);
     for (int guard = 0; (guard < 256) && (start <= to); guard++)
     {
         Ray ray(ticket, origin + dir * start, dir, Ray::SubsurfaceRay);

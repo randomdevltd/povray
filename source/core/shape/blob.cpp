@@ -252,7 +252,7 @@ bool Blob::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
     DBL newcoeffs[5], dk[5];
     DBL max_bound;
     DBL l, w;
-    DBL depthTolerance = (ray.IsSubsurfaceRay()? 0 : DEPTH_TOLERANCE);
+    DBL depthTolerance = (ray.IsSubsurfaceRay() || (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary())) ? 0 : DEPTH_TOLERANCE;
 
     Thread->Stats()[Ray_Blob_Tests]++;
 
@@ -1609,7 +1609,9 @@ bool Blob::Inside(const Vector3d& Test_Point, TraceThreadData *Thread) const
         New_Point = Test_Point;
     }
 
-    if (calculate_field_value(New_Point, Thread) > Data->Threshold - INSIDE_TOLERANCE)
+    // A precise query takes the threshold itself, without the tolerance band that reaches past the surface.
+    const DBL band = (Thread != nullptr && Thread->preciseInside) ? 0.0 : INSIDE_TOLERANCE;
+    if (calculate_field_value(New_Point, Thread) > Data->Threshold - band)
     {
         /* We are inside. */
 
