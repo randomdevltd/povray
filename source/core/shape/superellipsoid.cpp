@@ -69,6 +69,8 @@
 
 // C++ variants of C standard header files
 #include <cstdlib>
+#include <algorithm>
+#include <cmath>
 
 // C++ standard header files
 //  (none at the moment)
@@ -219,6 +221,8 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
     Vector3d P, D, P0, P1, P2, P3;
 
     const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+    // a CSG child or an all-roots query takes every crossing, not just the first
+    const bool collect = (Type & IS_CHILD_OBJECT) || (ray.GetRootQuery() && ray.GetRootQuery()->AllRoots());
 
     /* Transform the ray into the superellipsoid space. */
 
@@ -274,7 +278,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
     {
         if (insert_hit(ray, dists[0] / len, Depth_Stack, Thread))
         {
-            if (Type & IS_CHILD_OBJECT)
+            if (collect)
             {
                 Found = true;
             }
@@ -295,7 +299,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
         {
             if (insert_hit(ray, dists[i] / len, Depth_Stack, Thread))
             {
-                if (Type & IS_CHILD_OBJECT)
+                if (collect)
                 {
                     Found = true;
                 }
@@ -319,7 +323,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
                 if (insert_hit(ray, t / len, Depth_Stack, Thread))
                 {
-                    if (Type & IS_CHILD_OBJECT)
+                    if (collect)
                     {
                         Found = true;
                     }
@@ -337,36 +341,50 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                  * surface into thinking there isn't a root between sample points.
                  */
 
-                if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2, precise))
+                if (precise)
+                {
+                    // A boundary query needs every crossing between two samples on one side. Between neighbouring
+                    // planes each coordinate keeps its sign, so the field along the ray turns once there: a golden-
+                    // section search finds how far it turns toward the other side, and a turn past the surface is a dip
+                    // with one crossing on each side of it.
+                    const double side = (v0 > 0.0) ? 1.0 : -1.0;
+                    auto toward = [&](double s) { return side * evaluate_superellipsoid(P + s * D); };
+                    const double golden = 0.5 * (std::sqrt(5.0) - 1.0);
+                    double a = dists[i-1], b = dists[i];
+                    double c = b - golden * (b - a), d = a + golden * (b - a), fc = toward(c), fd = toward(d);
+                    for (int k = 0; (k < 200) && (a < c) && (c < d) && (d < b); ++k)
+                    {
+                        if (fc < fd) { b = d; d = c; fd = fc; c = b - golden * (b - a); fc = toward(c); }
+                        else { a = c; c = d; fc = fd; d = a + golden * (b - a); fd = toward(d); }
+                    }
+                    const double turn = (fc < fd) ? c : d;
+                    if (std::min(fc, fd) < 0.0)
+                        for (int end = 0; end < 2; ++end)
+                        {
+                            // bisect between the turn, past the surface, and the sample at this end, on the near side
+                            double outside = end ? dists[i] : dists[i-1], across = turn;
+                            for (int k = 0; k < 200; ++k)
+                            {
+                                const double middle = 0.5 * (outside + across);
+                                if ((middle == outside) || (middle == across)) break;
+                                (toward(middle) > 0.0 ? outside : across) = middle;
+                            }
+                            if (insert_hit(ray, 0.5 * (outside + across) / len, Depth_Stack, Thread))
+                            {
+                                if (collect) Found = true;
+                                else return(true);
+                            }
+                        }
+                }
+                else if (check_hit2(P, D, dists[i-1], P0, v0, dists[i], &t, P2, precise))
                 {
                     const bool inserted = insert_hit(ray, t / len, Depth_Stack, Thread);
-                    if (inserted && !(Type & IS_CHILD_OBJECT))
+                    if (inserted && !collect)
                         return(true);
                     if (inserted)
                         Found = true;
-                    if (precise)
-                    {
-                        // The ray dips in and out between two outside samples: a boundary query needs the far crossing too.
-                        double probe = 0.5 * (t + dists[i]);
-                        for (int step = 0; step < 64 && probe > t; ++step, probe = 0.5 * (t + probe))
-                        {
-                            const Vector3d inside = P + probe * D;
-                            const double value = evaluate_superellipsoid(inside);
-                            if (value * v1 >= 0.0) continue;
-                            solve_hit1(value, inside, v1, P1, P2, precise);
-                            const double farther = (P2 - P).length() / len;
-                            if (insert_hit(ray, farther, Depth_Stack, Thread))
-                            {
-                                if (Type & IS_CHILD_OBJECT) Found = true;
-                                else return true;
-                            }
-                            break;
-                        }
-                    }
-                    else if (!inserted)
-                    {
+                    else
                         break;
-                    }
                 }
             }
         }

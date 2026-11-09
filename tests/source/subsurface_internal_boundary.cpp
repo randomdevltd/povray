@@ -1,3 +1,4 @@
+#include <random>
 #include "core/lighting/subsurfaceinternalboundary.h"
 #include "core/shape/superellipsoid.h"
 #include "core/shape/sphere.h"
@@ -446,7 +447,6 @@ int main()
             const double error = std::max(2e-10, expected * 1e-7);
             if (std::abs(hit.distance - expected) > error || !(dot(hit.normal, d) > 0.0))
             {
-                std::cerr.precision(17);
                 std::cerr << "ORACLE MISMATCH " << p[0] << " " << p[1] << " " << p[2] << " dir " << d[0] << " " << d[1] << " " << d[2]
                           << " actual " << hit.distance << " expected " << expected << "\n";
                 assert(false);
@@ -458,7 +458,6 @@ int main()
                 const double after = oracle.Exit(hit.position, reflected, true);
                 if (!(after >= 0.0))
                 {
-                    std::cerr.precision(17);
                     std::cerr << "REFLECTED ORACLE MISS " << hit.position[0] << " " << hit.position[1] << " " << hit.position[2] << " dir "
                               << reflected[0] << " " << reflected[1] << " " << reflected[2] << "\n";
                     assert(false);
@@ -467,7 +466,6 @@ int main()
                     const auto next = trace.SubsurfaceInternalBoundaryAt(hit.position, reflected, palm, &junction, ticket);
                     if (!(std::abs(next.distance - after) < std::max(2e-10, after * 1e-7)))
                     {
-                        std::cerr.precision(17);
                         std::cerr << "REFLECTED MISMATCH " << hit.position[0] << " " << hit.position[1] << " " << hit.position[2] << " dir "
                                   << reflected[0] << " " << reflected[1] << " " << reflected[2] << " actual " << next.distance
                                   << " expected " << after << "\n";
@@ -480,7 +478,6 @@ int main()
         }
         catch (...)
         {
-            std::cerr.precision(17);
             std::cerr << "ORACLE FAILURE " << p[0] << " " << p[1] << " " << p[2] << " dir " << d[0] << " " << d[1] << " " << d[2]
                       << " expected " << expected << " reflect " << reflect << "\n";
             throw;
@@ -788,6 +785,140 @@ int main()
             }
             scene->preparedSets.front()->objects = {&junction};
         }
+    }
+    {
+        // Shallow concave faces dip a grazing ray in and out between two plane samples that both lie outside, the dip
+        // anywhere in that bracket: at its near end, its middle or its far end. A precise query must report every crossing
+        // an independent fine scan of the implicit finds, at scene scales 1 and 1000.
+        struct Precise final : RayRootQuery
+        {
+            bool Admit(ConstObjectPtr, double) const override { return true; }
+            bool AllRoots() const override { return true; }
+            bool PreciseBoundary() const override { return true; }
+        } precise;
+        const double exponent = 2.0 / 2.2;  // e = n = 2.2: faces just concave
+        std::mt19937_64 random(1829);
+        std::uniform_real_distribution<double> unit(0.0, 1.0);
+        size_t dips = 0, thirds[3] = {0, 0, 0};
+        for (double size : {1.0, 1000.0})
+        {
+            Superellipsoid star;
+            star.Power = Vector3d(exponent, 1.0, exponent);
+            TRANSFORM scaling;
+            Compute_Scaling_Transform(&scaling, Vector3d(size));
+            star.Scale(Vector3d(size), &scaling);
+            star.Compute_BBox();
+            auto field = [&](const Vector3d &q) {
+                const Vector3d u = q / size;
+                return std::pow(std::abs(u[0]), exponent) + std::pow(std::abs(u[1]), exponent) + std::pow(std::abs(u[2]), exponent) - 1.0;
+            };
+            for (int n = 0; n < 4000; ++n)
+            {
+                // a surface point on a face, a tangent across it and a slight tilt inwards
+                const Vector3d axis = Vector3d(unit(random) - 0.5, unit(random) - 0.5, unit(random) - 0.5).normalized();
+                double low = 0.0, high = 2.0 * size;
+                for (int i = 0; i < 80; ++i)
+                    (field(axis * (0.5 * (low + high))) < 0.0 ? low : high) = 0.5 * (low + high);
+                const Vector3d surface = axis * low;
+                Vector3d gradient;
+                for (int k = 0; k < 3; ++k)
+                    gradient[k] = (surface[k] == 0.0) ? 0.0 :
+                        exponent * std::pow(std::abs(surface[k] / size), exponent - 1.0) * (surface[k] > 0.0 ? 1.0 : -1.0);
+                if (!(gradient.length() > 0.0)) continue;
+                gradient.normalize();
+                Vector3d tangent = cross(gradient, Vector3d(unit(random) - 0.5, unit(random) - 0.5, unit(random) - 0.5));
+                if (!(tangent.length() > 0.0)) continue;
+                tangent.normalize();
+                const Vector3d direction = (tangent - gradient * (0.02 * unit(random))).normalized();
+                const Vector3d origin = surface - direction * (3.0 * size);
+                // the oracle: every sign change of the implicit on a fine scan, bisected
+                std::vector<double> roots;
+                const int steps = 400000;
+                const double reach = 6.0 * size;
+                double before = field(origin), smallest = HUGE_VAL, last = -HUGE_VAL;
+                for (int i = 1; i <= steps; ++i)
+                {
+                    const double t = reach * i / steps, value = field(origin + direction * t);
+                    if ((before < 0.0) != (value < 0.0))
+                    {
+                        double a = reach * (i - 1) / steps, b = t;
+                        for (int k = 0; k < 80; ++k)
+                            (((field(origin + direction * (0.5 * (a + b))) < 0.0) == (before < 0.0)) ? a : b) = 0.5 * (a + b);
+                        roots.push_back(0.5 * (a + b));
+                        smallest = std::min(smallest, roots.back() - last);
+                        last = roots.back();
+                    }
+                    before = value;
+                }
+                // a dip thinner than the scan cannot be checked
+                if (roots.empty() || (smallest < 4.0 * reach / steps)) continue;
+                Ray ray(ticket, origin, direction);
+                ray.SetRootQuery(&precise);
+                IStack stack(thread.stackPool);
+                star.All_Intersections(ray, stack, &thread);
+                std::vector<double> found;
+                for (; stack->size() > 0; stack->pop())
+                    found.push_back(stack->top().Depth);
+                std::sort(found.begin(), found.end());
+                // every crossing the scan finds must be reported; one the scan misses must still be a real sign change,
+                // a dip thinner than the scan step, and come in pairs
+                bool good = ((found.size() - roots.size()) % 2 == 0) && (found.size() >= roots.size());
+                for (double r : roots)
+                    good = good && std::any_of(found.begin(), found.end(), [&](double f) { return std::abs(f - r) < 1e-7 * size; });
+                for (size_t k = 0; k < found.size(); ++k)
+                {
+                    double delta = 1e-9 * size;
+                    if (k > 0) delta = std::min(delta, 0.25 * (found[k] - found[k - 1]));
+                    if (k + 1 < found.size()) delta = std::min(delta, 0.25 * (found[k + 1] - found[k]));
+                    good = good && (delta > 0.0) &&
+                        ((field(origin + direction * (found[k] - delta)) < 0.0) != (field(origin + direction * (found[k] + delta)) < 0.0));
+                }
+                if (!good)
+                {
+                    std::cerr << "superellipsoid scale " << size << " ray " << n << ": " << found.size() << " crossings, the scan finds "
+                              << roots.size() << "\n";
+                    assert(false);
+                }
+                // the intersector's samples: its box's entry and exit and its nine planes through the centre
+                std::vector<double> samples;
+                {
+                    const Vector3d o = origin / size;
+                    double t1 = -HUGE_VAL, t2 = HUGE_VAL;
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        const double a = (-1.01 - o[k]) / direction[k], b = (1.01 - o[k]) / direction[k];
+                        t1 = std::max(t1, std::min(a, b));
+                        t2 = std::min(t2, std::max(a, b));
+                    }
+                    samples = {t1, t2};
+                    const double planes[9][3] = {{1, 1, 0}, {1, -1, 0}, {1, 0, 1}, {1, 0, -1}, {0, 1, 1}, {0, 1, -1},
+                                                 {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+                    for (const auto &plane : planes)
+                    {
+                        const Vector3d normal(plane[0], plane[1], plane[2]);
+                        const double t = -dot(normal, o) / dot(normal, direction);
+                        if ((t > t1) && (t < t2)) samples.push_back(t);
+                    }
+                    std::sort(samples.begin(), samples.end());
+                    for (double &t : samples) t *= size;
+                }
+                // a dip whose two crossings fall between the same two samples, by where it lies in that bracket; with
+                // these just-concave faces the field turns once between samples, so the dips run out of the solid
+                for (size_t k = 0; k + 1 < roots.size(); ++k)
+                {
+                    for (size_t j = 0; j + 1 < samples.size(); ++j)
+                        if ((samples[j] < roots[k]) && (roots[k + 1] < samples[j + 1]))
+                        {
+                            const double where = (0.5 * (roots[k] + roots[k + 1]) - samples[j]) / (samples[j + 1] - samples[j]);
+                            ++thirds[std::min(2, int(where * 3.0))];
+                            ++dips;
+                        }
+                }
+                ++checked;
+            }
+        }
+        std::cout << "Superellipsoid dips inside one sample bracket " << dips << " (near, middle, far third: " << thirds[0] << " " << thirds[1] << " " << thirds[2] << ")" << std::endl;
+        assert(dips > 30 && thirds[0] > 5 && thirds[1] > 5 && thirds[2] > 5);
     }
     assert(!thread.preciseInside);
     assert(checked > 1000);
