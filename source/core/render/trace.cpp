@@ -7361,7 +7361,7 @@ bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3
 
 MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
     const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-    const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous, const SubsurfaceFlesh* skin)
+    const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, const SubsurfaceFlesh* skin)
 {
     MathColour result;
     if (samples <= 0) return result;
@@ -7421,8 +7421,6 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 for (const auto& from : sources)
                     radiance += from.scale[channel] *
                         from.emitter->VolumeEmissionAlong(point, direction, reach, extinction, draw(), threadData)[channel];
-                if (!homogeneous && radiance != 0.0)
-                    throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
                 return radiance;
             };
             auto connect = [&](const Vector3d& point, double extinction)
@@ -7442,8 +7440,6 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                     if (distance >= hit.distance) continue;
                     radiance += from.scale[channel] * light.weight[channel] * std::exp(-extinction * distance) / (4.0 * M_PI);
                 }
-                if (!homogeneous && radiance != 0.0)
-                    throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
                 return radiance;
             };
             // a reflection inside crosses the skin twice, in and back
@@ -10713,8 +10709,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         MathColour internalSource;
         if (pointCloud)
             internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
-                1, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
-                Finish->SubsurfaceHasColour ? &flesh : nullptr);
+                1, DeriveKey(key, kDrawSubsurface, 7), Finish->SubsurfaceHasColour ? &flesh : nullptr);
         if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
         Final_Colour += internalSource * layers.weight;
         Eye.GetTicket().subsurfaceRecursionDepth--;
@@ -10863,8 +10858,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     MathColour internalSource;
     if (pointCloud)
         internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
-            NumSamplesSingle, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
-                Finish->SubsurfaceHasColour ? &flesh : nullptr);
+            NumSamplesSingle, DeriveKey(key, kDrawSubsurface, 7), Finish->SubsurfaceHasColour ? &flesh : nullptr);
     if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
     Final_Colour += internalSource * layers.weight;
 

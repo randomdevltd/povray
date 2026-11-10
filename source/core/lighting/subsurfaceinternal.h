@@ -39,7 +39,7 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     const double extinction = absorption + scattering;
     if (!(absorption >= 0.0) || !(scattering >= 0.0) || !(extinction > 0.0) ||
         !std::isfinite(extinction) || !(relativeIor > 0.0) || !std::isfinite(relativeIor))
-        throw std::invalid_argument("Internal subsurface transport requires finite homogeneous coefficients");
+        throw std::invalid_argument("Internal subsurface transport requires finite coefficients");
     const double albedo = scattering / extinction;
     double radiance = 0.0, throughput = 1.0;
     bool gatherSegment = true;

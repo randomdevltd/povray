@@ -1474,7 +1474,7 @@ class Trace
         std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr, const LightSource*>, bool> ssltSourceOverlaps;
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous,
+            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key,
             const SubsurfaceFlesh* skin);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
