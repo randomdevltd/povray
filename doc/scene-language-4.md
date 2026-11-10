@@ -99,8 +99,8 @@ Where the subsurface block gives the flesh its own colour, the texture pigment i
 crossed at the exit, twice at each internal reflection and at the far end of a straight
 path through a thin wall. A surface `light { emission }` on the host exports the flux
 leaving it, and a `bounce` block exports it in its first order; with both it is exported
-once. The host needs homogeneous coefficients (one texture layer, no `volume_sampling`
-flesh). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
+once. The internal walk uses the material's coefficients at the shaded point (the top
+layer's subsurface settings of a layered texture). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
 mesh with an open border) stops the parse, and so does one whose container lies inside an
 open subsurface mesh's `inside_vector` volume, naming both lines, with or without
 `subsurface` in `global_settings`; an open part that holds no light hosts nothing. A
