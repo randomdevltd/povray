@@ -11428,6 +11428,23 @@ static bool Object_Uses_Subsurface(ConstObjectPtr object)
     return false;
 }
 
+// A host part whose inside test claims a volume that its surface does not close around.
+static const char *Open_Host_Part(ConstObjectPtr part, bool cutter)
+{
+    if (const char *kind = Open_Part(part, cutter))
+        return kind;
+    if (!part->Clip.empty())
+        return "shape whose surface clipped_by cuts open";
+    if (cutter)
+        return nullptr; // the parts it is intersected with may close it
+    if (dynamic_cast<const HField *>(part) != nullptr)
+        return "surface without sides or a base";
+    if (!Test_Flag(part, CLOSED_FLAG) && ((dynamic_cast<const Cone *>(part) != nullptr) || (dynamic_cast<const Sor *>(part) != nullptr) ||
+                                          (dynamic_cast<const Prism *>(part) != nullptr) || (dynamic_cast<const Lemon *>(part) != nullptr)))
+        return "shape left open at its ends";
+    return nullptr;
+}
+
 // Each part with its own finish's subsurface (or its parent's when it has no texture) and whether it cuts.
 static void Collect_Light_Host_Parts(ConstObjectPtr object, bool subsurface, bool cutter,
                                      std::vector<std::pair<ConstObjectPtr, std::pair<bool, bool>>>& parts)
@@ -11477,7 +11494,8 @@ void Parser::Check_Subsurface_Light_Hosts()
                 return false;
         return true;
     };
-    // An open part claims a volume only as a mesh's inside_vector parity does; a disc claims none. A light's container
+    // An open part claims a volume only as its inside test does (a mesh's inside_vector parity, the far side of an
+    // open or clipped surface); a disc claims none. A light's container
     // lies within it when a point of the container, on a lattice over its box, is inside both; any other open part
     // hosts no internal source, as the subsurface cloud treats it.
     auto within = [&](ConstObjectPtr part, ConstObjectPtr container) {
@@ -11505,7 +11523,7 @@ void Parser::Check_Subsurface_Light_Hosts()
         Collect_Light_Host_Parts(object, false, false, parts);
         for (const auto& part : parts)
         {
-            const char *kind = part.second.first ? Open_Part(part.first, part.second.second) : nullptr;
+            const char *kind = part.second.first ? Open_Host_Part(part.first, part.second.second) : nullptr;
             if (kind == nullptr)
                 continue;
             for (const LightSource *light : volumes)
