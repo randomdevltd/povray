@@ -99,8 +99,6 @@ bytes=$(wc -c < progressive_photon_file.whole)
 share=$((bytes - 56))
 patch "$share" 4 "$(native 0 0 192 127)"
 refuse share_nan 'non-finite media segment self share' Declare=Mist=1
-patch "$share" 4 "$(native 0 0 0 64)"
-refuse share_range 'media segment self share outside' Declare=Mist=1
 rm -f "$FILE"
 refuse missing 'Cannot open the photon file' Declare=Dispersion=1.03
 render classic_saved Declare=Method=1 Declare=PhotonFile=1 +wt2

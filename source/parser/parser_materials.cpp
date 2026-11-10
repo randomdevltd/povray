@@ -4033,8 +4033,8 @@ void Parser::Parse_Light_Bounce(MediaLight& light)
                 UNGET
                 Parse_Colour(light.bounceSelf);
                 for (int channel = 0; channel < MathColour::channels; ++channel)
-                    if (!std::isfinite(light.bounceSelf[channel]) || light.bounceSelf[channel] < 0.0 || light.bounceSelf[channel] > 1.0)
-                        Error("Bounce self channels must be finite and between 0 and 1.");
+                    if (!std::isfinite(light.bounceSelf[channel]))
+                        Error("Bounce self channels must be finite.");
             }
             else
             {

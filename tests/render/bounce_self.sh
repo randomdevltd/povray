@@ -34,6 +34,12 @@ paste none.rgb full.rgb half.rgb tint.rgb | awk '
     { for (c=1;c<=3;c++) if (abs($(c+6)-($c+$(c+3))/2)>1) exit 1;
       if (abs($10-$1)>1 || abs($11-$8)>1 || abs($12-$6)>1) exit 1 }' ||
     { echo "bounce_self: scalar and RGB shares do not scale the bounce independently" >&2; exit 1; }
+# Any finite share: 2 adds the bounce twice, -0.5 takes half of it away.
+render twice Declare=Bounce=1 Declare=Self=2 +wt3
+render minus Declare=Bounce=1 Declare=Self=-0.5 +wt3
+echo "$(sum none) $(sum full) $(sum twice) $(sum minus)" | awk '
+    { b=$2-$1; d=$3-$2-b; if (d<0) d=-d; if (!(b>0) || d>0.02*b || !($4<$1)) exit 1 }' ||
+    { echo "bounce_self: shares of 2 and -0.5 do not scale the bounce: $(sum none) $(sum full) $(sum twice) $(sum minus)" >&2; exit 1; }
 render half2 Declare=Bounce=2 Declare=Self=0.5 +wt3
 [ "$(sum half2)" -gt "$(sum half)" ] && [ "$(sum half2)" -lt "$(sum on)" ] ||
     { echo "bounce_self: a fractional share did not scale subsequent self orders" >&2; exit 1; }
@@ -95,6 +101,11 @@ surface stint Declare=Bounce=1 Declare=Tint=1 +wt3
 midpoint snone shalf sfull "a surface's scalar self share does not scale its bounce on itself"
 echo "$(sum snone) $(sum stint) $(sum sfull)" | awk '{ if (!($2 > $1 && $2 < $3)) exit 1 }' ||
     { echo "bounce_self: an RGB surface self share does not scale its bounce" >&2; exit 1; }
+surface stwice Declare=Bounce=1 Declare=Self=2 +wt3
+surface sminus Declare=Bounce=1 Declare=Self=-0.5 +wt3
+echo "$(sum snone) $(sum sfull) $(sum stwice) $(sum sminus)" | awk '
+    { b=$2-$1; d=$3-$2-b; if (d<0) d=-d; if (!(b>0) || d>0.02*b || !($4<$1)) exit 1 }' ||
+    { echo "bounce_self: a surface's shares of 2 and -0.5 do not scale its bounce: $(sum snone) $(sum sfull) $(sum stwice) $(sum sminus)" >&2; exit 1; }
 surface shalf2 Declare=Bounce=2 Declare=Self=0.5 +wt3
 [ "$(sum shalf2)" -gt "$(sum shalf)" ] && [ "$(sum shalf2)" -lt "$(sum son)" ] ||
     { echo "bounce_self: a surface's fractional share did not scale its later orders" >&2; exit 1; }
@@ -151,11 +162,11 @@ box { -1, 1 pigment { rgbt 1 } hollow
   interior { media { scattering { 1, rgb 0.5 } } light { samples 2 bounce { passes 1 self off } } } }
 EOF
 "$POVRAY" +iscene.pov4 +w8 +h8 -d -p -f > scene.log 2>&1 || { cat scene.log; echo "bounce_self: a 4.0 scene refused self off" >&2; exit 1; }
-for scale in '0.05' '<0.1,0.03,0>' 'rgb <0.1,0.03,0>' 'on' 'off'; do
+for scale in '0.05' '<0.1,0.03,0>' 'rgb <0.1,0.03,0>' 'on' 'off' '-0.5' '2' '<0,1.1,0>' 'rgb <0,-0.1,0>'; do
     sed "s/self off/self $scale/" scene.pov4 > accepting.pov4
     "$POVRAY" +iaccepting.pov4 +w8 +h8 -d -p -f > accepting.log 2>&1 || { cat accepting.log; exit 1; }
 done
-for scale in '-0.1' '1.1' '<0,1.1,0>' 'rgb <0,-0.1,0>' '1e300*1e300' '' 'passes 1' '0.5 self 0.5'; do
+for scale in '1e300*1e300' '1e300*1e300-1e300*1e300' '<0,1e300*1e300,0>' '' 'passes 1' '0.5 self 0.5'; do
     sed "s/self off/self $scale/" scene.pov4 > invalid.pov4
     "$POVRAY" +iinvalid.pov4 +w8 +h8 -d -p -f > invalid.log 2>&1 &&
         { echo "bounce_self: invalid share $scale was accepted" >&2; exit 1; }

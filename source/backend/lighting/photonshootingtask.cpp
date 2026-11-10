@@ -438,7 +438,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                         ProgressivePhotonBudget::EmissionWeight(count, pdf) : MathColour();
                 for (int channel = 0; channel < MathColour::channels; ++channel)
                     data->photonSelfShare[channel] = flux[channel] > 0.0 ?
-                        std::max(0.0, std::min(1.0, double(kept[channel] / flux[channel]))) : 1.0;
+                        double(kept[channel] / flux[channel]) : 1.0;
             }
             else if (light->selfContainer != nullptr)
             {
@@ -447,8 +447,8 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                         origin.pdf * ProgressivePhotonBudget::EmissionWeight(count, pdf) : MathColour();
                 for (int channel = 0; channel < MathColour::channels; ++channel)
                     data->photonSelfShare[channel] = flux[channel] > 0.0 ?
-                        std::max(0.0, std::min(1.0, light->selfScale[channel] +
-                            (1.0 - light->selfScale[channel]) * primary[channel] / flux[channel])) : 1.0;
+                        light->selfScale[channel] + (1.0 - light->selfScale[channel]) *
+                            std::max(0.0, std::min(1.0, double(primary[channel] / flux[channel]))) : 1.0;
             }
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
