@@ -114,7 +114,7 @@ class Lemon final : public ObjectBase
         DBL HorizontalPosition; /* horizontal position of the center of the inner circle */
         DBL VerticalPosition;   /* vertical position of the center of the inner circle */
     protected:
-        int Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersection, RenderStatistics& stats) const;
+        int Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersection, RenderStatistics& stats, bool everyRoot = false) const;
 #ifdef POV_ENABLE_LEMON_UV
         void CalcUV(const Vector3d& IPoint, Vector2d& Result) const;
 #endif // POV_ENABLE_LEMON_UV

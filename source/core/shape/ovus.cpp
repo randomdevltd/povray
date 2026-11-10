@@ -99,8 +99,14 @@ namespace pov
 void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
                                   DBL * Depth1, DBL * Depth2, DBL * Depth3,
                                   DBL * Depth4, DBL * Depth5, DBL * Depth6,
-                                  RenderStatistics& stats) const
+                                  DBL size, bool everyRoot, RenderStatistics& stats) const
 {
+    // P and the depths are in units of the ovus's own size, as are these, so every threshold below is relative to it
+    const DBL BottomRadius = this->BottomRadius / size, TopRadius = this->TopRadius / size;
+    const DBL BottomVertical = this->BottomVertical / size, TopVertical = this->TopVertical / size;
+    const DBL VerticalSpherePosition = this->VerticalSpherePosition / size, VerticalPosition = this->VerticalPosition / size;
+    const DBL HorizontalPosition = this->HorizontalPosition / size, ConnectingRadius = this->ConnectingRadius / size;
+
     DBL OCSquared, t_Closest_Approach, Half_Chord, t_Half_Chord_Squared;
     Vector3d Padj;
     Vector3d IPoint;
@@ -205,7 +211,8 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
 
     c[4] = k1 * k1 + 4.0 * R2 * (Py2 - r2);
 
-    n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG), RootTolerance, stats);
+    // order reduction drops a root near the ray's start, which is the crossing a ray starting at the surface asks for
+    n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG), everyRoot ? 0.0 : RootTolerance, stats);
     while (n--)
     {
         // here we only keep the 'lemon' inside the torus
@@ -284,9 +291,16 @@ bool Ovus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
     len = D.length();
     D /= len;
 
-    Intersect_Ovus_Spheres(P, D, &Depth1, &Depth2, &Depth3,
-                           &Depth4, &Depth5, &Depth6, Thread->Stats());
-    if (Depth1 > EPSILON)
+    // a precise boundary query places its own start, so no depth is too near to be a crossing
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+    const DBL size = fabs(BottomRadius) + fabs(TopRadius);
+    if (!(size > 0.0))
+        return false;
+    const DBL minDepth = precise ? 0.0 : EPSILON * size;
+    Intersect_Ovus_Spheres(P / size, D, &Depth1, &Depth2, &Depth3,
+                           &Depth4, &Depth5, &Depth6, size, precise, Thread->Stats());
+    Depth1 *= size; Depth2 *= size; Depth3 *= size; Depth4 *= size; Depth5 *= size; Depth6 *= size;
+    if (Depth1 > minDepth)
     {
         IPoint = P + Depth1 * D;
         if (IPoint[Y] < BottomVertical)
@@ -303,7 +317,7 @@ bool Ovus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
         }
     }
 
-    if (Depth2 > EPSILON)
+    if (Depth2 > minDepth)
     {
         IPoint = P + Depth2 * D;
 
@@ -321,7 +335,7 @@ bool Ovus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
         }
     }
 
-    if (Depth3 > EPSILON)
+    if (Depth3 > minDepth)
     {
         IPoint = P + Depth3 * D;
 
@@ -340,7 +354,7 @@ bool Ovus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
             }
         }
     }
-    if (Depth4 > EPSILON)
+    if (Depth4 > minDepth)
     {
         IPoint = P + Depth4 * D;
 
@@ -360,7 +374,7 @@ bool Ovus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
         }
     }
 
-    if (Depth5 > EPSILON)
+    if (Depth5 > minDepth)
     {
         IPoint = P + Depth5 * D;
         MTransPoint(Real_Pt, IPoint, Trans);
@@ -380,7 +394,7 @@ bool Ovus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
             Found = true;
         }
     }
-    if (Depth6 > EPSILON)
+    if (Depth6 > minDepth)
     {
         IPoint = P + Depth6 * D;
         MTransPoint(Real_Pt, IPoint, Trans);

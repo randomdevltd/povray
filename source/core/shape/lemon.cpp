@@ -115,7 +115,9 @@ bool Lemon::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 
     Intersection_Found = false;
 
-    if ((cnt = Intersect(P, D, I, Thread->Stats())) != 0)
+    // a precise boundary query places its own start, so no depth is too near to be a crossing
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
+    if ((cnt = Intersect(P, D, I, Thread->Stats(), precise)) != 0)
     {
         for (i = 0; i < cnt; i++)
         {
@@ -162,7 +164,7 @@ bool Lemon::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 *
 ******************************************************************************/
 
-int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersection, RenderStatistics& stats) const
+int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersection, RenderStatistics& stats, bool everyRoot) const
 {
     int i = 0;
     DBL a, b, c[5], r[4];
@@ -174,6 +176,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
 
     Second_Center = Vector3d(0, 0, VerticalPosition);
     r2 = Sqr(inner_radius);
+    const DBL minDepth = everyRoot ? 0.0 : DEPTH_TOLERANCE, minCapDepth = everyRoot ? 0.0 : Lemon_Tolerance;
 
     if (HorizontalPosition < -Lemon_Tolerance )
     { // use a torus
@@ -197,7 +200,8 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
 
         c[4] = k1 * k1 + 4.0 * R2 * (Pz2 - r2);
 
-        n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG), ROOT_TOLERANCE, stats);
+        // order reduction drops a root near the ray's start, which is the crossing a ray starting at the surface asks for
+        n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG), everyRoot ? 0.0 : ROOT_TOLERANCE, stats);
         while (n--)
         {
             // here we only keep the 'lemon' inside the torus
@@ -251,7 +255,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
                 Half_Chord = sqrt(t_Half_Chord_Squared);
                 // first intersection
                 Depth = t_Closest_Approach - Half_Chord;
-                if((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth))
+                if((Depth > minDepth) && IsFiniteIntersectionDepth(Depth))
                 {
 
                     Ipoint = P + Depth * D;
@@ -268,7 +272,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
                 }
                 // second intersection
                 Depth = t_Closest_Approach + Half_Chord;
-                if((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth))
+                if((Depth > minDepth) && IsFiniteIntersectionDepth(Depth))
                 {
                     Ipoint = P + Depth * D;
                     vertical = Ipoint[Z];
@@ -296,7 +300,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
 
         b = (P[Y] + d * D[Y]);
 
-        if (((Sqr(a) + Sqr(b)) <= Sqr(base_radius)) && (d > Lemon_Tolerance) && IsFiniteIntersectionDepth(d))
+        if (((Sqr(a) + Sqr(b)) <= Sqr(base_radius)) && (d > minCapDepth) && IsFiniteIntersectionDepth(d))
         {
             Intersection[i].d   = d ;
             Intersection[i].n = Vector3d(0, 0, -1);
@@ -310,7 +314,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
         b = (P[Y] + d * D[Y]);
 
         if (((Sqr(a) + Sqr(b)) <= Sqr(apex_radius))
-                && (d > Lemon_Tolerance) && IsFiniteIntersectionDepth(d))
+                && (d > minCapDepth) && IsFiniteIntersectionDepth(d))
         {
             Intersection[i].d   = d ;
             Intersection[i].n = Vector3d(0, 0, 1);
