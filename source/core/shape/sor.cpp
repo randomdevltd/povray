@@ -298,7 +298,7 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
     {
         /* Test base plane. */
 
-        if (Base_Radius_Squared > DEPTH_TOLERANCE)
+        if (Base_Radius_Squared > 0.0)
         {
             k = (Height1 - P[Y]) / D[Y];
 
@@ -323,7 +323,7 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
 
         /* Test cap plane. */
 
-        if (Cap_Radius_Squared > DEPTH_TOLERANCE)
+        if (Cap_Radius_Squared > 0.0)
         {
             k = (Height2 - P[Y]) / D[Y];
 
@@ -346,6 +346,9 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
             }
         }
     }
+
+    const DBL size = max(Radius2, Height2 - Height1);
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
 
     /* Intersect all cylindrical bounds. */
     std::vector<BCYL_INT>& intervals = Thread->BCyl_Intervals;
@@ -393,11 +396,18 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
 
         x[3] = P[Y] * (P[Y] * (Entry->A * P[Y] + Entry->B) + Entry->C) + Entry->D - P[X] * P[X] - P[Z] * P[Z];
 
-        n = Solve_Polynomial(3, x, y, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
+        // in units of the solid's own size, so the solver's coefficient thresholds are relative to it
+        x[0] *= size;
+        x[2] /= size;
+        x[3] /= size * size;
+
+        // the closed form loses the near roots of a ray almost square to the axis, whose cubic term nearly vanishes
+        const bool flat = fabs(x[0]) < 1.0e-3 * max(fabs(x[1]), max(fabs(x[2]), fabs(x[3])));
+        n = Solve_Polynomial(3, x, y, Test_Flag(this, STURM_FLAG) || precise || flat, 0.0, Thread->Stats());
 
         while (n--)
         {
-            k = y[n];
+            k = y[n] * size;
 
             h = P[Y] + k * D[Y];
 
@@ -408,7 +418,7 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
                 {
                     found = true;
 
-                    if (y[n] < best)
+                    if (k < best)
                     {
                         best = k;
                     }
@@ -1193,7 +1203,10 @@ bool Sor::test_hit(const Ray &ray, IStack& Depth_Stack, DBL d, DBL k, int t, int
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
+    // a precise boundary query places its own start, so no depth is too near to be a crossing
+    const DBL minDepth = (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary()) ? 0.0 : DEPTH_TOLERANCE;
+
+    if ((d > minDepth) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
     {
         IPoint = ray.Evaluate(d);
 
