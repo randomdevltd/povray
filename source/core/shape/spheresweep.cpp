@@ -121,6 +121,245 @@ const DBL RADIUS_TOLERANCE      = 1.0e-6;
 
 
 
+// A cubic segment is the union of the spheres |p - c(u)| <= |r(u)| for u in [0,1]; see doc/PERF.md.
+namespace
+{
+
+const int kSweepMaxRoots = 32;
+const int kSweepMaxDepth = 44;
+
+// Ascending monomial coefficients on [0,1] with the size its terms reach before they cancel.
+struct SweepPoly final
+{
+    int degree;
+    double coef[11];
+    double size;
+    double At(double u) const
+    {
+        double value = coef[degree];
+        for (int k = degree - 1; k >= 0; --k) value = value * u + coef[k];
+        return value;
+    }
+    double Slope(double u) const
+    {
+        double value = degree * coef[degree];
+        for (int k = degree - 1; k >= 1; --k) value = value * u + k * coef[k];
+        return value;
+    }
+    // Rounding of a value from these terms.
+    double Floor() const { return 64.0 * std::numeric_limits<double>::epsilon() * size; }
+};
+
+struct SweepBinomials final
+{
+    double choose[11][11];
+    SweepBinomials()
+    {
+        for (int n = 0; n <= 10; ++n)
+            for (int k = 0; k <= 10; ++k)
+                choose[n][k] = (k > n) ? 0.0 : ((k == 0 || k == n) ? 1.0 : choose[n - 1][k - 1] + choose[n - 1][k]);
+    }
+};
+const SweepBinomials sweepBinomials;
+
+void SweepBernstein(const SweepPoly& poly, double* bernstein)
+{
+    const int n = poly.degree;
+    for (int i = 0; i <= n; ++i)
+    {
+        double sum = 0.0;
+        for (int k = 0; k <= i; ++k)
+            sum += sweepBinomials.choose[i][k] / sweepBinomials.choose[n][k] * poly.coef[k];
+        bernstein[i] = sum;
+    }
+}
+
+void SweepSplit(const double* bernstein, int n, double* left, double* right)
+{
+    double work[11];
+    for (int i = 0; i <= n; ++i) work[i] = bernstein[i];
+    for (int level = 0; level <= n; ++level)
+    {
+        left[level] = work[0];
+        right[n - level] = work[n - level];
+        for (int i = 0; i < n - level; ++i) work[i] = 0.5 * (work[i] + work[i + 1]);
+    }
+}
+
+// Every root of poly in [lo,hi], given its Bernstein form there. A span whose control values change sign once holds one
+// root; more changes split it; values within rounding of zero carry no sign, and a middle value there is itself a root.
+void SweepRoots(const SweepPoly& poly, const double* bernstein, double lo, double hi, int depth, double* roots, int& count)
+{
+    const int n = poly.degree;
+    const double floor = poly.Floor();
+    int changes = 0, last = 0;
+    for (int i = 0; i <= n; ++i)
+    {
+        const int sign = (bernstein[i] > floor) ? 1 : ((bernstein[i] < -floor) ? -1 : 0);
+        if (sign == 0) continue;
+        if (last != 0 && sign != last) ++changes;
+        last = sign;
+    }
+    if (changes == 0 || count >= kSweepMaxRoots) return;
+    if (changes == 1 && std::abs(bernstein[0]) > floor && std::abs(bernstein[n]) > floor)
+    {
+        double a = lo, b = hi, u = 0.5 * (lo + hi);
+        const bool rising = bernstein[0] < 0.0;
+        for (int step = 0; step < 200 && b > a; ++step)
+        {
+            const double value = poly.At(u);
+            if (std::abs(value) <= floor) break;
+            if ((value > 0.0) == rising) b = u; else a = u;
+            const double slope = poly.Slope(u);
+            double next = (slope != 0.0) ? u - value / slope : a;
+            if (!(next > a && next < b)) next = 0.5 * (a + b);
+            if (next == u || !(next > a && next < b)) break;
+            u = next;
+        }
+        roots[count++] = u;
+        return;
+    }
+    const double middle = 0.5 * (lo + hi);
+    if (depth >= kSweepMaxDepth)
+    {
+        roots[count++] = middle;
+        return;
+    }
+    double left[11], right[11];
+    SweepSplit(bernstein, n, left, right);
+    SweepRoots(poly, left, lo, middle, depth + 1, roots, count);
+    if (std::abs(right[0]) <= floor && count < kSweepMaxRoots) roots[count++] = middle;
+    SweepRoots(poly, right, middle, hi, depth + 1, roots, count);
+}
+
+int SweepRoots(const SweepPoly& poly, double* roots)
+{
+    double bernstein[11];
+    int count = 0;
+    SweepBernstein(poly, bernstein);
+    SweepRoots(poly, bernstein, 0.0, 1.0, 0, roots, count);
+    return count;
+}
+
+// Whether poly reaches zero or below in the span of its Bernstein form.
+bool SweepReachesZero(const double* bernstein, int n, int depth)
+{
+    if (bernstein[0] <= 0.0 || bernstein[n] <= 0.0) return true;
+    bool below = false;
+    for (int i = 1; i < n; ++i) below = below || (bernstein[i] <= 0.0);
+    if (!below || depth >= kSweepMaxDepth) return false;
+    double left[11], right[11];
+    SweepSplit(bernstein, n, left, right);
+    return SweepReachesZero(left, n, depth + 1) || SweepReachesZero(right, n, depth + 1);
+}
+
+// |centre(u) - from|^2 - radius(u)^2 with `along` projected out of the offset when given.
+SweepPoly SweepDistance(const SPHSWEEP_SEG& segment, const Vector3d& from, const Vector3d* along, SweepPoly* depth)
+{
+    Vector3d offset[4];
+    double length[4];
+    SweepPoly result;
+    result.degree = 6;
+    result.size = 0.0;
+    if (depth != nullptr) { depth->degree = 3; depth->size = 0.0; }
+    for (int k = 0; k < 4; ++k)
+    {
+        offset[k] = (k == 0) ? segment.Center_Coef[0] - from : segment.Center_Coef[k];
+        if (along != nullptr)
+        {
+            const double part = dot(offset[k], *along);
+            offset[k] -= *along * part;
+            depth->coef[k] = part;
+            depth->size += std::abs(part);
+        }
+        length[k] = offset[k].length();
+    }
+    for (int m = 0; m <= 6; ++m) result.coef[m] = 0.0;
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+        {
+            result.coef[i + j] += dot(offset[i], offset[j]) - segment.Radius_Coef[i] * segment.Radius_Coef[j];
+            result.size += length[i] * length[j] + std::abs(segment.Radius_Coef[i] * segment.Radius_Coef[j]);
+        }
+    return result;
+}
+
+struct SweepSpan final
+{
+    double enter, leave, enterU, leaveU;
+    int enterSegment, leaveSegment;
+};
+
+// The stretches of the ray inside one cubic segment. Sphere u covers depth(u) -+ sqrt(-gap(u)) where the ray passes
+// within its radius; over each stretch of u where it does, those intervals join into one, from the least entry to the
+// greatest exit, both among the ends of the stretch and the roots of 4 depth'^2 gap + gap'^2.
+int SweepSegmentSpans(const BasicRay& ray, const SPHSWEEP_SEG& segment, int index, SweepSpan* spans)
+{
+    Vector3d middle = segment.Center_Coef[0];
+    for (int k = 1; k < 4; ++k) middle += segment.Center_Coef[k] * std::ldexp(1.0, -k);
+    const double base = dot(middle - ray.Origin, ray.Direction);
+    const Vector3d near = ray.Origin + ray.Direction * base;
+    SweepPoly depth;
+    const SweepPoly gap = SweepDistance(segment, near, &ray.Direction, &depth);
+    double breaks[kSweepMaxRoots + 2];
+    int count = SweepRoots(gap, breaks + 1);
+    if (count == 0 && !(gap.At(0.5) < 0.0)) return 0;
+    std::sort(breaks + 1, breaks + 1 + count);
+    breaks[0] = 0.0;
+    breaks[count + 1] = 1.0;
+
+    // 4 depth'^2 gap + gap'^2, whose roots are where an entry or an exit depth is stationary
+    SweepPoly turn;
+    turn.degree = 10;
+    turn.size = 0.0;
+    for (int m = 0; m <= 10; ++m) turn.coef[m] = 0.0;
+    double slope[3], square[5] = {0.0, 0.0, 0.0, 0.0, 0.0}, squareSize = 0.0, gapSlope[6];
+    for (int k = 0; k < 3; ++k) slope[k] = (k + 1) * depth.coef[k + 1];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+        {
+            square[i + j] += slope[i] * slope[j];
+            squareSize += std::abs(slope[i] * slope[j]);
+        }
+    for (int k = 0; k < 6; ++k) gapSlope[k] = (k + 1) * gap.coef[k + 1];
+    for (int i = 0; i < 5; ++i)
+        for (int j = 0; j <= 6; ++j)
+            turn.coef[i + j] += 4.0 * square[i] * gap.coef[j];
+    for (int i = 0; i < 6; ++i)
+        for (int j = 0; j < 6; ++j)
+            turn.coef[i + j] += gapSlope[i] * gapSlope[j];
+    turn.size = 4.0 * squareSize * gap.size + Sqr(6.0 * gap.size);
+    double turns[kSweepMaxRoots];
+    int turnCount = -1;
+
+    int found = 0;
+    for (int piece = 0; piece <= count; ++piece)
+    {
+        const double lo = breaks[piece], hi = breaks[piece + 1];
+        if (!(hi > lo) || !(gap.At(0.5 * (lo + hi)) < 0.0)) continue;
+        if (turnCount < 0) turnCount = SweepRoots(turn, turns);
+        SweepSpan span = {HUGE_VAL, -HUGE_VAL, lo, lo, index, index};
+        auto offer = [&](double u)
+        {
+            const double reach = std::sqrt(std::max(0.0, -gap.At(u))), centre = depth.At(u);
+            if (centre - reach < span.enter) { span.enter = centre - reach; span.enterU = u; }
+            if (centre + reach > span.leave) { span.leave = centre + reach; span.leaveU = u; }
+        };
+        offer(lo);
+        offer(hi);
+        for (int k = 0; k < turnCount; ++k)
+            if (turns[k] > lo && turns[k] < hi) offer(turns[k]);
+        if (!(span.leave > span.enter)) continue;
+        span.enter += base;
+        span.leave += base;
+        spans[found++] = span;
+    }
+    return found;
+}
+
+}
+// end of anonymous namespace
+
 // Precise linear sweeps are convex hulls of their two endpoint balls; see doc/PERF.md.
 static int IntersectPreciseLinearSweep(const BasicRay& ray, const SPHSWEEP_SEG& segment, SPHSWEEP_INT* intersections)
 {
@@ -273,7 +512,57 @@ bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceTh
         New_Ray.Direction /= len;
     }
 
-    const bool preciseLinear = Interpolation == LINEAR_SPHERE_SWEEP && Num_Segments > 0 &&
+    if (Interpolation != LINEAR_SPHERE_SWEEP)
+    {
+        // The ray's stretches inside each segment, joined where they overlap; each joined stretch enters and leaves once.
+        static thread_local std::vector<SweepSpan> spans;
+        spans.resize(size_t(Num_Segments) * (kSweepMaxRoots + 1));
+        int count = 0;
+        for (i = 0; i < Num_Segments; i++)
+            count += SweepSegmentSpans(New_Ray, Segment[i], i, spans.data() + count);
+        std::sort(spans.begin(), spans.begin() + count, [](const SweepSpan& a, const SweepSpan& b) { return a.enter < b.enter; });
+        auto push = [&](double depth, int segment, double u, bool leaving)
+        {
+            const SPHSWEEP_SEG& part = Segment[segment];
+            Vector3d point = New_Ray.Evaluate(depth);
+            Vector3d centre = part.Center_Coef[3];
+            for (int k = 2; k >= 0; --k) centre = centre * u + part.Center_Coef[k];
+            Vector3d normal = point - centre;
+            const double length = normal.length();
+            if (length > 0.0) normal /= length;
+            else normal = leaving ? New_Ray.Direction : -New_Ray.Direction;
+            if (Trans != nullptr)
+            {
+                depth /= len;
+                MTransPoint(point, point, Trans);
+                MTransNormal(normal, normal, Trans);
+                normal.normalize();
+            }
+            if ((depth > Depth_Tolerance) && (Clip.empty() || Point_In_Clip(point, Clip, Thread)))
+            {
+                Depth_Stack->push(Intersection(depth, point, normal, this));
+                Intersection_Found = true;
+            }
+        };
+        for (i = 0; i < count; )
+        {
+            SweepSpan run = spans[i];
+            for (++i; i < count && spans[i].enter <= run.leave; ++i)
+                if (spans[i].leave > run.leave)
+                {
+                    run.leave = spans[i].leave;
+                    run.leaveU = spans[i].leaveU;
+                    run.leaveSegment = spans[i].leaveSegment;
+                }
+            push(run.enter, run.enterSegment, run.enterU, false);
+            push(run.leave, run.leaveSegment, run.leaveU, true);
+        }
+        if (Intersection_Found)
+            Thread->Stats()[Ray_Sphere_Sweep_Tests_Succeeded]++;
+        return Intersection_Found;
+    }
+
+    const bool preciseLinear = Num_Segments > 0 &&
         ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
     // Intersections with single spheres
     for(i = 0; !preciseLinear && i < Num_Spheres; i++)
@@ -484,9 +773,9 @@ int SphereSweep::Intersect_Segment(const BasicRay &ray, const SPHSWEEP_SEG *Segm
     Vector3d        DCenter;
     DBL             DCenterDot;
     DBL             temp;
-    DBL             b, c, d, e, f, g, h, i, j, k, l;
-    DBL             Coef[11];
-    DBL             Root[10];
+    DBL             b, c, d, e, f;
+    DBL             Coef[3];
+    DBL             Root[2];
     int             Num_Poly_Roots, m, n;
     DBL             fp0, fp1;
     DBL             t;
@@ -600,82 +889,6 @@ int SphereSweep::Intersect_Segment(const BasicRay &ray, const SPHSWEEP_SEG *Segm
             Num_Poly_Roots = Solve_Polynomial(2, Coef, Root, true, 1e-10, stats);
             break;
 
-        case 4:   // Third order polynomial
-
-            Vector = ray.Origin - Segment->Center_Coef[0];
-
-            // a is always 1.0
-
-            b = -2.0 * dot(Segment->Center_Coef[3], ray.Direction);
-
-            c = -2.0 * dot(Segment->Center_Coef[2], ray.Direction);
-
-            d = -2.0 * dot(Segment->Center_Coef[1], ray.Direction);
-
-            e =  2.0 * dot(Vector, ray.Direction);
-
-            f = Segment->Center_Coef[3].lengthSqr();
-            f -= Sqr(Segment->Radius_Coef[3]);
-
-            g = dot(Segment->Center_Coef[3], Segment->Center_Coef[2]);
-            g -= Segment->Radius_Coef[3] * Segment->Radius_Coef[2];
-            g *= 2.0;
-
-            h = dot(Segment->Center_Coef[3], Segment->Center_Coef[1]);
-            h *= 2.0;
-            temp = dot(Segment->Center_Coef[2], Segment->Center_Coef[2]);
-            h += temp;
-            h -= 2.0 * Segment->Radius_Coef[3] * Segment->Radius_Coef[1];
-            h -= Sqr(Segment->Radius_Coef[2]);
-
-            i = dot(Segment->Center_Coef[3], Vector);
-            temp = dot(Segment->Center_Coef[2], Segment->Center_Coef[1]);
-            i -= temp;
-            i += Segment->Radius_Coef[3] * Segment->Radius_Coef[0];
-            i += Segment->Radius_Coef[2] * Segment->Radius_Coef[1];
-            i *= -2.0;
-
-            j = dot(Segment->Center_Coef[2], Vector);
-            j += Segment->Radius_Coef[2] * Segment->Radius_Coef[0];
-            j *= -2.0;
-            temp = dot(Segment->Center_Coef[1], Segment->Center_Coef[1]);
-            j += temp;
-            j -= Sqr(Segment->Radius_Coef[1]);
-
-            k = dot(Segment->Center_Coef[1], Vector);
-            k += Segment->Radius_Coef[1] * Segment->Radius_Coef[0];
-            k *= -2.0;
-
-            l = Vector.lengthSqr();
-            l -= Sqr(Segment->Radius_Coef[0]);
-
-            Coef[0] = 36.0 * Sqr(f) - 9.0 * f * Sqr(b);
-            Coef[1] = 60.0 * f * g - 6.0 * g * Sqr(b) - 18.0 * b * c * f;
-            Coef[2] = 48.0 * f * h + 25.0 * Sqr(g) - 3.0 * h * Sqr(b)
-                    - 13.0 * b * c * g - 8.0 * f * Sqr(c) - 18.0 * b * d * f;
-            Coef[3] = 36.0 * f * i + 40.0 * g * h - 18.0 * b * f * e - 8.0 * b * c * h
-                    - 6.0 * g * Sqr(c) - 14.0 * b * d * g - 14.0 * c * d * f;
-            Coef[4] = 24.0 * f * j + 30.0 * g * i + 16.0 * Sqr(h) - 15.0 * b * g * e
-                    - 12.0 * c * f * e + 3.0 * j * Sqr(b) - 3.0 * b * c * i - 4.0 * h * Sqr(c)
-                    - 10.0 * b * d * h - 11.0 * c * d * g - 5.0 * f * Sqr(d);
-            Coef[5] = 12.0 * f * k + 20.0 * g * j + 24.0 * h * i - 12.0 * b * h * e
-                    - 10.0 * c * g * e - 6.0 * d * f * e + 6.0 * k * Sqr(b) + 2.0 * b * c * j
-                    - 2.0 * i * Sqr(c) - 6.0 * b * d * i - 8.0 * c * d * h - 4.0 * g * Sqr(d);
-            Coef[6] = 10.0 * g * k + 16.0 * h * j + 9.0 * Sqr(i) - 9.0 * b * i * e
-                    - 8.0 * c * h * e - 5.0 * d * g * e + 9.0 * l * Sqr(b) + 7.0 * b * c * k
-                    - 2.0 * b * d * j - 5.0 * c * d * i - 3.0 * h * Sqr(d);
-            Coef[7] = 8.0 * h * k + 12.0 * i * j - 6.0 * b * j * e - 6.0 * c * i * e
-                    - 4.0 * d * h * e + 12.0 * b * c * l + 2.0 * k * Sqr(c) + 2.0 * b * d * k
-                    - 2.0 * c * d * j - 2.0 * i * Sqr(d);
-            Coef[8] = 6.0 * i * k + 4.0 * Sqr(j) - 3.0 * b * k * e - 4.0 * c * j * e
-                    - 3.0 * d * i * e + 4.0 * l * Sqr(c) + 6.0 * b * d * l
-                    + c * d * k - j * Sqr(d);
-            Coef[9] = 4.0 * j * k - 2.0 * c * k * e - 2.0 * d * j * e + 4.0 * c * d * l;
-            Coef[10] = Sqr(k) - d * k * e + l * Sqr(d);
-
-            Num_Poly_Roots = bezier_01(10, Coef, Root, true, 1e-10, stats);
-            break;
-
         default:
             POV_SHAPE_ASSERT(false);
             break;
@@ -720,19 +933,6 @@ int SphereSweep::Intersect_Segment(const BasicRay &ray, const SPHSWEEP_SEG *Segm
                 fp0 = 2.0 * d * Root[m]
                     + e;
                 fp1 = b;
-                break;
-
-            case 4:
-
-                fp0 = 6.0 * f * Root[m] * Root[m] * Root[m] * Root[m] * Root[m]
-                    + 5.0 * g * Root[m] * Root[m] * Root[m] * Root[m]
-                    + 4.0 * h * Root[m] * Root[m] * Root[m]
-                    + 3.0 * i * Root[m] * Root[m]
-                    + 2.0 * j * Root[m]
-                    + k;
-                fp1 = 3.0 * b * Root[m] * Root[m]
-                    + 2.0 * c * Root[m]
-                    + d;
                 break;
 
             default:
@@ -822,8 +1022,8 @@ bool SphereSweep::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     int     i, j;
     Vector3d    Vector;
     DBL     temp;
-    DBL     Coef[7];
-    DBL     Root[6];
+    DBL     Coef[3];
+    DBL     Root[2];
     int     Num_Poly_Roots;
 
     inside = false;
@@ -874,77 +1074,13 @@ bool SphereSweep::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
             break;
         case CATMULL_ROM_SPLINE_SPHERE_SWEEP:
         case B_SPLINE_SPHERE_SWEEP:
-            // For each segment...
-            for(i = 0; i < Num_Segments; i++)
+            // Inside where some sphere of a segment holds the point: its squared distance less radius reaches zero.
+            for(i = 0; !inside && i < Num_Segments; i++)
             {
-                // Pre-calculate vector
-                Vector = New_Point - Segment[i].Center_Coef[0];
-
-                // Coefficient for u^6
-                Coef[0] = Segment[i].Center_Coef[3].lengthSqr();
-                Coef[0] -= Sqr(Segment[i].Radius_Coef[3]);
-
-                // Coefficient for u^5
-                Coef[1] = dot(Segment[i].Center_Coef[3],
-                              Segment[i].Center_Coef[2]);
-                Coef[1] -= Segment[i].Radius_Coef[3]
-                         * Segment[i].Radius_Coef[2];
-                Coef[1] *= 2.0;
-
-                // Coefficient for u^4
-                Coef[2] = dot(Segment[i].Center_Coef[3],
-                              Segment[i].Center_Coef[1]);
-                Coef[2] *= 2.0;
-                temp = Segment[i].Center_Coef[2].lengthSqr();
-                Coef[2] += temp;
-                Coef[2] -= 2.0 * Segment[i].Radius_Coef[3]
-                               * Segment[i].Radius_Coef[1];
-                Coef[2] -= Sqr(Segment[i].Radius_Coef[2]);
-
-                // Coefficient for u^3
-                Coef[3] = dot(Segment[i].Center_Coef[3], Vector);
-                temp = dot(Segment[i].Center_Coef[2],
-                           Segment[i].Center_Coef[1]);
-                Coef[3] -= temp;
-                Coef[3] += Segment[i].Radius_Coef[3]
-                         * Segment[i].Radius_Coef[0];
-                Coef[3] += Segment[i].Radius_Coef[2]
-                         * Segment[i].Radius_Coef[1];
-                Coef[3] *= -2.0;
-
-                // Coefficient for u^2
-                Coef[4] = dot(Segment[i].Center_Coef[2], Vector);
-                Coef[4] += Segment[i].Radius_Coef[2]
-                         * Segment[i].Radius_Coef[0];
-                Coef[4] *= -2.0;
-                temp = Segment[i].Center_Coef[1].lengthSqr();
-                Coef[4] += temp;
-                Coef[4] -= Sqr(Segment[i].Radius_Coef[1]);
-
-                // Coefficient for u^1
-                Coef[5] = dot(Segment[i].Center_Coef[1], Vector);
-                Coef[5] += Segment[i].Radius_Coef[1]
-                         * Segment[i].Radius_Coef[0];
-                Coef[5] *= -2.0;
-
-                // Coefficient for u^0
-                Coef[6] = Vector.lengthSqr();
-                Coef[6] -= Sqr(Segment[i].Radius_Coef[0]);
-
-                // Find roots
-                Num_Poly_Roots = bezier_01(6, Coef, Root, true, 1e-10, Thread->Stats());
-
-                // Test for interval [0, 1]
-                for(j = 0; j < Num_Poly_Roots; j++)
-                {
-                    if(Root[j] >= 0.0 && Root[j] <= 1.0)
-                    {
-                        // At least one root inside interval,
-                        // so we are inside the sphere sweep
-                        inside = true;
-                        break;
-                    }
-                }
+                double bernstein[11];
+                const SweepPoly gap = SweepDistance(Segment[i], New_Point, nullptr, nullptr);
+                SweepBernstein(gap, bernstein);
+                inside = SweepReachesZero(bernstein, gap.degree, 0);
             }
             break;
     }
@@ -1836,66 +1972,6 @@ int SphereSweep::Comp_Isects(const void *Intersection_1, const void *Intersectio
         return 0;
     else
         return 1;
-}
-
-
-
-/*****************************************************************************
-*
-* FUNCTION
-*
-*   bezier_01
-*
-* INPUT
-*
-* OUTPUT
-*
-* RETURNS
-*
-* AUTHOR
-*
-*   Massimo Valentini
-*
-* DESCRIPTION
-*
-*   Optimization to exclude the presence of a root of a polynomial in (0 1).
-*   The rendering time decreases impressively.
-*
-* CHANGES
-*
-*   -
-*
-******************************************************************************/
-
-const int lcm_bezier_01[] =
-{
-    60,  10,  4,  3,  4, 10, 60,
-    2520, 252, 56, 21, 12, 10, 12, 21, 56, 252, 2520
-};
-
-int SphereSweep::bezier_01(int degree, const DBL* Coef, DBL* Roots, bool sturm, DBL tolerance, RenderStatistics& stats)
-{
-    DBL d[11];
-    bool non_negative = true, non_positive = true;
-    int i, j;
-    const int *lcm = &(lcm_bezier_01[degree == 6 ? 0 : 7]);
-
-    for(i = 0; i <= degree; ++i)
-        d[i] = Coef[i] * lcm[i];
-
-    for(i = 0; i <= degree; ++i)
-    {
-        non_negative = (non_negative && (d[degree - i] >= 0));
-        non_positive = (non_positive && (d[degree - i] <= 0));
-
-        if(!(non_negative || non_positive))
-            return Solve_Polynomial(degree, Coef, Roots, sturm, tolerance, stats);
-
-        for(j = 0; j < degree - i; ++j)
-            d[j] += d[j+1];
-    }
-
-    return 0;
 }
 
 }
