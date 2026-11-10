@@ -174,8 +174,9 @@ and a bounce block accepts only one `passes` setting.
 
 `bounce { self 0.05 }` retains five percent of the bounce on its own media.
 A scalar or RGB vector (`self <0.1, 0.03, 0>` or `self rgb <0.1, 0.03, 0>`)
-sets a finite fraction from 0 to 1 in every channel. Values outside this range
-are errors. The default is `on` (1); `off` is 0. `self` may appear at most once.
+sets the share in every channel, as any finite value: above 1 amplifies the bounce
+on its own object, below 0 subtracts it. Only a value that is not finite is an
+error. The default is `on` (1); `off` is 0. `self` may appear at most once.
 `bounce { self off }` keeps an interior light's
 bounced light off its own container's media, at the camera and in its own next
 pass, while it still lights surfaces and other media; the medium's own emission

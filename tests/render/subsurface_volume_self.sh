@@ -19,6 +19,10 @@ render on Declare=Bounce=1
 render quarter Declare=Bounce=1 Declare=Self=0.25
 render half Declare=Bounce=1 Declare=Self=0.5
 render most Declare=Bounce=1 Declare=Self=0.75
+render twice Declare=Bounce=1 Declare=Self=2
+render minus Declare=Bounce=1 Declare=Self=-0.5
+echo "$(sum none) $(sum on) $(sum twice) $(sum minus)" | awk '{ exit !($3 > $2 && $4 < $1) }' ||
+    { echo "subsurface_volume_self: shares of 2 and -0.5 do not scale the bounce: $(sum none) $(sum on) $(sum twice) $(sum minus)"; exit 1; }
 # Shares strictly between 0 and 1 draw alike, so the image is linear in the share up to clipped pixels; the rest differ
 # by noise only.
 echo "$(sum none) $(sum off) $(sum on) $(sum quarter) $(sum half) $(sum most)" | awk '
