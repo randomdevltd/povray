@@ -33,6 +33,15 @@ if "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_hosts.pov" +w4 +h3 -a -
 fi
 grep -q "lies within the subsurface mesh at line .* a mesh with an open border" open.log ||
     { echo "case 20 (open mesh claiming the light) failed without naming the mesh"; cat open.log; exit 1; }
+# A host whose surface is open or clipped (open cylinder, clipped_by, height_field, open sor) claims the light by its
+# inside test but cannot enclose it: the parse stops and names it.
+for case in 30 31 32 33; do
+    if "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_hosts.pov" +w4 +h3 -a -d -p -v -gp -f Declare=Case=$case >open.log 2>&1; then
+        echo "case $case (open or clipped host) rendered instead of failing"; cat open.log; exit 1
+    fi
+    grep -q "lies within the subsurface .* at line .* which cannot enclose it" open.log ||
+        { echo "case $case (open or clipped host) failed without naming the host"; cat open.log; exit 1; }
+done
 for sss in 1 0; do
     if "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_hosts.pov" +w4 +h3 -a -d -p -v -gp -f Declare=Case=22 Declare=Sss=$sss \
         >disc.log 2>&1; then echo "case 22 (light block on a disc, Sss=$sss) rendered instead of failing"; cat disc.log; exit 1; fi

@@ -138,4 +138,17 @@ light_source { <0.05,0.08,-0.06>*S rgb 0.4 }
 #case (28) // lemon
  lemon { -0.014*y,0.004, 0.014*y,0.004, 0.02 Host(Wax) scale S } box { -0.002,0.002 Lamp(1) scale S }
 #break
+#case (30) // hosts whose surface is open or clipped claim the light by their inside test and cannot enclose it
+ cylinder { -0.012*x,0.012*x,0.008 open Host(Wax) scale S } box { -0.002,0.002 Lamp(1) scale S }
+#break
+#case (31)
+ sphere { 0,0.012 clipped_by { plane { y,0.004 } } Host(Wax) scale S } box { -0.002,0.002 Lamp(1) scale S }
+#break
+#case (32)
+ height_field { function 32,32 { 0.5+0.4*sin(x*9)*cos(y*7) } translate <-0.5,-0.5,-0.5> scale <0.03,0.014,0.02> Host(Wax) scale S }
+ box { -0.002,0.002 translate -0.004*y Lamp(1) scale S }
+#break
+#case (33)
+ sor { 5, <0.004,-0.016>,<0.008,-0.012>,<0.004,0>,<0.009,0.01>,<0.002,0.014> open Host(Wax) scale S } box { -0.002,0.002 Lamp(1) scale S }
+#break
 #end
