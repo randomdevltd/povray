@@ -14,6 +14,17 @@ struct Messages : pov_base::GenericMessenger
 };
 int main()
 {
+    const std::vector<double> masses{0.0, 1.0, 9.0};
+    const auto first = surface_refine::ChooseSource(masses, 0.1);
+    const auto middle = surface_refine::ChooseSource(masses, 0.3);
+    const auto last = surface_refine::ChooseSource(masses, std::nextafter(1.0, 0.0));
+    assert(first.index == 0 && std::abs(first.probability - 1.0 / 6.0) < 1e-15);
+    assert(middle.index == 1 && std::abs(middle.probability - (1.0 / 6.0 + 0.05)) < 1e-15);
+    assert(last.index == 2 && std::abs(last.probability - (1.0 / 6.0 + 0.45)) < 1e-15);
+    const auto dark = surface_refine::ChooseSource({0.0, 0.0}, 0.75);
+    const auto overflow = surface_refine::ChooseSource({HUGE_VAL, 1.0}, 0.75);
+    assert(dark.index == 1 && dark.probability == 0.5);
+    assert(overflow.index == 1 && overflow.probability == 0.5);
     Initialize_Noise();
     auto scene = std::make_shared<SceneData>();
     assert(scene->surfaceDomainCells == 4096.0);
@@ -42,7 +53,7 @@ int main()
     scene->workThreads = 2;
     bounce_prepare::Workers workers(scene, &thread);
     progress.Begin("bounce", 1);
-    workers.For(5, [] {}, [](std::size_t, std::size_t) {}, 0); // previously invisible resampling
+    workers.For(5, [] {}, [](std::size_t, std::size_t) {}, 0); // discovered work without prepaid units
     progress.Poll();
     assert(messages.lines.back().find("bounce 5/6") != std::string::npos);
     workers.For(3, [] {}, [](std::size_t, std::size_t) {}, 1); // every completed item advances
@@ -50,5 +61,5 @@ int main()
     assert(messages.lines.back().find("bounce 8/8") != std::string::npos);
     progress.End();
     thread.preparationProgress = nullptr;
-    std::cout << "Surface preparation counts resampling and identifies stalled gathers\n";
+    std::cout << "Surface preparation counts discovered work and identifies stalled gathers\n";
 }

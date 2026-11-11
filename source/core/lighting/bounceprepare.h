@@ -578,6 +578,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             part.owner = const_cast<ObjectPtr>(owner);
             part.budget = std::size_t(light->sourceDomainCells > 0.0 ? light->sourceDomainCells : scene->surfaceDomainCells);
             part.fields = std::uint64_t(target.passes) + unsigned(internalPrimary);
+            part.samples = unsigned(std::max(1, owner->surfaceLight->samples));
             part.sampler = std::make_shared<const SurfaceGeometrySampler>(part.owner);
             if (!part.sampler->IsValid())
                 throw std::invalid_argument("Surface bounce requires finite surface geometry");

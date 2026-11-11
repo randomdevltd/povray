@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <stdexcept>
@@ -35,10 +36,6 @@ namespace surface_refine
 constexpr std::size_t kBaseline = 4096;      // level 0 nodes per light
 constexpr unsigned kLevels = 6;              // the finest spacing is the baseline's over 2^kLevels
 constexpr double kTolerance = 0.1;           // relative error of local irradiance that splits a node
-constexpr unsigned kFirstDraws = 4;          // draws a node starts with, the node itself first
-constexpr unsigned kTrusted = 8;             // fewest draws whose spread is trusted as the node's error
-constexpr unsigned kMostNodeDraws = 64;      // draws a node may grow to while its verdict or value is uncertain
-constexpr double kNeededDraws = 4.0;         // most draws over those its own variance needs to resolve the tolerance
 constexpr unsigned kChildDraws = 16;         // surface draws about a split node that may become its children
 constexpr unsigned kAreaDraws = 64;          // surface draws about a split node that share its area among it and them
 constexpr double kCoverStep = 1.0e-6;        // distance, over its part's radius, within which another surface seals a point
@@ -105,6 +102,7 @@ struct Part final
     double area = 0.0, spacing = 0.0;
     std::size_t budget = 0, remaining = 0;
     std::uint64_t fields = 1;
+    unsigned samples = 1;
     std::size_t draws = 0;
     std::vector<SurfaceGeometrySample> pool;
     std::vector<std::size_t> seeds;
@@ -116,6 +114,29 @@ struct Part final
     }
 };
 
+struct SourceChoice final
+{
+    std::size_t index;
+    double probability;
+};
+
+// Half the proposal stays uniform so a zero power estimate never hides a source.
+inline SourceChoice ChooseSource(const std::vector<double>& masses, double draw)
+{
+    if (masses.empty()) throw std::logic_error("Surface source selection requires at least one light");
+    const double total = std::accumulate(masses.begin(), masses.end(), 0.0);
+    const double uniform = 1.0 / masses.size();
+    const bool weighted = total > 0.0 && std::isfinite(total);
+    double cumulative = 0.0;
+    for (std::size_t i = 0; i < masses.size(); ++i)
+    {
+        const double probability = weighted ? 0.5 * (uniform + masses[i] / total) : uniform;
+        cumulative += probability;
+        if (draw < cumulative || i + 1 == masses.size()) return {i, probability};
+    }
+    throw std::logic_error("Surface source selection requires at least one light");
+}
+
 struct Node final
 {
     Intersection hit;
@@ -124,7 +145,7 @@ struct Node final
     unsigned level = 0;
     std::uint32_t part = 0;
     std::uint64_t key = 0;
-    unsigned draws = 0, samples = 0;
+    unsigned samples = 0;
     std::vector<MathColour> sums;
     MathColour entry;
     double eta = 1.0;
@@ -132,7 +153,7 @@ struct Node final
     double half[2][2][3] = {};
     void Reset()
     {
-        draws = samples = 0;
+        samples = 0;
         sums.assign(sums.size(), MathColour());
         entry = MathColour();
         eta = 1.0;
@@ -377,18 +398,10 @@ public:
             Measure(fresh, share);
             Index();
             std::vector<Verdict> verdicts(nodes.size());
-            for (;;)
+            workers.For(fresh.size(), cooperate, [&](std::size_t i, std::size_t)
             {
-                std::vector<std::size_t> again;
-                workers.For(fresh.size(), cooperate, [&](std::size_t i, std::size_t)
-                {
-                    verdicts[fresh[i]] = Decide(fresh[i]);
-                }, 0);
-                for (std::size_t i : fresh)
-                    if (verdicts[i].resample) again.push_back(i);
-                if (again.empty()) break;
-                Measure(again, 0, true);
-            }
+                verdicts[fresh[i]] = Decide(fresh[i]);
+            }, 0);
             if (level == kLevels) break;
             std::vector<std::size_t> split;
             for (std::size_t i : fresh)
@@ -421,17 +434,18 @@ public:
     const std::size_t* Reasons() const { return reasons; }
 
 private:
-    struct Verdict final { bool split = false, resample = false; double priority = 0.0; unsigned why = 0; };
+    struct Verdict final { bool split = false; double priority = 0.0; unsigned why = 0; };
 
     double Spacing(unsigned l, std::size_t p) const { return std::ldexp(parts[active[p]].spacing, -int(l)); }
 
-    void Measure(const std::vector<std::size_t>& which, std::size_t progress, bool more = false)
+    void Measure(const std::vector<std::size_t>& which, std::size_t progress)
     {
         workers.For(which.size(), cooperate, [&](std::size_t i, std::size_t worker)
         {
             Node& node = nodes[which[i]];
             workers[worker].Watch(node.hit.Object);
-            Sample(node, more ? std::min(2 * node.draws, kMostNodeDraws) : kFirstDraws, worker);
+            const unsigned maximum = parts[active[node.part]].samples;
+            Sample(node, maximum, worker);
         }, progress);
     }
 
@@ -442,8 +456,7 @@ private:
         const Part& part = parts[active[node.part]];
         TraceThreadData* const td = workers.Thread(worker);
         const double radius = 0.5 * Spacing(node.level, node.part);
-        const unsigned first = node.draws;
-        for (unsigned j = first; j < last; ++j)
+        for (unsigned j = 0; j < last; ++j)
         {
             double x = 0.0, y = 0.0;
             SurfaceGeometrySample origin;
@@ -459,9 +472,8 @@ private:
             const Intersection& at = j > 0 ? origin.intersection : node.hit;
             const Vector3d& normal = j > 0 ? origin.normal : node.normal;
             const Sources& gathered = sources[node.part];
-            auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, gathered.lights, 1,
-                                               BounceOrderSeed(node.key, order, j, 0), &at, &normal, 0.0,
-                                               gathered.scales.empty() ? nullptr : &gathered.scales);
+            auto beams = Incident(workers[worker].trace, at, normal, gathered,
+                                  BounceOrderSeed(node.key, order, j, 0));
             if (subsurface)
             {
                 node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{at, normal, 0.0}, beams, 0, node.eta, 2.0 * radius);
@@ -491,7 +503,33 @@ private:
                 h[2] += scalar * scalar;
             }
         }
-        node.draws = last;
+    }
+
+    std::vector<BounceIncidentBeam> Incident(Trace& trace, const Intersection& at, const Vector3d& normal,
+                                             const Sources& gathered, std::uint64_t key) const
+    {
+        if (gathered.lights.size() < 2)
+            return CollectBounceIncident(trace, at.IPoint, gathered.lights, 1, key, &at, &normal, 0.0,
+                                         gathered.scales.empty() ? nullptr : &gathered.scales);
+        std::vector<double> masses(gathered.lights.size());
+        for (std::size_t i = 0; i < gathered.lights.size(); ++i)
+        {
+            if (!gathered.lights[i]) continue;
+            const LightSource& light = *gathered.lights[i];
+            const MathColour power = light.emitter ? light.emitter->Intensity() : light.colour;
+            const Vector3d centre = light.emitter ? light.emitter->Centre() : light.Center;
+            const double radius = light.emitter ? light.emitter->Radius() : 0.0;
+            const double distance2 = (at.IPoint - centre).lengthSqr();
+            const double scale = gathered.scales.empty() ? 1.0 : gathered.scales[i].MaxAbs();
+            masses[i] = power.MaxAbs() * scale / std::max(distance2 + radius * radius, std::numeric_limits<double>::min());
+        }
+        const SourceChoice choice = ChooseSource(masses, Draw(key, kDrawAreaLight, 0));
+        const std::size_t source = choice.index;
+        const double probability = choice.probability;
+        const std::vector<LightSource*> selected{gathered.lights[source]};
+        const std::vector<MathColour> scales{(gathered.scales.empty() ? MathColour(1.0) : gathered.scales[source]) / probability};
+        return CollectBounceIncident(trace, at.IPoint, selected, 1, BounceOrderSeed(key, 0, 0, source),
+                                     &at, &normal, 0.0, &scales);
     }
 
     void Index()
@@ -600,20 +638,11 @@ private:
         const bool close = node.near > 0.0 && 2.0 * node.nearWeight / node.near < spacing;
         verdict.split = (betweenLarge && betweenSure) || (withinLarge && withinSure) || close;
         verdict.why = (betweenLarge && betweenSure ? 1 : 0) | (withinLarge && withinSure ? 2 : 0) | (close ? 4 : 0);
-        const bool known = node.samples >= kTrusted && error <= kTolerance * reference;
-        // The draws that resolve a difference of the tolerance, at the variance seen so far, bound how far a node grows.
-        const double resolve = Confidence(HUGE_VAL) * error / (kTolerance * reference);
-        const double needed = resolve * resolve * node.samples;
-        const bool grow = node.draws < kMostNodeDraws && !(node.draws >= kNeededDraws * needed && node.samples >= kTrusted);
 #if POV_SURFACE_BOUNCE_UNIFORM
         verdict.split = node.level < POV_SURFACE_BOUNCE_UNIFORM;
-        verdict.resample = !verdict.split && grow && !known;
         verdict.priority = 1.0;
         return verdict;
 #endif
-        // Draws grow while a verdict is in doubt or the node's own value is not yet known to the tolerance.
-        verdict.resample = !verdict.split && grow &&
-                           ((betweenLarge && !betweenSure) || (withinLarge && !withinSure) || !known);
         verdict.priority = std::max({betweenLarge && betweenSure ? between : 0.0, withinLarge && withinSure ? within : 0.0,
                                      close ? mean : 0.0}) * node.area;
         return verdict;

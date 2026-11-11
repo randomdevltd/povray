@@ -772,6 +772,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/volume_legacy_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/domain_cells.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/surface_domain_cells.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh "\$(top_srcdir)/tests/render/surface_gather_samples.sh" "\$(top_builddir)/unix/povray" "\$(top_srcdir)"
 	sh \$(top_srcdir)/tests/render/deleted_media_syntax.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/surface_part_accuracy.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_transport.sh \$(top_builddir)/unix/povray \$(top_srcdir)

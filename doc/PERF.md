@@ -1480,20 +1480,17 @@ eight draws per expected node). Its baseline spacing r₀ targets the smaller of
 and its draws are thinned to a maximal Poisson disc set, a draw kept only when no node of the same
 sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
 
-Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
+Each order refines level by level, to r₀/64. At each level a node takes its light's fixed `samples` count, the node itself first, each other
 from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
 projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
-mean over the reachable disc and its draws give a standard error. A node splits
+mean over the reachable disc and its draws give a standard error. Each draw selects one source from a half-uniform, half-power/distance proposal and divides its incident contribution by the selection probability. Every source retains support; the fixed count avoids stopping based on the estimated light. A node splits
 when, relative to the local irradiance max(own, predicted):
 - between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
 - within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
   (a shadow edge or a contact crossing it);
 - its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths); a buried source uses the local diffusion length in place of its distance below the skin.
 The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
-gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours and a spread trusted
-only from eight draws. A difference that is large but not yet certain, or a value whose standard error exceeds 10%,
-doubles the node's draws instead, to at most four times what resolving the tolerance needs and never above 64, so the
-light's `samples` do not change refinement. A split parent becomes a node of the next level and is measured again. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
+gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours. A split parent becomes a node of the next level and is measured again over its smaller disc. The seven-level limit bounds incident draws by seven times the node budget times `samples` per field. Increasing `samples` reduces uncertainty and can resolve more spatial detail. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
 spacing; the parent's area is shared by draws. Splits are decided per level from per-node results and applied in a fixed
 order, so the field is the same on any thread count; all lengths are ratios of r₀, and the shadow rays of node draws use
 no absolute offsets, so it is the same at any scale.
@@ -2619,3 +2616,28 @@ Counted comparison of `tests/render/surface_domain_cells.pov` at `Declare=Cells=
 | after 2 | 187,850,048,517 | 12,852,133 | 187,837,196,384 |
 
 The added progress and watchdog checks cost 0.14–0.15% instructions on this case. Both builds produce 3492 nodes over three levels, 0.28 MiB of final fields, and pixel-identical decoded PNGs in both pairs. Peak RSS was 35 MiB before and 36–37 MiB after; no preparation work moves into tracing. Wall times varied with concurrent load and do not establish a speed change. At the fixture's explicit 64-node setting, preparation finished in 1.0 seconds, total instructions were 15.11 billion, peak RSS 21 MiB, and the decoded 48×32 image differed from that reference by one 8-bit level in one pixel. This is a small preview budget, not a general convergence guarantee.
+
+
+### Fixed surface gather budgets
+
+Surface refinement previously gathered every source at every spatial draw, growing each node from four to 64 draws regardless of the surface light's `samples`. A progress unit represented a completed node gather, not a source sample. Seed-candidate draws also contributed units, so dividing the whole progress count by elapsed time concealed the much slower gathering phase.
+
+Each surface node now takes its light's fixed `samples` count at each refinement level. A parent retained at a finer level is measured on its smaller disc; the seven-level limit gives at most seven times `domain_cells` times `samples` incident draws per field. Each draw selects one incident source from a half-uniform, half-power/distance proposal and divides its contribution by the selection probability. Every source retains support, including a source whose power estimate is zero. This preserves the expected incident contribution of each draw, without clipping radiance or shortening shadow or internal paths. Fixed counts avoid stopping on the same noisy observations used to estimate radiance. The existing spatial field remains an approximation: `domain_cells` controls its spatial detail and `samples` controls its gather noise. Source-proposal construction still visits the source list; expensive source connections are bounded by seven times the node budget times samples per order, rather than multiplying by the number of sources. Geometry, shadow media and internal subsurface paths retain their own costs, and no preparation work is deferred into tracing.
+
+The public `tests/render/surface_gather_samples.pov` contains three thin cubic capsules with method 2 subsurface scattering, buried patterned emissive shells, and forty surrounding volume lights. The registered suite checks small sample counts, thread determinism, scene scaling, exported emission, node limits and a visible difference when bounce is disabled. `distribution/scenes/lights/surface_gather_samples.pov` provides the same example for tuning.
+
+Two alternating before/after comparisons against `6af707061`, compiled with matching options, used `Declare=Export=1 +W80 +H60 +WT2 +BS4 +PR -A`. Matching parse-only runs include the scene and stop with `#error` before preparation. Counts include all preparation and tracing; counters were not multiplexed.
+
+| Run | User instructions | Parse-only instructions | Bounce preparation | Peak RSS |
+| --- | ---: | ---: | ---: | ---: |
+| before 1 | 347,377,070,761 | 33,925,001 | 30.1 s | 30 MiB |
+| after 1 | 121,188,336,312 | 33,928,649 | 4.0 s | 30 MiB |
+| before 2 | 347,166,719,280 | 33,927,860 | 36.0 s | 30 MiB |
+| after 2 | 121,234,637,048 | 33,923,842 | 3.1 s | 30 MiB |
+
+After parse subtraction, total instructions fall by 65.1% in both pairs. The elapsed preparation times support the result but vary with load. This improvement is specific to a surface gathering many lights; it does not establish a universal rendering speedup.
+
+
+For an unclipped quality comparison, the same public scene uses `Declare=Export=0 Declare=Power=0.05 +W64 +H48 +WT2 +BS4 +PR -A`. Against `Declare=Gather=256`, RMS errors at `Gather=1,4,8,64` are respectively 0.08777, 0.06588, 0.05208 and 0.02946 in 8-bit output levels; maximum error is one level in every case, and no pixels clip. Setting `WithBounce=0` changes only brightness, preserving source indices and direct-light sample streams: the bounced contribution has RMS 0.2036 levels at `Gather=8`. These are low-resolution checks, not a guarantee for arbitrary sharp lighting or geometry.
+
+Fixed sampling can cost more when very few sources previously needed little adaptive sampling. A diffuse sphere (`sphere { 0,1 pigment { rgb 0.7 } finish { ambient 0 diffuse 1 } light { bounce samples 64 } }`), white plane at y=-1, and one point light at `<3,4,-5>` with `rgb 2`, viewed from `<0,0,-4>` toward zero at the same 80×60 settings, costs 3.760/3.754 billion instructions before versus 5.228/5.229 billion after. Matching parse-only runs cost about 12.1 million instructions. The increase is 39.2–39.4% after parse subtraction; counters were not multiplexed. Preparation remains below one second, and the decoded image differs by at most one 8-bit level. This tradeoff buys a fixed authored budget rather than an observation-dependent stopping rule; the many-source case above is the measured speed target.
