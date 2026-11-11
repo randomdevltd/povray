@@ -285,6 +285,7 @@ $RECYCLE.BIN/
 /tests/prepared-transfer/
 /tests/shadow-segment/
 /tests/sphere-intersection/
+/tests/sphere-sweep-oracle/
 /tests/subsurface-entry-ior/
 /tests/subsurface-internal-boundary/
 /tests/subsurface-internal-sweep/

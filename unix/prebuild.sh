@@ -735,6 +735,11 @@ check-quick: all
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_sweep.cpp" \\
 	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/subsurface-internal-sweep/subsurface_internal_sweep.o" \\
 	  PREPARED_BINARY="\$(abs_top_builddir)/tests/subsurface-internal-sweep/subsurface_internal_sweep_test"
+	mkdir -p \$(top_builddir)/tests/sphere-sweep-oracle
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
+	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/sphere_sweep_oracle.cpp" \\
+	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/sphere-sweep-oracle/sphere_sweep_oracle.o" \\
+	  PREPARED_BINARY="\$(abs_top_builddir)/tests/sphere-sweep-oracle/sphere_sweep_oracle_test"
 	mkdir -p \$(top_builddir)/tests/subsurface-internal-boundary
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_boundary.cpp" \\
