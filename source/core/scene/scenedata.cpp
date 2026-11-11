@@ -437,7 +437,7 @@ SceneData::SceneData() :
     refractionAngle = 0.5;
     domainCells = 500000.0;
     lightDomainCells = 500000.0;
-    surfaceDomainCells = 173913.0; // former 1000000 colours / 69 bytes per ordinary diffuse node
+    surfaceDomainCells = 173913.0; // floor(1000000 * 12 / 69): former single-light, single-order diffuse allowance
     machinePhotonMemory = 0.0;
     dielectrics = false;
     anyOpaque = false;

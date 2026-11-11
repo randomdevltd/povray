@@ -104,7 +104,7 @@ struct Part final
     Cover cover;
     double area = 0.0, spacing = 0.0;
     std::size_t budget = 0, remaining = 0;
-    unsigned fields = 1;
+    std::uint64_t fields = 1;
     std::size_t draws = 0;
     std::vector<SurfaceGeometrySample> pool;
     std::vector<std::size_t> seeds;
