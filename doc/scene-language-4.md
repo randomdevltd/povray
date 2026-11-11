@@ -204,9 +204,8 @@ primary emission plus the completed bounce orders. Surface bounce rejects
 stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
 reflection attenuation.
 
-A passive source is a bounce light whose own emission is zero (for a surface,
-`finish { emission 0 }`): it shines only the light it receives from other
-sources and is dark when nothing lights it. A bounced surface whose finish uses
+A passive source is a light block with `bounce` and no input, `light { bounce }`:
+it re-emits only the light it receives from other sources. A bounced surface whose finish uses
 subsurface scattering also sends its subsurface light on, which needs subsurface
 method 2 (the default from version 4.0). The render stops before tracing, without
 a line number, with `Surface bounce cannot prepare stochastic crand diffuse
