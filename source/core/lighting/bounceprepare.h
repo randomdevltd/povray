@@ -367,7 +367,7 @@ struct SubsurfaceScope final
 // entering each; the workers share one cache of boundary and layer tables.
 inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     Workers& workers, const std::shared_ptr<SceneData>& scene, const surface_refine::Result& result,
-    const Sources& sources, const std::function<void()>& cooperate, std::size_t units, bool boundary = true)
+    const Sources& sources, const std::function<void()>& cooperate, std::size_t units, unsigned samples, bool boundary = true)
 {
     const SubsurfaceScope scope(workers, scene);
     std::vector<std::unique_ptr<Trace>> traces;
@@ -466,7 +466,7 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
         {
             workers[worker].Watch(nodes[i].intersection.Object);
             double unused;
-            radiance[i] += share * traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused);
+            radiance[i] += share * traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused, samples);
         }, 0);
     }
     AdvancePreparation(workers.td->preparationProgress, units);
@@ -666,7 +666,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             Target& target = targets[primaryTargets[a]];
             workers.Step("internal emission " + Of("t", a, primaryParts.size()));
             const auto field = PrepareSubsurfaceBounce(workers, scene, results[a], primarySources[a], cooperate,
-                                                       kSurfaceUnits, false);
+                                                       kSurfaceUnits, parts[primaryParts[a]].samples, false);
             target.primary = MakeBouncedSurfaceEmitter(target.primary, const_cast<ObjectPtr>(target.light->emitterContainer),
                                                        field, true);
             target.light->emitter = target.primary;
@@ -760,7 +760,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     workers.Step(orderItem + " " + Of("t", a, active.size()) + " subsurface");
                     const Sources noSources;
                     subsurface = PrepareSubsurfaceBounce(workers, scene, results[a],
-                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a], cooperate, kSurfaceUnits);
+                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a], cooperate, kSurfaceUnits, parts[active[a]].samples);
                 }
                 surfaceFields[a] = std::make_shared<const SumSurfaceBounceRadiance>(
                     std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{results[a].diffuse, subsurface}, activeGain[a]);

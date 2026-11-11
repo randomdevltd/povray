@@ -27,4 +27,7 @@ cmp serial.rgb parallel.rgb
 render small Declare=Cells=16 Declare=Gather=4 Declare=S=0.001
 render large Declare=Cells=16 Declare=Gather=4 Declare=S=1000
 render exported Declare=Cells=32 Declare=Export=1
+render globalone Declare=Cells=32 Declare=Gather=4 Declare=Nearby=0 Declare=Export=1 Declare=HideHosts=1 Declare=SS=1
+render globalsixteen Declare=Cells=32 Declare=Gather=4 Declare=Nearby=0 Declare=Export=1 Declare=HideHosts=1 Declare=SS=16
+cmp globalone.rgb globalsixteen.rgb
 echo 'surface_gather_samples: ok'

@@ -1,5 +1,6 @@
 // Fixed per-node sampling over thin translucent capsules and nearby volume lights.
 #version 3.7;
+#ifndef(HideHosts) #declare HideHosts=0; #end
 #ifndef(Power) #declare Power=1; #end
 #ifndef(S) #declare S=1; #end
 #ifndef(Gather) #declare Gather=8; #end
@@ -9,11 +10,12 @@
 #ifndef(SS) #declare SS=8; #end
 #ifndef(Nearby) #declare Nearby=40; #end
 global_settings { assumed_gamma 1 mm_per_unit 1/S subsurface { method 2 samples SS,SS spacing 0.5 } }
-camera { orthographic location <0,0,-3>*S look_at 0 right x*2*S up y*1.5*S }
+camera { orthographic location <0,HideHosts,-3>*S look_at 0 right x*2*S up y*1.5*S }
 background { rgb 0.01 }
 #for(K,-1,1)
 #declare O=<K*0.5,0,0>;
 sphere_sweep { cubic_spline 4, <-0.1,-1,0>,0.035, <0,-0.5,0>,0.035, <0,0.5,0>,0.07, <0.1,1,0>,0.035
+ #if (HideHosts) no_image #end
  pigment { rgb <0.8,0.5,0.3> } finish { ambient 0 diffuse 1 subsurface { translucency <0.04,0.07,0.12> } }
  interior { ior 1.4 }
  light { #if (Export) emission #end bounce { passes 1 } samples Gather domain_cells Cells brightness WithBounce }

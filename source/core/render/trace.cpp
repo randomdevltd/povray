@@ -6367,7 +6367,7 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, std::vec
     return light / float(M_PI);
 }
 
-MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length)
+MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length, unsigned samples)
 {
     Intersection hit(node.intersection);
     TraceTicket ticket(1, 0.0);
@@ -6384,14 +6384,13 @@ MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size
     ColourChannel transmission = 0.0;
     if (ssltBridgeInternalOnly && !ssltBridgeLengthOnly)
     {
-        const int samples = sceneData->subsurfaceSamplesSingle;
-        if (samples <= 0) return radiance;
+        if (samples == 0) return radiance;
         const auto key = eye.GetKey();
         const Vector3d axis = fabs(node.normal[Y]) < 0.9 ? Vector3d(0.0, 1.0, 0.0) : Vector3d(1.0, 0.0, 0.0);
         const Vector3d u = cross(node.normal, axis).normalized(), v = cross(node.normal, u);
         double eta;
         ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
-        for (int i = 0; i < samples; ++i)
+        for (unsigned i = 0; i < samples; ++i)
         {
             const auto sampleKey = DeriveKey(key, kDrawSubsurface, i);
             const double r = sqrt(Draw(sampleKey, kDrawSubsurface, 0));

@@ -253,7 +253,7 @@ class Trace
             PreparedSetId preparedSetId, double& eta, double spacing);
         /// The subsurface radiance leaving a node of the field, drawn by its index, and the shortest diffusion length (scene
         /// units) of the material it leaves, infinite where none diffused.
-        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length);
+        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length, unsigned samples = 1);
         /// One field per quantised relative index of refraction over the indexed nodes, from each node's radiance and area,
         /// given in the nodes' own order.
         static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
