@@ -725,11 +725,13 @@ check-quick: all
 	./worker_pool_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/mesh_pool_stop.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o mesh_pool_stop_test
 	./mesh_pool_stop_test
+	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_preparation.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o surface_preparation_test
+	./surface_preparation_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/subsurface_help.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o subsurface_help_test
 	./subsurface_help_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/subsurface_memory.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o subsurface_memory_test
 	./subsurface_memory_test
-	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test subsurface_help_test subsurface_memory_test
+	rm -f surface_preparation_test bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test subsurface_help_test subsurface_memory_test
 	mkdir -p \$(top_builddir)/tests/subsurface-internal-sweep
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_sweep.cpp" \\
@@ -769,6 +771,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/trace_limit.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_legacy_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/domain_cells.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/surface_domain_cells.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/deleted_media_syntax.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/surface_part_accuracy.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_transport.sh \$(top_builddir)/unix/povray \$(top_srcdir)

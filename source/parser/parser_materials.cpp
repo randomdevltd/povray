@@ -4139,8 +4139,6 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             }
             else if (CurrentTokenText() == "domain_cells")
             {
-                if (surface)
-                    Error("A surface light has no prepared source domain; domain_cells is for interior lights.");
                 if (light->domainCells > 0.0)
                     Error("A light block accepts only one domain_cells setting.");
                 light->domainCells = Parse_Domain_Cells();
@@ -4158,9 +4156,9 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
     if (light->BounceOnly() && (light->nits || light->lumens >= 0.0))
         Error("A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.");
-    // an interior light without its own count takes the light default in effect here, never its medium's
-    if (!surface && !(light->domainCells > 0.0))
-        light->domainCells = sceneData->lightDomainCells;
+    // Each kind takes its own default at the point where the light is parsed.
+    if (!(light->domainCells > 0.0))
+        light->domainCells = surface ? sceneData->surfaceDomainCells : sceneData->lightDomainCells;
     // a pattern's luminance integral is known only once prepared; a constant pigment's is known here
     if (light->pigment && (light->pigment->Type == PLAIN_PATTERN) && !(light->pigment->colour.colour().Greyscale() > 0.0) &&
         ((light->nits && light->brightness > 0.0) || (light->lumens > 0.0)))

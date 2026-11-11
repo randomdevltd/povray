@@ -30,6 +30,7 @@ const CURATION = {
     ...Object.fromEntries(SHAPE_BLOCKS.map((w) => [w, ['Parse_Object_Mods']])),
     ...Object.fromEntries(CSG_BLOCKS.map((w) => [w, ['Parse_Object', 'Parse_Object_Mods']])),
     ...Object.fromEntries(Object.entries(WITH_OWN_ITEMS).map(([w, fn]) => [w, [fn, 'Parse_Object_Mods']])),
+    default: ['Parse_Default'],
     finish: ['Parse_Finish'],
     texture: ['Parse_Texture', 'Parse_Pattern'],
     material: ['Parse_Material'],
@@ -108,11 +109,13 @@ function mineFunction(name, body) {
             const item = '\x00' + (args ?? '').trim();
             if (groups.length > 0) groups.at(-1).items.add(item);
             else top.add(item);
+            // A following EXPECT may open this contextual item's block, just as a reserved CASE does.
+            if (arms.length > 0) arms[arms.length - 1] = { token: item, at: m.index };
         } else if (macro === 'EXPECT' || macro === 'EXPECT_ONE' || macro === 'EXPECT_ONE_CAT' || macro === 'EXPECT_CAT') {
             let owner = null;
             let block = false;
             for (let k = arms.length - 1; k >= 0; --k)
-                if (arms[k].token && wordsOf.has(arms[k].token)) {
+                if (arms[k].token && (wordsOf.has(arms[k].token) || arms[k].token.startsWith('\x00'))) {
                     // A sub-block opens a brace between its arm and its loop; a value position does not.
                     const lead = body.slice(arms[k].at, m.index);
                     owner = arms[k].token;
