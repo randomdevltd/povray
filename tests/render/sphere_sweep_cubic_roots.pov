@@ -1,8 +1,8 @@
 // Cubic and b-spline sphere sweeps must report the crossings of every ray, at any scene scale S, and agree with their
-// own inside test. Check=1 traces rays along and across a thin tapered tube and stops the parse where trace() misses
-// material that inside() finds on the ray. Check=0 renders tubes that host a volume light under method 2 subsurface:
-// Case 0 a row of thin stalks crossed by a buried slab, Case 1 a stalk whose bulb is carved by a socket holding a
-// shell light, Case 2 the same on a b-spline merged with a closed mesh.
+// own inside test. Check=1 traces rays along and across a thin tapered tube, and square to the spine of a straight
+// one, and stops the parse where trace() misses material that inside() finds on the ray. Check=0 renders tubes that
+// host a volume light under method 2 subsurface: Case 0 a row of thin stalks crossed by a buried slab, Case 1 a stalk
+// whose bulb is carved by a socket holding a shell light, Case 2 the same on a b-spline merged with a closed mesh.
 #version 4.0;
 #ifndef (Check) #declare Check=0; #end
 #ifndef (Case) #declare Case=0; #end
@@ -26,6 +26,12 @@
     #elseif (vlength(Hit-From)>First*Step*(1+1e-9) | vlength(Hit-From)<(First-1)*Step*(1-1e-9)) #declare Early=Early+1; #end
    #end
   #end
+ #end
+ // A ray square to the spine: its entry and exit are stationary at one sphere, a double root for a solver in u alone.
+ #declare Shape=sphere_sweep { cubic_spline 4, <-1,0,0>*S,0.1*S, <0,0,0>*S,0.1*S, <1,0,0>*S,0.1*S, <2,0,0>*S,0.1*S }
+ #for (I,1,40)
+  #declare From=<0.013+0.0241*I,0,0>*S; #declare Normal=<0,0,0>; #declare Hit=trace(Shape,From,y,Normal);
+  #if (vlength(Normal)=0) #declare Missed=Missed+1; #elseif (abs(vlength(Hit-From)/S-0.1)>1e-9) #declare Early=Early+1; #end
  #end
  #if (Missed+Early>0) #error concat("sphere sweep at scale ",str(S,0,-1),": ",str(Missed,0,0)," rays missed material on them, ",str(Early,0,0)," crossings lie off the first material") #end
 #end
