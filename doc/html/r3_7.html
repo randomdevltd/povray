@@ -1301,7 +1301,7 @@ interior {
 <a name="r3_7_2_3_1"></a>
 <div class="content-level-h5" contains="Domain Cells" id="r3_7_2_3_1">
 <h5>3.7.2.3.1 Domain Cells</h5>
-<p>The <code>domain_cells</code> item sets a medium's 3D grid cells, an interior light's 3D source lattice cells, or a surface light's 2D node budget for bounce and exported subsurface light. In a method 4 medium, the cells spread evenly over its container's bounding box. It takes an integer from 1 to 1000000000, 500000 by default:</p>
+<p>The <code>domain_cells</code> item sets 3D media or interior-light source cells, or a 2D surface node budget (4096 per light by default, independent of volume budgets). Surface nodes cover bounce and exported subsurface light. In a method 4 medium, the cells spread evenly over its container's bounding box. It takes an integer from 1 to 1000000000; media default to 500000:</p>
 <pre>
 media { method 4 domain_cells Integer [MEDIA_ITEMS...] }
 #default { media { domain_cells Integer } }

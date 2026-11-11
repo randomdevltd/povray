@@ -16,6 +16,7 @@ int main()
 {
     Initialize_Noise();
     auto scene = std::make_shared<SceneData>();
+    assert(scene->surfaceDomainCells == 4096.0);
     scene->preparedSets.emplace_back(new PreparedSet);
     TraceThreadData thread(scene, 0, false);
     Sphere object;

@@ -275,7 +275,7 @@
    "doc": "r3_7.html#r3_7_1_5"
   },
   "domain_cells": {
-   "text": "The domain_cells item sets a medium's 3D grid cells, an interior light's 3D source lattice cells, or a surface light's 2D node budget for bounce and exported subsurface light.",
+   "text": "The domain_cells item sets 3D media or interior-light source cells, or a 2D surface node budget (4096 per light by default, independent of volume budgets).",
    "doc": "r3_7.html#r3_7_2_3_1"
   },
   "double_illuminate": {

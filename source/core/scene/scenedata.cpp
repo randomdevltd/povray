@@ -437,7 +437,7 @@ SceneData::SceneData() :
     refractionAngle = 0.5;
     domainCells = 500000.0;
     lightDomainCells = 500000.0;
-    surfaceDomainCells = 173913.0; // floor(1000000 * 12 / 69): former single-light, single-order diffuse allowance
+    surfaceDomainCells = 4096.0; // 2D node budget per surface light, independent of volume cells
     machinePhotonMemory = 0.0;
     dielectrics = false;
     anyOpaque = false;

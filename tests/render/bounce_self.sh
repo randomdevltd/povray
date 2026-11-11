@@ -136,6 +136,7 @@ surface ssuboff Declare=Subsurface=1 Declare=Bounce=1 Declare=Self=0 +wt3
 surface ssubon Declare=Subsurface=1 Declare=Bounce=1 +wt3
 same ssubnone ssuboff "a subsurface surface without self bounce differs from one without bounce"
 [ "$(sum ssubon)" -gt "$(sum ssubnone)" ] || { echo "bounce_self: self bounce does not reach beneath a surface" >&2; exit 1; }
+# The buried-source fixture pins a nonbinding budget so all order counts use identical export sampling.
 # A lamp buried in the wall: the box's own light, from within and from its earlier orders, never returns to it at self 0.
 surface sburnone Declare=Subsurface=1 Declare=Buried=1 +wt3
 surface sburoff Declare=Subsurface=1 Declare=Buried=1 Declare=Bounce=2 Declare=Self=0 +wt3
