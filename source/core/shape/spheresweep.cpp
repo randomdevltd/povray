@@ -412,6 +412,36 @@ double SweepFurthest(const SweepPart& stretch, double side, double& at)
     return best;
 }
 
+// A separating plane of the projected control hull also separates every swept sphere if its distance exceeds
+// the greatest control radius. The closest point of the endpoint chord supplies a useful plane normal, even
+// for rays inside the segment's axis-aligned bounds. This only rejects; an inconclusive hull uses the full search.
+bool SweepSeparated(const SweepPart& part)
+{
+    Vector3d first, chord;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        first[axis] = part.across[axis][0];
+        chord[axis] = part.across[axis][3] - first[axis];
+    }
+    const double lengthSquared = chord.lengthSqr();
+    const double at = lengthSquared > 0.0 ? std::max(0.0, std::min(1.0, -dot(first, chord) / lengthSquared)) : 0.0;
+    Vector3d normal = first + at * chord;
+    const double length = normal.length();
+    if (!(length > 0.0) || !std::isfinite(length)) return false;
+    normal /= length;
+    double least = HUGE_VAL, radius = 0.0;
+    for (int k = 0; k < 4; ++k)
+    {
+        double distance = 0.0;
+        for (int axis = 0; axis < 3; ++axis) distance += normal[axis] * part.across[axis][k];
+        least = std::min(least, distance);
+        radius = std::max(radius, std::abs(part.radius[k]));
+    }
+    const double rounding = 64.0 * std::numeric_limits<double>::epsilon() *
+        (3.0 * part.acrossSize + part.radiusSize);
+    return least > radius + rounding;
+}
+
 // The stretches of the ray inside one cubic segment. Sphere u covers depth(u) -+ sqrt(-gap(u)) where the ray passes
 // within its radius; over each stretch of u where it does, those intervals join into one, from the least entry to the
 // greatest exit.
@@ -422,6 +452,7 @@ int SweepSegmentSpans(const BasicRay& ray, const SPHSWEEP_SEG& segment, int inde
     const double base = dot(middle - ray.Origin, ray.Direction);
     const Vector3d near = ray.Origin + ray.Direction * base;
     const SweepPart whole = SweepWhole(segment, near, &ray.Direction);
+    if (SweepSeparated(whole)) return 0;
     double breaks[kSweepMaxRoots + 2];
     int count = 0;
     SweepEnds(whole, 0, breaks + 1, count);

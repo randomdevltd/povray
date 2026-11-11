@@ -1,0 +1,540 @@
+{
+  "dense-pr134-232778164": {
+    "instructions": [
+      1233094926,
+      1230441666
+    ]
+  },
+  "dense-pr134-8554844ac": {
+    "instructions": [
+      1274239622,
+      1274214819
+    ]
+  },
+  "dense-old": {
+    "instructions": [
+      1204652546
+    ],
+    "profile": {
+      "classes": [
+        [
+          0,
+          85264,
+          282592033,
+          0,
+          0,
+          0,
+          255792
+        ],
+        [
+          1,
+          7229,
+          34781933,
+          0,
+          0,
+          0,
+          21687
+        ],
+        [
+          2,
+          6811,
+          96954484,
+          0,
+          0,
+          0,
+          20433
+        ],
+        [
+          3,
+          4379,
+          54457903,
+          0,
+          0,
+          0,
+          13137
+        ]
+      ],
+      "raw": 2003361986,
+      "overhead": 766029409
+    }
+  },
+  "dense-new": {
+    "instructions": [
+      1218733670,
+      1222000889
+    ],
+    "profile": {
+      "classes": [
+        [
+          0,
+          85264,
+          238944226,
+          304144,
+          24176,
+          0,
+          255792
+        ],
+        [
+          1,
+          7229,
+          34119835,
+          61001,
+          19657,
+          0,
+          21687
+        ],
+        [
+          2,
+          6811,
+          123826039,
+          66085,
+          22826,
+          71441,
+          20433
+        ],
+        [
+          3,
+          4379,
+          83075713,
+          40391,
+          13627,
+          52854,
+          13137
+        ]
+      ],
+      "raw": 2012351469,
+      "overhead": 765482188
+    }
+  },
+  "dense-prototype": {
+    "instructions": [
+      1120941324,
+      1120386771
+    ]
+  },
+  "sparse-pr134-232778164": {
+    "instructions": [
+      768019815,
+      765110212
+    ]
+  },
+  "sparse-pr134-8554844ac": {
+    "instructions": [
+      833778409,
+      834075538
+    ]
+  },
+  "sparse-old": {
+    "instructions": [
+      772245731
+    ],
+    "profile": {
+      "classes": [
+        [
+          0,
+          493,
+          1549501,
+          0,
+          0,
+          0,
+          1479
+        ],
+        [
+          1,
+          4610,
+          15216508,
+          0,
+          0,
+          0,
+          13830
+        ],
+        [
+          2,
+          5726,
+          56162515,
+          0,
+          0,
+          0,
+          17178
+        ],
+        [
+          3,
+          4343,
+          38094120,
+          0,
+          0,
+          0,
+          13029
+        ]
+      ],
+      "raw": 892022395,
+      "overhead": 116333402
+    }
+  },
+  "sparse-new": {
+    "instructions": [
+      832200127,
+      830298177
+    ],
+    "profile": {
+      "classes": [
+        [
+          0,
+          493,
+          1272164,
+          1479,
+          0,
+          0,
+          1479
+        ],
+        [
+          1,
+          4610,
+          12831125,
+          16238,
+          1204,
+          0,
+          13830
+        ],
+        [
+          2,
+          5726,
+          85504602,
+          23150,
+          2986,
+          61528,
+          17178
+        ],
+        [
+          3,
+          4343,
+          68065000,
+          18761,
+          2866,
+          50744,
+          13029
+        ]
+      ],
+      "raw": 948274437,
+      "overhead": 116138811
+    }
+  },
+  "sparse-prototype": {
+    "instructions": [
+      824628645,
+      823942771
+    ]
+  },
+  "micro-old": [
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=514.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=514.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1297.01",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1124.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=401.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=401.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1149.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=978.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=514.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=514.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1297.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1124.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=401.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=401.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1149.01",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=978.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=1126.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=6074.01",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=14457.01",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=14289.01",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=1126.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=1730.00",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=10139.01",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=9971.01",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=1126.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=6074.01",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=14457.01",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=14289.01",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=1126.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=1730.00",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=10139.01",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=9971.01"
+    ],
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=514.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=514.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1297.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1124.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=401.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=401.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1149.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=978.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=514.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=514.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1297.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1124.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=401.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=401.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1149.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=978.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=1126.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=6074.01",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=14457.01",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=14289.01",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=1126.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=1730.00",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=10139.01",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=9971.01",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=1126.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=6074.01",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=14457.01",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=14289.01",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=1126.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=1730.00",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=10139.01",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=9971.01"
+    ],
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=514.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=514.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1297.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1124.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=401.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=401.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1149.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=978.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=514.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=514.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1297.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1124.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=401.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=401.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1149.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=978.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=1126.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=6074.01",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=14457.01",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=14289.01",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=1126.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=1730.00",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=10139.01",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=9971.01",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=1126.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=6074.01",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=14457.01",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=14289.01",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=1126.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=1730.00",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=10139.01",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=9971.01"
+    ]
+  ],
+  "micro-new": [
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=516.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=516.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1307.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1134.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=397.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=397.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1090.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=919.01",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=516.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=516.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1307.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1134.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=397.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=397.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1090.01",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=919.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=939.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=7231.01",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=15442.02",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=15273.02",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=939.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=1721.01",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=15162.02",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=14993.02",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=939.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=7231.01",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=15725.02",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=15556.02",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=939.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=1721.01",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=15406.02",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=15237.02"
+    ],
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=516.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=516.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1307.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1134.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=397.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=397.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1090.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=919.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=516.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=516.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1307.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1134.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=397.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=397.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1090.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=919.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=939.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=7231.01",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=15442.02",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=15273.02",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=939.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=1721.01",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=15162.03",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=14993.03",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=939.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=7231.01",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=15725.02",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=15556.02",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=939.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=1721.01",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=15406.03",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=15237.02"
+    ],
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=516.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=516.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1307.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1134.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=397.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=397.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1090.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=919.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=516.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=516.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1307.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1134.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=397.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=397.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1090.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=919.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=939.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=7231.01",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=15442.02",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=15273.02",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=939.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=1721.01",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=15162.02",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=14993.02",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=939.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=7231.01",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=15725.02",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=15556.03",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=939.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=1721.01",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=15406.03",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=15237.03"
+    ]
+  ],
+  "micro-prototype": [
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=505.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=505.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1295.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1120.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=398.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=398.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1095.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=922.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=505.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=505.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1295.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1120.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=398.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=398.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1095.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=922.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=678.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=678.00",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=15531.02",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=15362.02",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=678.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=678.00",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=15253.02",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=15084.02",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=678.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=678.00",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=15814.02",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=15645.02",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=678.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=678.00",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=15497.03",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=15328.02"
+    ],
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=505.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=505.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1295.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1120.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=398.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=398.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1095.00",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=922.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=505.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=505.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1295.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1120.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=398.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=398.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1095.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=922.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=678.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=678.00",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=15531.02",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=15362.02",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=678.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=678.00",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=15253.02",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=15084.02",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=678.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=678.00",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=15814.02",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=15645.02",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=678.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=678.00",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=15497.02",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=15328.02"
+    ],
+    [
+      "kind=0 ratio=0.01 precise=0 class=0 instructions=505.00",
+      "kind=0 ratio=0.01 precise=0 class=1 instructions=505.00",
+      "kind=0 ratio=0.01 precise=0 class=2 instructions=1295.00",
+      "kind=0 ratio=0.01 precise=0 class=3 instructions=1120.00",
+      "kind=0 ratio=0.01 precise=1 class=0 instructions=398.00",
+      "kind=0 ratio=0.01 precise=1 class=1 instructions=398.00",
+      "kind=0 ratio=0.01 precise=1 class=2 instructions=1095.01",
+      "kind=0 ratio=0.01 precise=1 class=3 instructions=922.00",
+      "kind=0 ratio=0.2 precise=0 class=0 instructions=505.00",
+      "kind=0 ratio=0.2 precise=0 class=1 instructions=505.00",
+      "kind=0 ratio=0.2 precise=0 class=2 instructions=1295.00",
+      "kind=0 ratio=0.2 precise=0 class=3 instructions=1120.00",
+      "kind=0 ratio=0.2 precise=1 class=0 instructions=398.00",
+      "kind=0 ratio=0.2 precise=1 class=1 instructions=398.00",
+      "kind=0 ratio=0.2 precise=1 class=2 instructions=1095.00",
+      "kind=0 ratio=0.2 precise=1 class=3 instructions=922.00",
+      "kind=1 ratio=0.01 precise=0 class=0 instructions=678.00",
+      "kind=1 ratio=0.01 precise=0 class=1 instructions=678.00",
+      "kind=1 ratio=0.01 precise=0 class=2 instructions=15531.02",
+      "kind=1 ratio=0.01 precise=0 class=3 instructions=15362.02",
+      "kind=1 ratio=0.2 precise=0 class=0 instructions=678.00",
+      "kind=1 ratio=0.2 precise=0 class=1 instructions=678.00",
+      "kind=1 ratio=0.2 precise=0 class=2 instructions=15253.02",
+      "kind=1 ratio=0.2 precise=0 class=3 instructions=15084.03",
+      "kind=2 ratio=0.01 precise=0 class=0 instructions=678.00",
+      "kind=2 ratio=0.01 precise=0 class=1 instructions=678.00",
+      "kind=2 ratio=0.01 precise=0 class=2 instructions=15814.02",
+      "kind=2 ratio=0.01 precise=0 class=3 instructions=15645.02",
+      "kind=2 ratio=0.2 precise=0 class=0 instructions=678.00",
+      "kind=2 ratio=0.2 precise=0 class=1 instructions=678.00",
+      "kind=2 ratio=0.2 precise=0 class=2 instructions=15497.02",
+      "kind=2 ratio=0.2 precise=0 class=3 instructions=15328.02"
+    ]
+  ]
+}
