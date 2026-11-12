@@ -266,10 +266,10 @@ void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, s
     }
     if ((sceneData->preparedSets.size() % workers) != 0)
         taskq.AppendSync();
-    taskq.AppendFunction(boost::bind(&Scene::FinishSetBounds, this, _1));
+    taskq.AppendFunction(boost::bind(&Scene::FinishSetBounds, this, _1, seed, parseData));
 }
 
-void Scene::FinishSetBounds(TaskQueue& taskq)
+void Scene::FinishSetBounds(TaskQueue& taskq, size_t seed, TraceThreadData *parseData)
 {
     PreparedSet& mainView = sceneData->GetPreparedSet(0);
     sceneData->numberOfFiniteObjects = mainView.numberOfFiniteObjects;
@@ -287,6 +287,9 @@ void Scene::FinishSetBounds(TaskQueue& taskq)
     sceneData->averageAbortObjects = mainView.averageAbortObjects;
     for (const std::unique_ptr<PreparedSet>& view : sceneData->preparedSets)
         sceneData->maxPreparedSetFiniteObjects = max(sceneData->maxPreparedSetFiniteObjects, view->numberOfFiniteObjects);
+    // Field preparation traces rays, so it follows the bounds and sizes its mailboxes by them.
+    sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(taskq.AppendTask(new FieldPreparationTask(sceneData, seed, parseData))));
+    taskq.AppendSync();
     taskq.AppendFunction(boost::bind(&Scene::SendStatistics, this, _1));
     taskq.AppendFunction(boost::bind(&Scene::SendDoneMessage, this, _1));
 }
