@@ -52,12 +52,15 @@ public:
     }
     /// Names where in the phase the work is, shown on the next line, shortened to fit.
     void Step(const std::string& text) { step = text; }
+    void AddWork(std::size_t count) { total += count; }
+    /// What the workers are on, read on the preparing thread and named in full by a stalled line; null for nothing.
+    void Watch(const std::function<std::string()>& what) { watched = what; }
     void Advance(std::size_t count = 1) { done.fetch_add(count, std::memory_order_relaxed); }
-    /// A line of its own, not a progress line, shortened to fit.
-    void Note(const std::string& text) const
+    /// A line of its own, not a progress line, shortened to fit unless `whole`.
+    void Note(const std::string& text, bool whole = false) const
     {
         if (messages != nullptr)
-            messages->Info("%s", text.substr(0, width).c_str());
+            messages->Info("%s", (whole ? text : text.substr(0, width)).c_str());
     }
 
     void Poll()
@@ -76,8 +79,13 @@ public:
         if ((Seconds(moved, now) >= stall) && (Seconds(warned, now) >= stall))
         {
             warned = now;
-            Emit(Format("stalled %.0fs at %lu/%lu %.1fs", Seconds(moved, now), Count(current), Count(total),
-                        Seconds(start, now)), true);
+            const std::string state = Format("stalled %.0fs at %lu/%lu %.1fs", Seconds(moved, now), Count(current), Count(total),
+                                             Seconds(start, now));
+            const std::string what = watched ? watched() : std::string();
+            if (what.empty())
+                Emit(state, true);
+            else if (messages != nullptr)
+                messages->Info("Preparation: %s %s; %s", phase.c_str(), state.c_str(), what.c_str());
         }
     }
 
@@ -91,6 +99,7 @@ public:
         Emit(Format("finished %.1fs", Seconds(start, now)), false);
         phase.clear();
         extra = nullptr;
+        watched = nullptr;
     }
 
 private:
@@ -131,6 +140,7 @@ private:
     std::string phase, step;
     std::size_t total = 0, seen = 0, lastReported = 0;
     std::function<std::size_t()> extra;
+    std::function<std::string()> watched;
     std::atomic<std::size_t> done{0};
     Clock::time_point start, reported, moved, warned;
 };

@@ -65,9 +65,12 @@ shape or kind. It applies to surface shading, media scattering, subsurface and b
 preparation alike; `cutoff 0` turns it off.
 Interior lights also take `domain_cells N` (once, an integer of 1 to 1000000000),
 the cell count of that light's prepared source domain; without it the light takes
-the scene's light default, `default { light { domain_cells N } }` (classic `#default`),
-500000 by default, never its medium's count. A surface light block refuses it. The word
-is contextual.
+the scene's light default, `default { interior { light { domain_cells N } } }` (classic `#default`),
+500000 by default, never its medium's count. Surface lights use their own `domain_cells`
+for a 2D budget of 4096 nodes per light by default, independent of the volume default, set by `default { light { domain_cells N } }`.
+The word is contextual. Both defaults can be set together with
+`default { interior { light { domain_cells 500000 } } light { domain_cells 4096 } }`,
+using the ordinary nested block grammar at every scene version.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 

@@ -1475,9 +1475,9 @@ A passive surface `light { bounce }` stores, per order, the light arriving at no
 leaving: front and back sums of L·|cos θ|^brilliance for each brilliance its materials use. Where the field is read,
 the surface's own diffuse layers are evaluated at that point, so a texture costs no nodes and is exact.
 
-Nodes are seeded once for the whole scene. Every bounce surface is drawn by area (`SurfaceGeometrySampler::SampleArea`,
-eight draws per expected node), the baseline spacing r₀ is set so 4096 nodes of a maximal Poisson disc set cover the
-scene's total bounce area, and each surface's draws are thinned to such a set, a draw kept only when no node of the same
+Nodes are seeded once per light. Each light has its own `domain_cells` 2D node budget, initially 4096 and independent of the volume default, and is drawn by area (`SurfaceGeometrySampler::SampleArea`,
+eight draws per expected node). Its baseline spacing r₀ targets the smaller of 4096 nodes and half its budget (at least one),
+and its draws are thinned to a maximal Poisson disc set, a draw kept only when no node of the same
 sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
 
 Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
@@ -1488,7 +1488,7 @@ when, relative to the local irradiance max(own, predicted):
 - between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
 - within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
   (a shadow edge or a contact crossing it);
-- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths).
+- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths); a buried source uses the local diffusion length in place of its distance below the skin.
 The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
 gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours and a spread trusted
 only from eight draws. A difference that is large but not yet certain, or a value whose standard error exceeds 10%,
@@ -1498,9 +1498,7 @@ spacing; the parent's area is shared by draws. Splits are decided per level from
 order, so the field is the same on any thread count; all lengths are ratios of r₀, and the shadow rays of node draws use
 no absolute offsets, so it is the same at any scale.
 
-Surface bounce fields draw on twice the scene's default `domain_cells` (1000000 by default): as many bytes as that many colours, over every order and the export of buried sources,
-each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
-byte, most first. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
+Each light reuses its seed positions across orders; refinement positions share the remaining node budget across its bounce orders and buried-source export, each receiving an equal share of what remains. When it binds, a level's splits are taken by error times area, most first. The surface default is a 2D budget of 4096 nodes per light, independent of the volume default. Interior lights retain 500000 source cells, set independently with `#default { interior { light { domain_cells N } } }`; the surface default uses `#default { light { domain_cells N } }`. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
 `Bounce oN: ...`, with its nodes per level and how many splits each criterion asked for.
 
 Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
@@ -2584,7 +2582,7 @@ A source sample reaching a subsurface boundary without leaving the same material
 
 Where the subsurface block gives the flesh its own colour or pigment, the texture pigment is a skin with transmittance `tint^(thickness/2)` per crossing, and the internal path crosses it wherever it meets the boundary: once at the exit, twice at each internal reflection (the reflection's throughput is multiplied by the squared skin transmittance at the reflection point), and at the far end of the unscattered straight-through path, where the skin is evaluated. Materials without their own flesh colour carry no skin factor.
 
-A surface `light { emission }` on a method 2 host lit by a buried volume source exports that source's escaping flux before the render: surface nodes are refined as for surface bounce, each node takes one internal path, and the bounced-surface emitter adds the field to the material's own emission with the diffuse Fresnel angular profile. The export shares the surface bounce byte budget as one more order. With `bounce` as well, the first bounce order omits the buried sources so their flux is exported once; the host's camera radiance is unchanged.
+A surface `light { emission }` on a method 2 host lit by a buried volume source exports that source's escaping flux before the render: surface nodes are refined as for surface bounce, each node takes one internal path, and the bounced-surface emitter adds the field to the material's own emission with the diffuse Fresnel angular profile. The export shares that surface light's node budget as one more order. With `bounce` as well, the first bounce order omits the buried sources so their flux is exported once; the host's camera radiance is unchanged.
 
 `tests/source/subsurface_internal.cpp` checks Beer attenuation, source/continuation ownership, normal Fresnel and total internal reflection, world-unit scaling and the infinite uniform-source identity `L = j / sigma_a`. `tests/render/subsurface_internal_source.sh` checks that a buried finite source contributes and scales linearly with its power.
 
@@ -2600,3 +2598,20 @@ A linear sphere sweep's precise-boundary intersections solve directly for ray di
 
 
 Ordinary superellipsoid rays retain the fast twenty-step hybrid solve; an exhausted solve now bisects its remaining sign bracket instead of returning an unconverged endpoint. This intentionally corrects previously inaccurate ordinary intersections. Every returned ordinary root therefore has implicit residual at most `ZERO_TOLERANCE`, or a bracket refined to floating-point precision. The implicit function plus one is positively homogeneous of degree one, so radial projection onto its unit surface bounds spatial error by `R |residual| / (1-|residual|)`. `SurfaceTolerance` reports four times `ZERO_TOLERANCE` times the bounding-box radius, covering the errors of two sampled surface points under transforms. Surface source sampling applies its existing grazing own-root exclusion to both one-sided and two-sided proposals; the hemisphere choice does not disable numerical root ownership. Concave surface returns beyond this error window remain eligible.
+
+### Surface preparation progress and bounded internal paths
+
+A level's first four draws formerly consumed its entire progress share. The following resampling rounds (up to 64 draws), decisions, subdivision work and subsurface gathers passed zero progress units to `Workers::For`. A level-zero counter could therefore remain unchanged while thousands of nodes continued gathering. `Workers::For` now adds discovered work to the total and advances on every completed item. A 30-second gather watchdog checks cooperation and completion, naming the object's source location. Internal walks fail at 4096 scattering/reflection events with the object, channel and sample; the test supplies a defective always-surviving draw stream to exercise this error. No partial radiance is returned on failure.
+
+`tests/render/surface_domain_cells.pov` is a small public capsule/vein case: method 2, a volume emitter just beneath the skin, and a surface bounce light. Its suite checks built-in/explicit 4096-node equality in both languages, per-order node ceilings, independence from both volume defaults, scene scales 0.001 and 1000, exported buried light with two bounce orders, and a one-node budget. `domain_cells.sh` checks independent volume defaults and both language parsers. The buried-source `bounce_self` fixture pins 32768 surface nodes so different bounce-order counts use identical, nonbinding export sampling.
+
+Counted comparison of `tests/render/surface_domain_cells.pov` at `Declare=Cells=0 +W48 +H32 +WT2 +PR -A` (the then-default surface budget, before the reduction to 4096 nodes per light), before at `8554844ac`, alternating before/after twice. The matching parse-only wrapper includes the scene then ends with `#error "parse-only complete"`; it uses the same declarations. Counts include preparation and tracing; none were multiplexed.
+
+| Run | User instructions | Parse-only instructions | Difference |
+| --- | ---: | ---: | ---: |
+| before 1 | 187,577,601,538 | 12,853,029 | 187,564,748,509 |
+| before 2 | 187,564,473,945 | 12,850,507 | 187,551,623,438 |
+| after 1 | 187,841,654,190 | 12,855,487 | 187,828,798,703 |
+| after 2 | 187,850,048,517 | 12,852,133 | 187,837,196,384 |
+
+The added progress and watchdog checks cost 0.14–0.15% instructions on this case. Both builds produce 3492 nodes over three levels, 0.28 MiB of final fields, and pixel-identical decoded PNGs in both pairs. Peak RSS was 35 MiB before and 36–37 MiB after; no preparation work moves into tracing. Wall times varied with concurrent load and do not establish a speed change. At the fixture's explicit 64-node setting, preparation finished in 1.0 seconds, total instructions were 15.11 billion, peak RSS 21 MiB, and the decoded 48×32 image differed from that reference by one 8-bit level in one pixel. This is a small preview budget, not a general convergence guarantee.
