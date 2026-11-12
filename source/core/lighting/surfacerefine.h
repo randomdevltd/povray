@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <stdexcept>
@@ -114,6 +115,29 @@ struct Part final
                (subsurface ? sizeof(MathColour) + sizeof(float) : 0);
     }
 };
+
+struct SourceChoice final
+{
+    std::size_t index;
+    double probability;
+};
+
+// Half the proposal stays uniform so a zero power estimate never hides a source.
+inline SourceChoice ChooseSource(const std::vector<double>& masses, double draw)
+{
+    if (masses.empty()) throw std::logic_error("Surface source selection requires at least one light");
+    const double total = std::accumulate(masses.begin(), masses.end(), 0.0);
+    const double uniform = 1.0 / masses.size();
+    const bool weighted = total > 0.0 && std::isfinite(total);
+    double cumulative = 0.0;
+    for (std::size_t i = 0; i < masses.size(); ++i)
+    {
+        const double probability = weighted ? 0.5 * (uniform + masses[i] / total) : uniform;
+        cumulative += probability;
+        if (draw < cumulative || i + 1 == masses.size()) return {i, probability};
+    }
+    throw std::logic_error("Surface source selection requires at least one light");
+}
 
 struct Node final
 {
@@ -459,9 +483,7 @@ private:
             const Intersection& at = j > 0 ? origin.intersection : node.hit;
             const Vector3d& normal = j > 0 ? origin.normal : node.normal;
             const Sources& gathered = sources[node.part];
-            auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, gathered.lights, 1,
-                                               BounceOrderSeed(node.key, order, j, 0), &at, &normal, 0.0,
-                                               gathered.scales.empty() ? nullptr : &gathered.scales);
+            auto beams = Incident(workers[worker].trace, at, normal, gathered, BounceOrderSeed(node.key, order, j, 0));
             if (subsurface)
             {
                 node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{at, normal, 0.0}, beams, 0, node.eta);
@@ -492,6 +514,38 @@ private:
             }
         }
         node.draws = last;
+    }
+
+    // One source per draw, chosen by its power over distance squared and weighted by its probability, so a draw costs
+    // one connection however many lights the node gathers. Sources of no power add nothing and are left out, so a
+    // light that cannot reach this one, such as another's unlit bounce, leaves its field as it was.
+    std::vector<BounceIncidentBeam> Incident(Trace& trace, const Intersection& at, const Vector3d& normal,
+                                             const Sources& gathered, std::uint64_t key) const
+    {
+        std::vector<std::size_t> live;
+        std::vector<double> masses;
+        for (std::size_t i = 0; i < gathered.lights.size(); ++i)
+        {
+            const LightSource& light = *gathered.lights[i];
+            const MathColour power = light.emitter ? light.emitter->Intensity() : light.colour;
+            const double scale = gathered.scales.empty() ? 1.0 : gathered.scales[i].MaxAbs();
+            if (power.IsZero() || !(scale > 0.0))
+                continue;
+            const Vector3d centre = light.emitter ? light.emitter->Centre() : light.Center;
+            const double radius = light.emitter ? light.emitter->Radius() : 0.0;
+            const double distance2 = (at.IPoint - centre).lengthSqr();
+            live.push_back(i);
+            masses.push_back(power.MaxAbs() * scale / std::max(distance2 + radius * radius, std::numeric_limits<double>::min()));
+        }
+        if (live.empty())
+            return {};
+        const SourceChoice choice = live.size() == 1 ? SourceChoice{0, 1.0} : ChooseSource(masses, Draw(key, kDrawAreaLight, 0));
+        const std::size_t source = live[choice.index];
+        const std::vector<LightSource*> selected{gathered.lights[source]};
+        const std::vector<MathColour> scales{(gathered.scales.empty() ? MathColour(1.0) : gathered.scales[source]) /
+                                             choice.probability};
+        return CollectBounceIncident(trace, at.IPoint, selected, 1, BounceOrderSeed(key, 0, 0, source),
+                                     &at, &normal, 0.0, &scales);
     }
 
     void Index()
