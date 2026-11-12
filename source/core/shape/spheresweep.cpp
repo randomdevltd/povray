@@ -463,7 +463,7 @@ int SweepSegmentSpans(const BasicRay& ray, const SPHSWEEP_SEG& segment, int inde
 // end of anonymous namespace
 
 // Precise linear sweeps are convex hulls of their two endpoint balls; see doc/PERF.md.
-static int IntersectPreciseLinearSweep(const BasicRay& ray, const SPHSWEEP_SEG& segment, SPHSWEEP_INT* intersections)
+static int IntersectPreciseLinearSweep(const BasicRay& ray, const SPHSWEEP_SEG& segment, SPHSWEEP_INT* intersections, ConstObjectPtr owner)
 {
     long double v[3], b[3], d[3];
     long double vv = 0.0L, bb = 0.0L, dd = 0.0L, vb = 0.0L, vd = 0.0L, db = 0.0L;
@@ -522,7 +522,8 @@ static int IntersectPreciseLinearSweep(const BasicRay& ray, const SPHSWEEP_SEG& 
         for (int axis = 0; axis < 3; ++axis)
             intersections[side].Normal[axis] = static_cast<double>(v[axis] + d[axis] * candidate.distance - b[axis] * candidate.position);
         if (!(intersections[side].Normal.lengthSqr() > 0.0))
-            throw POV_EXCEPTION_STRING("Precise linear sphere-sweep transport encountered a singular zero-radius tip.");
+            throw POV_EXCEPTION_STRING("Precise linear sphere-sweep transport encountered a singular zero-radius tip on " +
+                std::string(owner->source ? *owner->source : "an unnamed sphere sweep") + ".");
         intersections[side].Normal.normalize();
     }
     return 2;
@@ -685,7 +686,7 @@ bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceTh
     for(i = 0; i < Num_Segments; i++)
     {
         // Are there intersections with this segment?
-        Num_Seg_Isect = preciseLinear ? IntersectPreciseLinearSweep(New_Ray, Segment[i], Segment_Isect) :
+        Num_Seg_Isect = preciseLinear ? IntersectPreciseLinearSweep(New_Ray, Segment[i], Segment_Isect, this) :
             Intersect_Segment(New_Ray, &Segment[i], Segment_Isect, Thread->Stats());
 
         // Test for end of vector

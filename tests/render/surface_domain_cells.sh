@@ -12,6 +12,8 @@ render() {
         { cat "$name.log"; exit 1; }
     tail -c 9216 "$name.ppm" >"$name.rgb"
     grep -q 'Preparation: bounce finished' "$name.log" || { cat "$name.log"; exit 1; }
+    sed -n 's/.*Surface light total: \([0-9]*\) nodes across \([0-9]*\) lights.*/\1 \2/p' "$name.log" |
+        awk -v n="${CAP:-64}" '$1 < $2 || $1 > n { bad=1 } END { exit (bad || NR!=1) }' || { cat "$name.log"; exit 1; }
     sed -n 's/.*Bounce o[0-9]*: \([0-9]*\) nodes.*/\1/p' "$name.log" |
         awk -v n="${CAP:-64}" '$1 > n { bad=1 } END { exit (bad || NR==0) }' || { cat "$name.log"; exit 1; }
 }

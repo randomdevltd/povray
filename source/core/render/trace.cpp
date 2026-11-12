@@ -7466,6 +7466,12 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
                     boundary, source, connect, draw, bounce) / samples;
             }
+            catch (const std::invalid_argument& error)
+            {
+                throw POV_EXCEPTION(kUncategorizedError, std::string(error.what()) + " in " +
+                    DescribeSubsurfaceObject(out.Object) + ", channel " + std::to_string(channel) +
+                    ", sample " + std::to_string(sample));
+            }
             catch (const std::runtime_error& error)
             {
                 throw POV_EXCEPTION(kUncategorizedError, std::string(error.what()) + " in " +

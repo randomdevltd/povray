@@ -34,19 +34,24 @@ int main()
     object.source = std::make_shared<const std::string>("line 7 of surface_preparation.pov");
     bounce_prepare::Context context(scene, &thread, [] {});
     context.Watch(&object);
-    context.Check();
-    context.started -= std::chrono::seconds(31);
+    for (std::size_t step = 0; step < bounce_prepare::Context::kMaximumGatherSteps; ++step)
+        context.cooperate(); // the entire work allowance succeeds, regardless of elapsed time
+    assert(context.work == bounce_prepare::Context::kMaximumGatherSteps);
     bool rejected = false;
     try { context.cooperate(); }
     catch (const std::runtime_error& e)
     {
         const std::string message(e.what());
-        rejected = message.find("30 seconds at one gather") != std::string::npos &&
+        rejected = message.find("trace steps at one gather") != std::string::npos &&
                    message.find(*object.source) != std::string::npos;
     }
     assert(rejected);
-    context.owner = nullptr;
+    context.Watch(&object); // a new gather gets its full allowance
     context.cooperate();
+    assert(context.work == 1);
+    context.owner = nullptr;
+    context.work = bounce_prepare::Context::kMaximumGatherSteps;
+    context.cooperate(); // work outside a gather is not charged
     Messages messages;
     PreparationProgress progress(&messages, 0, 0.0);
     thread.preparationProgress = &progress;
@@ -59,7 +64,14 @@ int main()
     workers.For(3, [] {}, [](std::size_t, std::size_t) {}, 1); // every completed item advances
     progress.Poll();
     assert(messages.lines.back().find("bounce 8/8") != std::string::npos);
+    // Completing at the work limit must not charge an extra step or discard the result.
+    workers.For(1, [] {}, [&](std::size_t, std::size_t worker)
+    {
+        workers[worker].Watch(&object);
+        workers[worker].work = bounce_prepare::Context::kMaximumGatherSteps;
+    });
+    for (const auto& worker : workers.contexts) assert(worker->owner == nullptr);
     progress.End();
     thread.preparationProgress = nullptr;
-    std::cout << "Surface preparation counts discovered work and identifies stalled gathers\n";
+    std::cout << "Surface preparation counts discovered work, bounds gathers and identifies runaway objects\n";
 }
