@@ -890,9 +890,6 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
                 return invalid("media segment flux");
             if (!Finite(segment.selfShare, MathColour::channels))
                 return invalid("media segment self share");
-            for (int channel = 0; channel < MathColour::channels; ++channel)
-                if (segment.selfShare[channel] < 0.0 || segment.selfShare[channel] > 1.0)
-                    return "The photon file '" + name + "' holds a media segment self share outside [0, 1].";
             if (!Finite(segment.extinction, MathColour::channels))
                 return invalid("media segment extinction");
             if (!std::isfinite(segment.depth))

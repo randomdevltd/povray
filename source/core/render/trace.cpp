@@ -6317,8 +6317,8 @@ void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field, const st
 }
 
 // Light from either side enters from the material's exterior, as at a cloud point.
-MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
-                                         PreparedSetId preparedSetId, double& eta)
+MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, std::vector<BounceIncidentBeam>& incident,
+                                         PreparedSetId preparedSetId, double& eta, double spacing)
 {
     TraceTicket ticket(1, 0.0);
     ticket.preparedSetId = preparedSetId;
@@ -6336,14 +6336,28 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const st
     std::vector<Vector3d>& taps = ssltScratchTaps;
     taps.clear();
     SubsurfaceEntryTaps(hit, node.normal.normalized(), sqrt(node.areaWeight), ticket, taps);
-    for (const BounceIncidentBeam& beam : incident)
+    const std::vector<Vector3d> entryTaps(taps);
+    double diffusionLength = -1.0;
+    for (BounceIncidentBeam& beam : incident)
     {
         if (beam.source && SubsurfaceInternalConnection(*beam.source, hit.IPoint, -beam.direction,
                 beam.distance, hit.Object, SubsurfaceObject(hit), ticket, node.normal))
-            continue;
-        if (!taps.empty())
         {
-            light += beam.angularWeight * float(ComputeFacetsEntry(node.normal, taps.data(), nullptr, taps.size(), beam.direction, eta));
+            // A buried source's exported glow varies over the material's diffusion length. Its distance below
+            // the skin is not a surface refinement scale. Evaluate the local coefficients without a random walk.
+            if (beam.distance * 2.0 < spacing && diffusionLength < 0.0)
+            {
+                ssltBridgeLengthOnly = true;
+                try { SurfaceSubsurfaceNode(node, 0, preparedSetId, diffusionLength); }
+                catch (...) { ssltBridgeLengthOnly = false; throw; }
+                ssltBridgeLengthOnly = false;
+            }
+            if (diffusionLength >= 0.0) beam.distance = diffusionLength;
+            continue;
+        }
+        if (!entryTaps.empty())
+        {
+            light += beam.angularWeight * float(ComputeFacetsEntry(node.normal, entryTaps.data(), nullptr, entryTaps.size(), beam.direction, eta));
             continue;
         }
         const double cosine = fabs(dot(node.normal, beam.direction));
@@ -6353,7 +6367,7 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const st
     return light / float(M_PI);
 }
 
-MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length)
+MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length, unsigned samples)
 {
     Intersection hit(node.intersection);
     TraceTicket ticket(1, 0.0);
@@ -6365,19 +6379,18 @@ MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size
     eye.AppendInteriors(containing);
     eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, index));
     ssltBridgeNode = index;
-    ssltBridgeLength = HUGE_VAL;
+    ssltBridgeLength = ssltBridgeLengthOnly ? -1.0 : HUGE_VAL;
     MathColour radiance;
     ColourChannel transmission = 0.0;
-    if (ssltBridgeInternalOnly)
+    if (ssltBridgeInternalOnly && !ssltBridgeLengthOnly)
     {
-        const int samples = sceneData->subsurfaceSamplesSingle;
-        if (samples <= 0) return radiance;
+        if (samples == 0) return radiance;
         const auto key = eye.GetKey();
         const Vector3d axis = fabs(node.normal[Y]) < 0.9 ? Vector3d(0.0, 1.0, 0.0) : Vector3d(1.0, 0.0, 0.0);
         const Vector3d u = cross(node.normal, axis).normalized(), v = cross(node.normal, u);
         double eta;
         ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
-        for (int i = 0; i < samples; ++i)
+        for (unsigned i = 0; i < samples; ++i)
         {
             const auto sampleKey = DeriveKey(key, kDrawSubsurface, i);
             const double r = sqrt(Draw(sampleKey, kDrawSubsurface, 0));
@@ -7361,7 +7374,7 @@ bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3
 
 MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
     const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-    const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous, const SubsurfaceFlesh* skin)
+    const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, const SubsurfaceFlesh* skin)
 {
     MathColour result;
     if (samples <= 0) return result;
@@ -7421,8 +7434,6 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 for (const auto& from : sources)
                     radiance += from.scale[channel] *
                         from.emitter->VolumeEmissionAlong(point, direction, reach, extinction, draw(), threadData)[channel];
-                if (!homogeneous && radiance != 0.0)
-                    throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
                 return radiance;
             };
             auto connect = [&](const Vector3d& point, double extinction)
@@ -7442,8 +7453,6 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                     if (distance >= hit.distance) continue;
                     radiance += from.scale[channel] * light.weight[channel] * std::exp(-extinction * distance) / (4.0 * M_PI);
                 }
-                if (!homogeneous && radiance != 0.0)
-                    throw POV_EXCEPTION_STRING("Embedded volume lights currently require homogeneous subsurface coefficients and a single material layer.");
                 return radiance;
             };
             // a reflection inside crosses the skin twice, in and back
@@ -7452,8 +7461,23 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 if (skin == nullptr) return 1.0;
                 return double(Sqr((skin->skin != nullptr) ? ComputeSubsurfaceSkin(*skin, point)[channel] : skin->exitSkin[channel]));
             };
-            result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
-                boundary, source, connect, draw, bounce) / samples;
+            try
+            {
+                result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
+                    boundary, source, connect, draw, bounce) / samples;
+            }
+            catch (const std::invalid_argument& error)
+            {
+                throw POV_EXCEPTION(kUncategorizedError, std::string(error.what()) + " in " +
+                    DescribeSubsurfaceObject(out.Object) + ", channel " + std::to_string(channel) +
+                    ", sample " + std::to_string(sample));
+            }
+            catch (const std::runtime_error& error)
+            {
+                throw POV_EXCEPTION(kUncategorizedError, std::string(error.what()) + " in " +
+                    DescribeSubsurfaceObject(out.Object) + ", channel " + std::to_string(channel) +
+                    ", sample " + std::to_string(sample));
+            }
         }
     }
     const double cosine = clip(fabs(dot(inward, normal)), 0.0, 1.0);
@@ -10681,6 +10705,16 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         profile.z_v[j]      = profile.z_r[j] * (1.0 + Aconst * 4.0/3.0);
     }
 
+    if (ssltBridgeLengthOnly)
+    {
+        ssltBridgeLength = HUGE_VAL;
+        for (int j = 0; j < MathColour::channels; ++j)
+            if (profile.sigma_tr[j] > 0.0)
+                ssltBridgeLength = min(ssltBridgeLength, 1.0 / (profile.sigma_tr[j] * sceneData->mmPerUnit));
+        Eye.GetTicket().subsurfaceRecursionDepth--;
+        return;
+    }
+
     double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
     double ftOut   = ComputeFt(cos_out, eta);
     // Method 2's light enters through the perturbed surface, averaged over the area each estimate of it stands for; it
@@ -10713,8 +10747,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         MathColour internalSource;
         if (pointCloud)
             internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
-                1, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
-                Finish->SubsurfaceHasColour ? &flesh : nullptr);
+                1, DeriveKey(key, kDrawSubsurface, 7), Finish->SubsurfaceHasColour ? &flesh : nullptr);
         if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
         Final_Colour += internalSource * layers.weight;
         Eye.GetTicket().subsurfaceRecursionDepth--;
@@ -10863,8 +10896,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     MathColour internalSource;
     if (pointCloud)
         internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
-            NumSamplesSingle, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
-                Finish->SubsurfaceHasColour ? &flesh : nullptr);
+            NumSamplesSingle, DeriveKey(key, kDrawSubsurface, 7), Finish->SubsurfaceHasColour ? &flesh : nullptr);
     if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
     Final_Colour += internalSource * layers.weight;
 

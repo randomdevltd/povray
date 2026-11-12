@@ -249,11 +249,11 @@ class Trace
         /// Readies this trace to work on surface bounce nodes for the subsurface light leaving them, diffused through `field`.
         void BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field, const std::vector<LightSource*>& sources = {}, bool internalOnly = false);
         /// The light entering a node through its surface from the light arriving at it, and the relative index it leaves through.
-        MathColour SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
-            PreparedSetId preparedSetId, double& eta);
+        MathColour SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, std::vector<BounceIncidentBeam>& incident,
+            PreparedSetId preparedSetId, double& eta, double spacing);
         /// The subsurface radiance leaving a node of the field, drawn by its index, and the shortest diffusion length (scene
         /// units) of the material it leaves, infinite where none diffused.
-        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length);
+        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length, unsigned samples = 1);
         /// One field per quantised relative index of refraction over the indexed nodes, from each node's radiance and area,
         /// given in the nodes' own order.
         static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
@@ -1241,6 +1241,7 @@ class Trace
         const SurfaceSubsurfaceField* ssltBridge = nullptr;
         std::vector<const LightSource*> ssltBridgeSources;
         bool ssltBridgeInternalOnly = false;
+        bool ssltBridgeLengthOnly = false;
         std::size_t ssltBridgeNode = 0;
         double ssltBridgeLength = HUGE_VAL;
         std::vector<PreciseMathColour> ssltBridgeEntry; ///< entry factors of the bridge's patches, for the finish and skin below
@@ -1474,7 +1475,7 @@ class Trace
         std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr, const LightSource*>, bool> ssltSourceOverlaps;
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous,
+            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key,
             const SubsurfaceFlesh* skin);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);

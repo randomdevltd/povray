@@ -39,13 +39,16 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     const double extinction = absorption + scattering;
     if (!(absorption >= 0.0) || !(scattering >= 0.0) || !(extinction > 0.0) ||
         !std::isfinite(extinction) || !(relativeIor > 0.0) || !std::isfinite(relativeIor))
-        throw std::invalid_argument("Internal subsurface transport requires finite homogeneous coefficients");
+        throw std::invalid_argument("Internal subsurface transport requires finite coefficients");
     const double albedo = scattering / extinction;
     double radiance = 0.0, throughput = 1.0;
     bool gatherSegment = true;
     size_t events = 0;
     for (;;)
     {
+        // Roulette makes long paths exponentially rare; a broken draw stream or a trapped path must fail loudly.
+        if (events == 4096)
+            throw std::runtime_error("Internal subsurface walk exceeded 4096 scattering/reflection events");
         const auto hit = boundary(position, direction);
         if (!(hit.distance >= 0.0) || !std::isfinite(hit.distance))
             throw std::runtime_error("Internal subsurface transport requires an enclosing boundary");

@@ -95,7 +95,7 @@ class Torus : public ObjectBase
         virtual void Transform(const TRANSFORM *) override;
         virtual void Compute_BBox() override;
     protected:
-        int Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) const;
+        int Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats, bool everyRoot = false) const;
         bool Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DBL h2, DBL r1, DBL r2) const;
         void CalcUV(const Vector3d& IPoint, Vector2d& Result) const;
 };

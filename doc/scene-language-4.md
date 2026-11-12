@@ -65,9 +65,12 @@ shape or kind. It applies to surface shading, media scattering, subsurface and b
 preparation alike; `cutoff 0` turns it off.
 Interior lights also take `domain_cells N` (once, an integer of 1 to 1000000000),
 the cell count of that light's prepared source domain; without it the light takes
-the scene's light default, `default { light { domain_cells N } }` (classic `#default`),
-500000 by default, never its medium's count. A surface light block refuses it. The word
-is contextual.
+the scene's light default, `default { interior { light { domain_cells N } } }` (classic `#default`),
+500000 by default, never its medium's count. Surface lights use their own `domain_cells`
+for a 2D budget of 4096 nodes per light by default, independent of the volume default, set by `default { light { domain_cells N } }`.
+The word is contextual. Both defaults can be set together with
+`default { interior { light { domain_cells 500000 } } light { domain_cells 4096 } }`,
+using the ordinary nested block grammar at every scene version.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 
@@ -99,8 +102,8 @@ Where the subsurface block gives the flesh its own colour, the texture pigment i
 crossed at the exit, twice at each internal reflection and at the far end of a straight
 path through a thin wall. A surface `light { emission }` on the host exports the flux
 leaving it, and a `bounce` block exports it in its first order; with both it is exported
-once. The host needs homogeneous coefficients (one texture layer, no `volume_sampling`
-flesh). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
+once. The internal walk uses the material's coefficients at the shaded point (the top
+layer's subsurface settings of a layered texture). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
 mesh with an open border) stops the parse, and so does one whose container lies inside an
 open subsurface mesh's `inside_vector` volume, naming both lines, with or without
 `subsurface` in `global_settings`; an open part that holds no light hosts nothing. A
@@ -174,8 +177,9 @@ and a bounce block accepts only one `passes` setting.
 
 `bounce { self 0.05 }` retains five percent of the bounce on its own media.
 A scalar or RGB vector (`self <0.1, 0.03, 0>` or `self rgb <0.1, 0.03, 0>`)
-sets a finite fraction from 0 to 1 in every channel. Values outside this range
-are errors. The default is `on` (1); `off` is 0. `self` may appear at most once.
+sets the share in every channel, as any finite value: above 1 amplifies the bounce
+on its own object, below 0 subtracts it. Only a value that is not finite is an
+error. The default is `on` (1); `off` is 0. `self` may appear at most once.
 `bounce { self off }` keeps an interior light's
 bounced light off its own container's media, at the camera and in its own next
 pass, while it still lights surfaces and other media; the medium's own emission

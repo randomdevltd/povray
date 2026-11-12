@@ -42,17 +42,37 @@ struct Cooperate final : Trace::CooperateFunctor
         if (callback)
             callback();
     }
-    const std::function<void()>& callback;
+    std::function<void()> callback;
 };
 
 struct Context final
 {
     Context(std::shared_ptr<SceneData> scene, TraceThreadData* td, const std::function<void()>& callback)
-        : cooperate(callback), trace(scene, td, QualityFlags(9), cooperate, media, radiosity),
+        : cooperate([this, callback]() { if (callback) callback(); CountWork(); }), trace(scene, td, QualityFlags(9), cooperate, media, radiosity),
           media(td, &trace, &photons),
           photons(&scene->GetPreparedSet(0).surfacePhotonMap, scene->photonSettings)
     {
     }
+    void Watch(ConstObjectPtr object)
+    {
+        owner = object;
+        work = 0;
+    }
+    // Bound cooperative trace steps, independent of pauses, pre-emption or machine load.
+    static constexpr std::size_t kMaximumGatherSteps = 1048576;
+    void CountWork()
+    {
+        if (!owner)
+            return;
+        if (work == kMaximumGatherSteps)
+            throw std::runtime_error("Surface light preparation exceeded " + std::to_string(kMaximumGatherSteps) +
+                " trace steps at one gather on " +
+                std::string(owner->source ? *owner->source : "an unnamed object") +
+                "; report this scene with its domain_cells and subsurface settings.");
+        ++work;
+    }
+    ConstObjectPtr owner = nullptr;
+    std::size_t work = 0;
     Cooperate cooperate;
     Trace::RadiosityFunctor radiosity;
     Trace trace;
@@ -102,6 +122,13 @@ struct Workers final
     template<typename Function>
     void For(std::size_t count, const std::function<void()>& cooperate, const Function& function, std::size_t units)
     {
+        // Refinement and subsurface gathers discover work as they go. Count every completed item, including
+        // resampling, instead of leaving the display unchanged throughout a long level.
+        if (count > units)
+        {
+            if (td->preparationProgress) td->preparationProgress->AddWork(count - units);
+            units = count;
+        }
         const auto advance = [count, units](std::size_t index) { return (index + 1) * units / count - index * units / count; };
         try
         {
@@ -109,6 +136,7 @@ struct Workers final
             {
                 stop();
                 function(index, worker);
+                contexts[worker]->owner = nullptr;
                 AdvancePreparation(td->preparationProgress, advance(index));
             }, [&]() { if (cooperate) cooperate(); }, true);
         }
@@ -344,7 +372,7 @@ struct SubsurfaceScope final
 // entering each; the workers share one cache of boundary and layer tables.
 inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     Workers& workers, const std::shared_ptr<SceneData>& scene, const surface_refine::Result& result,
-    const Sources& sources, const std::function<void()>& cooperate, std::size_t units, bool boundary = true)
+    const Sources& sources, const std::function<void()>& cooperate, std::size_t units, unsigned samples, bool boundary = true)
 {
     const SubsurfaceScope scope(workers, scene);
     std::vector<std::unique_ptr<Trace>> traces;
@@ -396,6 +424,7 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
         }
         workers.For(now.size(), cooperate, [&](size_t k, size_t worker)
         {
+            workers[worker].Watch(nodes[now[k]].intersection.Object);
             radiance[now[k]] = traces[worker]->SurfaceSubsurfaceNode(nodes[now[k]], now[k], 0, length[now[k]]);
         }, 0);
         for (std::size_t i : now) found[group[i]].push_back(i);
@@ -440,8 +469,9 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
             trace->BeginSurfaceSubsurface(field, lights, true);
         workers.For(count, cooperate, [&](size_t i, size_t worker)
         {
+            workers[worker].Watch(nodes[i].intersection.Object);
             double unused;
-            radiance[i] += share * traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused);
+            radiance[i] += share * traces[worker]->SurfaceSubsurfaceNode(nodes[i], i, 0, unused, samples);
         }, 0);
     }
     AdvancePreparation(workers.td->preparationProgress, units);
@@ -551,9 +581,13 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             surface_refine::Part part;
             part.owner = const_cast<ObjectPtr>(owner);
+            part.budget = std::size_t(light->sourceDomainCells > 0.0 ? light->sourceDomainCells : scene->surfaceDomainCells);
+            part.fields = std::uint64_t(target.passes) + unsigned(internalPrimary);
+            part.samples = unsigned(std::max(1, owner->surfaceLight->samples));
             part.sampler = std::make_shared<const SurfaceGeometrySampler>(part.owner);
             if (!part.sampler->IsValid())
-                throw std::invalid_argument("Surface bounce requires finite surface geometry");
+                throw std::invalid_argument("Surface bounce requires finite surface geometry on " +
+                    std::string(owner->source ? *owner->source : "an unnamed object"));
             part.sampler->ResolveDeferred();
             part.classes = settings ? SurfaceDiffuseClasses(owner) : std::vector<double>{1.0};
             for (const auto object : scene->objects)
@@ -584,25 +618,14 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             td->preparationProgress->End();
         return;
     }
-    // Surface bounce fields share the scene's prepared cell limit, as many bytes as that many colours, over all orders.
-    const std::size_t budget = std::size_t(scene->PreparedCellLimit()) * sizeof(MathColour);
-    std::size_t used = 0, baseline = surface_refine::kBaseline;
-    double spacing = 0.0;
+    // Reused seed positions count once; refinement positions accumulate across all fields.
+    std::uint64_t totalSurfaceNodes = 0;
     if (!parts.empty())
     {
-        std::size_t nodeBytes = 0;
-        for (const auto& part : parts)
-            nodeBytes = std::max(nodeBytes, part.NodeBytes(scene->useSubsurface));
-        const bool primary = std::any_of(targets.begin(), targets.end(), [](const Target& target) { return target.internalPrimary; });
-        const std::size_t first = budget / std::max(1u, maximum + unsigned(primary)) / 2 / nodeBytes;
-        if (first < baseline)
-        {
-            baseline = std::max<std::size_t>(1, first);
-            if (td->preparationProgress)
-                td->preparationProgress->Note("Bounce baseline cut to " + std::to_string(baseline) + " nodes by the budget");
-        }
         workers.Step("surface seeds");
-        spacing = surface_refine::Seed(parts, workers, baseline, cooperate);
+        surface_refine::Seed(parts, workers, cooperate);
+        for (const auto& part : parts)
+            totalSurfaceNodes += part.seeds.size();
         AdvancePreparation(td->preparationProgress, parts.size());
     }
     std::vector<std::shared_ptr<LightSource>> previous;
@@ -645,16 +668,17 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             traces.back()->BeginSurfaceSubsurface(bridge);
             entries.push_back(traces.back().get());
         }
-        surface_refine::Order<Workers> refine(workers, parts, primaryParts, primarySources, 0, spacing, budget / (maximum + 1),
+        surface_refine::Order<Workers> refine(workers, parts, primaryParts, primarySources, 0,
                                               entries, cooperate, kSurfaceUnits * primaryParts.size());
         const auto results = refine.Run("internal emission");
-        used += refine.Bytes();
+        totalSurfaceNodes += refine.NodeCount();
         for (std::size_t a = 0; a < primaryParts.size(); ++a)
         {
+            totalSurfaceNodes -= parts[primaryParts[a]].seeds.size();
             Target& target = targets[primaryTargets[a]];
             workers.Step("internal emission " + Of("t", a, primaryParts.size()));
             const auto field = PrepareSubsurfaceBounce(workers, scene, results[a], primarySources[a], cooperate,
-                                                       kSurfaceUnits, false);
+                                                       kSurfaceUnits, parts[primaryParts[a]].samples, false);
             target.primary = MakeBouncedSurfaceEmitter(target.primary, const_cast<ObjectPtr>(target.light->emitterContainer),
                                                        field, true);
             target.light->emitter = target.primary;
@@ -711,11 +735,6 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         if (!active.empty())
         {
             const auto start = std::chrono::steady_clock::now();
-            unsigned int left = 0;
-            for (const auto& target : targets)
-                if (target.surface)
-                    left = std::max(left, target.passes);
-            const std::size_t allowance = (budget > used ? budget - used : 0) / std::max(1u, left - index);
             std::vector<surface_refine::Result> results;
             std::size_t nodeCount = 0, bytes = 0;
             unsigned levels = 0;
@@ -734,27 +753,28 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     traces.back()->BeginSurfaceSubsurface(bridge);
                     entries.push_back(traces.back().get());
                 }
-                surface_refine::Order<Workers> refine(workers, parts, active, activeSources, order, spacing, allowance, entries,
+                surface_refine::Order<Workers> refine(workers, parts, active, activeSources, order, entries,
                                                       cooperate, kSurfaceUnits * active.size());
                 results = refine.Run(orderItem);
                 nodeCount = refine.NodeCount();
+                totalSurfaceNodes += nodeCount;
                 bytes = refine.Bytes();
                 levels = refine.Levels();
                 bound = refine.Bound();
                 levelCounts = refine.LevelCounts();
                 std::copy(refine.Reasons(), refine.Reasons() + 3, reasons);
             }
-            used += bytes;
             const auto bridged = std::chrono::steady_clock::now();
             for (std::size_t a = 0; a < active.size(); ++a)
             {
+                totalSurfaceNodes -= parts[active[a]].seeds.size();
                 std::shared_ptr<const SurfaceBounceRadiance> subsurface;
                 if (scene->useSubsurface)
                 {
                     workers.Step(orderItem + " " + Of("t", a, active.size()) + " subsurface");
                     const Sources noSources;
                     subsurface = PrepareSubsurfaceBounce(workers, scene, results[a],
-                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a], cooperate, kSurfaceUnits);
+                        order == 1 && activeInternalPrimary[a] ? noSources : activeSources[a], cooperate, kSurfaceUnits, parts[active[a]].samples);
                 }
                 surfaceFields[a] = std::make_shared<const SumSurfaceBounceRadiance>(
                     std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{results[a].diffuse, subsurface}, activeGain[a]);
@@ -1004,7 +1024,12 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         component.payload = target.light->emitter->PreparedAxis();
     }
     if (td->preparationProgress)
+    {
+        if (!parts.empty())
+            td->preparationProgress->Note("Surface light total: " + std::to_string(totalSurfaceNodes) +
+                " nodes across " + std::to_string(parts.size()) + " lights.");
         td->preparationProgress->End();
+    }
 }
 
 } // namespace pov

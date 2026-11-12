@@ -52,6 +52,7 @@ public:
     }
     /// Names where in the phase the work is, shown on the next line, shortened to fit.
     void Step(const std::string& text) { step = text; }
+    void AddWork(std::size_t count) { total += count; }
     void Advance(std::size_t count = 1) { done.fetch_add(count, std::memory_order_relaxed); }
     /// A line of its own, not a progress line, shortened to fit.
     void Note(const std::string& text) const

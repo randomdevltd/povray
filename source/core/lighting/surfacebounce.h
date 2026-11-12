@@ -231,7 +231,7 @@ public:
     void AccumulateGuide(SurfaceAngularGuide& guide, double scale = 1.0) const override
     {
         double most = 0.0;
-        for (int c = 0; c < MathColour::channels; ++c) most = std::max(most, double(tint[c]));
+        for (int c = 0; c < MathColour::channels; ++c) most = std::max(most, std::fabs(double(tint[c])));
         if (most > 0.0) field->AccumulateGuide(guide, scale * most);
     }
     MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
