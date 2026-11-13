@@ -4,6 +4,7 @@
 #include "core/configcore.h"
 #include "core/lighting/bounceincident.h"
 #include "core/lighting/bounceorders.h"
+#include "core/lighting/lightsource.h"
 #include "core/lighting/subsurfaceboundary.h"
 #include "core/lighting/surfacebounce.h"
 #include "core/math/randomsequence.h"
@@ -137,6 +138,20 @@ inline SourceChoice ChooseSource(const std::vector<double>& masses, double draw)
         if (draw < cumulative || i + 1 == masses.size()) return {i, probability};
     }
     throw std::logic_error("Surface source selection requires at least one light");
+}
+
+inline MathColour SourcePower(const LightSource& light)
+{
+    return light.emitter ? light.emitter->Intensity() : light.colour * M_PI;
+}
+
+// The light a source delivers at `point` under its own fall-off: none for a parallel or unfaded light.
+inline double SourceMass(const LightSource& light, const Vector3d& point)
+{
+    const Vector3d centre = light.emitter ? light.emitter->Centre() : light.Center;
+    const double radius = light.emitter ? light.emitter->Radius() : 0.0;
+    const double distance = std::sqrt((point - centre).lengthSqr() + radius * radius);
+    return SourcePower(light).MaxAbs() * Light_Distance_Attenuation(&light, std::max(distance, std::numeric_limits<double>::min()));
 }
 
 struct Node final
@@ -516,7 +531,7 @@ private:
         node.draws = last;
     }
 
-    // One source per draw, chosen by its power over distance squared and weighted by its probability, so a draw costs
+    // One source per draw, chosen by the light it delivers here and weighted by its probability, so a draw costs
     // one connection however many lights the node gathers. Sources of no power add nothing and are left out, so a
     // light that cannot reach this one, such as another's unlit bounce, leaves its field as it was.
     std::vector<BounceIncidentBeam> Incident(Trace& trace, const Intersection& at, const Vector3d& normal,
@@ -527,15 +542,11 @@ private:
         for (std::size_t i = 0; i < gathered.lights.size(); ++i)
         {
             const LightSource& light = *gathered.lights[i];
-            const MathColour power = light.emitter ? light.emitter->Intensity() : light.colour;
             const double scale = gathered.scales.empty() ? 1.0 : gathered.scales[i].MaxAbs();
-            if (power.IsZero() || !(scale > 0.0))
+            if (SourcePower(light).IsZero() || !(scale > 0.0))
                 continue;
-            const Vector3d centre = light.emitter ? light.emitter->Centre() : light.Center;
-            const double radius = light.emitter ? light.emitter->Radius() : 0.0;
-            const double distance2 = (at.IPoint - centre).lengthSqr();
             live.push_back(i);
-            masses.push_back(power.MaxAbs() * scale / std::max(distance2 + radius * radius, std::numeric_limits<double>::min()));
+            masses.push_back(SourceMass(light, at.IPoint) * scale);
         }
         if (live.empty())
             return {};

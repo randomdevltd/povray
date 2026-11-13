@@ -1484,9 +1484,9 @@ Each order refines level by level, to r₀/64. A node starts with four draws, th
 from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
 projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
 mean over the reachable disc and its draws give a standard error. Each draw connects to one source: among those with
-power, half the time uniformly and half by power over squared distance, weighted by the inverse of that probability, so a
-draw's expected light is the sum over every source and its cost does not grow with the number of lights. A node splits
-when, relative to the local irradiance max(own, predicted):
+power, half the time uniformly and half by the light it delivers there (power under the light's own fall-off: a parallel or
+unfaded light by power alone), weighted by the inverse of that probability, so a draw's expected light is the sum over
+every source and its cost does not grow with the number of lights. A node splits when, relative to the local irradiance max(own, predicted):
 - between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
 - within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
   (a shadow edge or a contact crossing it);
@@ -2610,8 +2610,8 @@ The geometry is final by then: meshes are built and rebounded and CSG child tree
 changes a box.
 
 A surface light's `domain_cells` is its own node budget: half seeds it, the rest refines it, shared over its orders and
-exported light. Each draw at a node connects to one source among those with power, half uniformly and half by power over
-squared distance, weighted by the inverse of that probability; the draws still start at four and grow while a node is
+exported light. Each draw at a node connects to one source among those with power, half uniformly and half by the light it
+delivers there (power under its own fall-off), weighted by the inverse of that probability; the draws still start at four and grow while a node is
 uncertain, so a node gathering one lit source draws as before.
 
 No gather stops at a time or step count. Each context counts its trace's cooperation points per gather, one increment

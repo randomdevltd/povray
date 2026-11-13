@@ -25,6 +25,15 @@ int main()
     const auto overflow = surface_refine::ChooseSource({HUGE_VAL, 1.0}, 0.75);
     assert(dark.index == 1 && dark.probability == 0.5);
     assert(overflow.index == 1 && overflow.probability == 0.5);
+    LightSource sun, faded;
+    sun.Parallel = true;
+    sun.Center = faded.Center = Vector3d(0.0, 1.0e6, 0.0);
+    faded.Fade_Power = 2.0;
+    faded.Fade_Distance = 0.0;
+    const double near = surface_refine::SourceMass(sun, Vector3d(0.0, 1.0e6 - 1.0, 0.0));
+    assert(near > 0.0 && surface_refine::SourceMass(sun, Vector3d(0.0)) == near);
+    assert(std::abs(surface_refine::SourceMass(faded, Vector3d(0.0, 1.0e6 - 1.0, 0.0)) /
+                    surface_refine::SourceMass(faded, Vector3d(0.0, 1.0e6 - 2.0, 0.0)) - 4.0) < 1e-9);
     Initialize_Noise();
     auto scene = std::make_shared<SceneData>();
     assert(scene->surfaceDomainCells > 0.0);
