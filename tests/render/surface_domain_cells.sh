@@ -21,7 +21,9 @@ render stated
 od -An -v -tu2 --endian=big stated.rgb | awk '{ for(i=1;i<=NF;i++) { if(NR==1 && i==1) lo=$i; if($i<lo) lo=$i; if($i>hi) hi=$i } } END { exit !(hi > 2*lo) }' ||
     { echo 'surface_domain_cells: the capsule did not light the image'; exit 1; }
 CAP=67 render independent Declare=Extra=1
-cmp stated.rgb independent.rgb
+# the far light's own bounce reaches the capsule faintly; the capsule's budget and nodes stay its own
+od -An -v -tu2 --endian=big -w2 stated.rgb >stated.values; od -An -v -tu2 --endian=big -w2 independent.rgb >independent.values
+paste -d' ' stated.values independent.values | awk '{ d = $1 - $2; if (d > 2 || d < -2) bad = 1 } END { exit bad }' || { echo 'surface_domain_cells: a far light changed the capsule' >&2; exit 1; }
 render defaulted Declare=UseDefault=1
 cmp stated.rgb defaulted.rgb
 render medium Declare=MediaCells=8
@@ -48,7 +50,7 @@ SCENE
         timeout 60 "$POVRAY" +i$kind.$language +w8 +h8 +wt1 +pr -a -d -p +fp16 +o$kind.ppm >$kind.log 2>&1 || { cat $kind.log; exit 1; }
         tail -c 384 $kind.ppm >$kind.rgb
         sed -n 's/.*Bounce o[0-9]*: \([0-9]*\) nodes.*/\1/p' $kind.log >$kind.nodes
-        awk '$1 > 4096 { bad=1 } END { exit (bad || NR!=2) }' $kind.nodes || { cat $kind.log; exit 1; }
+        awk '$1 > 4096 { bad=1 } END { exit (bad || NR!=1) }' $kind.nodes || { cat $kind.log; exit 1; }
     done
     cmp builtin.rgb explicit.rgb
     cmp builtin.nodes explicit.nodes

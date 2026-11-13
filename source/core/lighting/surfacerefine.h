@@ -832,7 +832,7 @@ private:
     std::size_t bytes = 0, reasons[3] = {0, 0, 0};
     bool subsurface, bound = false;
     const std::vector<Trace*>& entries;
-    const std::vector<Trace*>& shaders;
+    const std::vector<Trace*> shaders;
     const std::function<void()>& cooperate;
     std::size_t units;
     unsigned level = 0;
