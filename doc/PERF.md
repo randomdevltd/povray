@@ -2625,11 +2625,15 @@ User-space instructions, render queue `counters=true`, against `performance` (`p
 | --- | ---: | ---: | ---: | --- |
 | `tools/bench/bounce-crawl.pov`, 200×150, fields after bounds only | 2,055.7 G, bounce 311 s | 331.0 G, bounce 32 s | −84% | identical |
 | the same, per-light budgets, every source per draw | | 598.7 G, bounce 100 s | −71% | larger field |
-| the same, per-light budgets, one source per draw | | 443.1 G, bounce 38 s | −78% | larger field |
+| the same, per-light budgets, one source per draw | | 456.7 G, bounce 26 s | −78% | larger field |
 | `tests/render/bounce_adaptive.pov` Case 0, one point light, 320×240 | 48.83 G | 44.91 G | −8% | field differs, mean 1/255 |
 | `scenes/interior/media/blend_candle.pov` `WaxBounce=1`, 160×120 | 2,847 G | 2,824 G | −0.8% | max 3/255 |
 | `scenes/interior/media/bounce_self_mirror.pov`, volume bounce, 200×115 | 1,213 G | 986 G | −19% | identical |
 | `scenes/interior/media/light_tubes.pov`, no bounce, 160×90 | 45.57 G | 45.56 G | 0% | identical |
+
+`tools/bench/bounce-sun-lights.pov` (a parallel sun and 40 small lights over a bounce floor, `Samples=256`, 320×240): with mass power over squared distance the sun was drawn only through the uniform half, the floor stopped at 1,795
+nodes and the wall it lights read 8.7/255 darker than a 16× budget reference, 306.7 G. Weighing each source by what it
+delivers there: 3,998 nodes, within 0.5/255 of the reference, 326.6 G (reference 36,791 nodes, 380.0 G).
 
 Per-light budget on `bounce_adaptive.pov` Case 2 (five passive surfaces), 320×240: `performance` 4006 nodes, 90.1 G;
 1024 per light 2697 nodes, 88.5 G; 4096 9553 nodes, 100.0 G; 16384 36645 nodes, 142.0 G; 173913 387292 nodes, 684.9 G.
@@ -2642,4 +2646,4 @@ takes refinement from 49.9 s to 9.3 s at those budgets.
 
 `tests/render/surface_domain_cells.pov` checks per-light budgets, both defaults in both languages, scales 0.001 and 1000
 and a one-node budget. `tests/source/surface_preparation.cpp` checks the source choice's probabilities, progress counting,
-the stalled line's object, the heaviest gather and that 2^21 steps stop nothing.
+a parallel or unfaded light's mass at any distance, the stalled line's object, the heaviest gather and that 2^21 steps stop nothing.
