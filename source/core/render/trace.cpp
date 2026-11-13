@@ -7452,8 +7452,22 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 if (skin == nullptr) return 1.0;
                 return double(Sqr((skin->skin != nullptr) ? ComputeSubsurfaceSkin(*skin, point)[channel] : skin->exitSkin[channel]));
             };
-            result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
-                boundary, source, connect, draw, bounce) / samples;
+            try
+            {
+                result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
+                    boundary, source, connect, draw, bounce) / samples;
+            }
+            catch (const pov_base::Exception&)
+            {
+                throw;
+            }
+            catch (const std::exception& error)
+            {
+                // the walk's own errors know no object; name it, the channel and the sample
+                throw POV_EXCEPTION(kUncategorizedError, std::string(error.what()) + " in " +
+                    DescribeSubsurfaceObject(out.Object) + ", channel " + std::to_string(channel) +
+                    ", sample " + std::to_string(sample));
+            }
         }
     }
     const double cosine = clip(fabs(dot(inward, normal)), 0.0, 1.0);

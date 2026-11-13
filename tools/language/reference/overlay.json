@@ -1,6 +1,6 @@
 {
  "format": "pov4-reference-overlay/1",
- "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss — 4.0 statements and literals, colour built-ins, top-level scene blocks and the render options that pair with scene features — and items whose mined sentence is missing or wrong. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
+ "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss \u2014 4.0 statements and literals, colour built-ins, top-level scene blocks and the render options that pair with scene features \u2014 and items whose mined sentence is missing or wrong. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
  "blocks": {
   "bicubic_patch": "Bezier patch surface from a 4x4 control-point grid.",
   "box": "Box from two opposite corner vectors.",
@@ -59,8 +59,9 @@
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
   "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off.",
-  "bounce": "Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets a scalar or RGB self share from 0 to 1; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits.",
-  "attenuation": "Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C."
+  "bounce": "Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets any finite scalar or RGB self share, including amplification and subtraction; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits.",
+  "attenuation": "Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C.",
+  "default": "Defaults for subsequent materials, media, and independent interior and surface light budgets."
  },
  "words": {
   "quality": {
@@ -179,10 +180,6 @@
    "kind": "block",
    "text": "An arc of colour bands across the sky: direction, angle, width, distance."
   },
-  "default": {
-   "kind": "block",
-   "text": "Item values every later object begins from: default { texture { ... } }."
-  },
   "tagged": {
    "kind": "block",
    "text": "Object value: copies of the objects placed so far that a tag expression selects, with the containers around them, as in look_at tagged { \"subject\" } or object { tagged { \"statue\" } translate x }. Expands once; matched by text before a block, so tagged stays free as a name."
@@ -293,7 +290,7 @@
   },
   "self": {
    "kind": "item",
-   "text": "In a bounce block: self 0.05 keeps five percent of the bounced light on the object that bounced it, its own media or its own surface, at the camera and in its own next pass. A scalar or RGB vector sets finite channels from 0 to 1; on is 1 and off is 0. Other receivers and original emission retain their full light. Default on. Contextual: remains available as an identifier."
+   "text": "In a bounce block: self 0.05 keeps five percent of the bounced light on the object that bounced it, its own media or its own surface, at the camera and in its own next pass. A scalar or RGB vector sets any finite channels, including amplification and subtraction; on is 1 and off is 0. Other receivers and original emission retain their full light. Default on. Contextual: remains available as an identifier."
   },
   "cutoff": {
    "kind": "item",

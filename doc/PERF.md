@@ -1475,16 +1475,18 @@ A passive surface `light { bounce }` stores, per order, the light arriving at no
 leaving: front and back sums of L·|cos θ|^brilliance for each brilliance its materials use. Where the field is read,
 the surface's own diffuse layers are evaluated at that point, so a texture costs no nodes and is exact.
 
-Nodes are seeded once for the whole scene. Every bounce surface is drawn by area (`SurfaceGeometrySampler::SampleArea`,
-eight draws per expected node), the baseline spacing r₀ is set so 4096 nodes of a maximal Poisson disc set cover the
-scene's total bounce area, and each surface's draws are thinned to such a set, a draw kept only when no node of the same
+Nodes are seeded once per light. Each light has its own `domain_cells` 2D node budget, initially 4096 and independent of the volume default, and is drawn by area (`SurfaceGeometrySampler::SampleArea`,
+eight draws per expected node). Its baseline spacing r₀ targets half its budget (at least one node),
+and its draws are thinned to a maximal Poisson disc set, a draw kept only when no node of the same
 sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
 
-Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
+Each order refines level by level, to r₀/64. A node starts with four draws, the node itself first, each other
 from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
 projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
-mean over the reachable disc and its draws give a standard error. A node splits
-when, relative to the local irradiance max(own, predicted):
+mean over the reachable disc and its draws give a standard error. Each draw connects to one source: among those with
+power, half the time uniformly and half by the light it delivers there (power under the light's own fall-off: a parallel or
+unfaded light by power alone), weighted by the inverse of that probability, so a draw's expected light is the sum over
+every source and its cost does not grow with the number of lights. A node splits when, relative to the local irradiance max(own, predicted):
 - between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
 - within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
   (a shadow edge or a contact crossing it);
@@ -1498,9 +1500,7 @@ spacing; the parent's area is shared by draws. Splits are decided per level from
 order, so the field is the same on any thread count; all lengths are ratios of r₀, and the shadow rays of node draws use
 no absolute offsets, so it is the same at any scale.
 
-Surface bounce fields draw on twice the scene's default `domain_cells` (1000000 by default): as many bytes as that many colours, over every order and the export of buried sources,
-each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
-byte, most first. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
+Each light reuses its seed positions across orders; refinement positions share the remaining node budget across its bounce orders and buried-source export, each receiving an equal share of what remains. When it binds, a level's splits are taken by error times area, most first. The surface default is a 2D budget of 4096 nodes per light, independent of the volume default. Interior lights retain 500000 source cells, set independently with `#default { interior { light { domain_cells N } } }`; the surface default uses `#default { light { domain_cells N } }`. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
 `Bounce oN: ...`, with its nodes per level and how many splits each criterion asked for.
 
 Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
@@ -2584,7 +2584,7 @@ A source sample reaching a subsurface boundary without leaving the same material
 
 Where the subsurface block gives the flesh its own colour or pigment, the texture pigment is a skin with transmittance `tint^(thickness/2)` per crossing, and the internal path crosses it wherever it meets the boundary: once at the exit, twice at each internal reflection (the reflection's throughput is multiplied by the squared skin transmittance at the reflection point), and at the far end of the unscattered straight-through path, where the skin is evaluated. Materials without their own flesh colour carry no skin factor.
 
-A surface `light { emission }` on a method 2 host lit by a buried volume source exports that source's escaping flux before the render: surface nodes are refined as for surface bounce, each node takes one internal path, and the bounced-surface emitter adds the field to the material's own emission with the diffuse Fresnel angular profile. The export shares the surface bounce byte budget as one more order. With `bounce` as well, the first bounce order omits the buried sources so their flux is exported once; the host's camera radiance is unchanged.
+A surface `light { emission }` on a method 2 host lit by a buried volume source exports that source's escaping flux before the render: surface nodes are refined as for surface bounce, each node takes one internal path, and the bounced-surface emitter adds the field to the material's own emission with the diffuse Fresnel angular profile. The export shares that surface light's node budget as one more order. With `bounce` as well, the first bounce order omits the buried sources so their flux is exported once; the host's camera radiance is unchanged.
 
 `tests/source/subsurface_internal.cpp` checks Beer attenuation, source/continuation ownership, normal Fresnel and total internal reflection, world-unit scaling and the infinite uniform-source identity `L = j / sigma_a`. `tests/render/subsurface_internal_source.sh` checks that a buried finite source contributes and scales linearly with its power.
 
@@ -2624,3 +2624,50 @@ A ray almost square to a surface of revolution's axis has a cubic term under a t
 
 
 Ordinary superellipsoid rays retain the fast twenty-step hybrid solve; an exhausted solve now bisects its remaining sign bracket instead of returning an unconverged endpoint. This intentionally corrects previously inaccurate ordinary intersections. Every returned ordinary root therefore has implicit residual at most `ZERO_TOLERANCE`, or a bracket refined to floating-point precision. The implicit function plus one is positively homogeneous of degree one, so radial projection onto its unit surface bounds spatial error by `R |residual| / (1-|residual|)`. `SurfaceTolerance` reports four times `ZERO_TOLERANCE` times the bounding-box radius, covering the errors of two sampled surface points under transforms. Surface source sampling applies its existing grazing own-root exclusion to both one-sided and two-sided proposals; the hemisphere choice does not disable numerical root ownership. Concave surface returns beyond this error window remain eligible.
+
+## Bounce preparation after the bounds
+
+Light, media and bounce fields were prepared inside the mesh task, before the bounding tasks, so every shadow ray they
+traced tested each top-level object in turn (`Trace::FindIntersection` with no tree yet). They now run in their own task
+(`FieldPreparationTask`) after the sets' bounds are built, with the mailboxes sized by them, and use the render's tree.
+The geometry is final by then: meshes are built and rebounded and CSG child trees indexed; nothing in field preparation
+changes a box.
+
+A surface light's `domain_cells` is its own node budget: half seeds it, the rest refines it, shared over its orders and
+exported light. Each draw at a node connects to one source among those with power, half uniformly and half by the light it
+delivers there (power under its own fall-off), weighted by the inverse of that probability; the draws still start at four and grow while a node is
+uncertain, so a node gathering one lit source draws as before.
+
+No gather stops at a time or step count. Each context counts its trace's cooperation points per gather, one increment
+each; each order's summary names the heaviest, `Bounce o1 heaviest gather: N trace steps on <object>`, and a
+stalled progress line names the objects the workers are gathering on. The internal walk's check at 4096 events stays as an
+assertion: from event 16 roulette survives with at most 0.95, so a correct walk reaches it with probability below 1e-90.
+
+User-space instructions, render queue `counters=true`, against `performance` (`perf-0d719b821`):
+
+| Scene | `performance` | After | Change | Image |
+| --- | ---: | ---: | ---: | --- |
+| `tools/bench/bounce-crawl.pov`, 200×150, fields after bounds only | 2,055.7 G, bounce 311 s | 331.0 G, bounce 32 s | −84% | identical |
+| the same, per-light budgets, every source per draw | | 598.7 G, bounce 100 s | −71% | larger field |
+| the same, per-light budgets, one source per draw | | 456.7 G, bounce 26 s | −78% | larger field |
+| `tests/render/bounce_adaptive.pov` Case 0, one point light, 320×240 | 48.83 G | 44.91 G | −8% | field differs, mean 1/255 |
+| `scenes/interior/media/blend_candle.pov` `WaxBounce=1`, 160×120 | 2,847 G | 2,824 G | −0.8% | max 3/255 |
+| `scenes/interior/media/bounce_self_mirror.pov`, volume bounce, 200×115 | 1,213 G | 986 G | −19% | identical |
+| `scenes/interior/media/light_tubes.pov`, no bounce, 160×90 | 45.57 G | 45.56 G | 0% | identical |
+
+`tools/bench/bounce-sun-lights.pov` (a parallel sun and 40 small lights over a bounce floor, `Samples=256`, 320×240): with mass power over squared distance the sun was drawn only through the uniform half, the floor stopped at 1,795
+nodes and the wall it lights read 8.7/255 darker than a 16× budget reference, 306.7 G. Weighing each source by what it
+delivers there: 3,998 nodes, within 0.5/255 of the reference, 326.6 G (reference 36,791 nodes, 380.0 G).
+
+Per-light budget on `bounce_adaptive.pov` Case 2 (five passive surfaces), 320×240: `performance` 4006 nodes, 90.1 G;
+1024 per light 2697 nodes, 88.5 G; 4096 9553 nodes, 100.0 G; 16384 36645 nodes, 142.0 G; 173913 387292 nodes, 684.9 G.
+On the crawl bench (seven surface lights): 1024 per light 263 G, 4096 443 G, 16384 1,286 G.
+
+`tools/bench/bounce-crawl.pov` is six translucent stalks with buried lights, a bounce floor, 24 small volume lights and
+600 separate blades. Moving preparation after the bounds alone leaves its image pixel-identical. The per-light budgets
+give its seven lights 4096 nodes each where the scene shared one budget, so the field is larger; one source per draw then
+takes refinement from 49.9 s to 9.3 s at those budgets.
+
+`tests/render/surface_domain_cells.pov` checks per-light budgets, both defaults in both languages, scales 0.001 and 1000
+and a one-node budget. `tests/source/surface_preparation.cpp` checks the source choice's probabilities, progress counting,
+a parallel or unfaded light's mass at any distance, the stalled line's object, the heaviest gather and that 2^21 steps stop nothing.
