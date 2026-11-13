@@ -178,8 +178,10 @@ class SphereSweep final : public ObjectBase
         static int Find_Valid_Points(SPHSWEEP_INT *Inter, int Num_Inter, const BasicRay &ray);
 
         static int Comp_Isects(const void *Intersection_1, const void *Intersection_2);
-        static int bezier_01(int degree, const DBL* Coef, DBL* Roots, bool sturm, DBL tolerance, RenderStatistics& stats);
 };
+
+/// The most parts a cubic sweep's crossing search has held at once in this process, for tests.
+int SphereSweepDeepestCrossingStack();
 
 /// @}
 ///
