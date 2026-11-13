@@ -87,7 +87,6 @@
 
 // C++ standard header files
 #include <algorithm>
-#include <atomic>
 #include <string>
 #include <vector>
 #include <cmath>
@@ -127,13 +126,17 @@ const DBL RADIUS_TOLERANCE      = 1.0e-6;
 namespace
 {
 
-const int kSweepMaxDepth = 44;
-
-std::atomic<int> gSweepDeepestStack(0);
+// Halving u in [0,1] past `digits` levels cuts parts narrower than a rounding of u.
+const int kSweepMaxDepth = std::numeric_limits<double>::digits;
 
 std::string SweepName(ConstObjectPtr owner)
 {
     return owner->source ? *owner->source : "an unnamed sphere sweep";
+}
+
+void SweepTooDeep(ConstObjectPtr owner)
+{
+    throw POV_EXCEPTION_STRING("Sphere-sweep root isolation halved past the precision of u on " + SweepName(owner) + ".");
 }
 
 // A run of a segment's spheres over [lo,hi] as cubics in Bernstein form: each centre's offset from the ray across it,
@@ -253,24 +256,31 @@ SweepPart SweepWhole(const SPHSWEEP_SEG& segment, const Vector3d& from, const Ve
     return part;
 }
 
-// Whether some sphere of the part holds the point its offsets are taken from.
-bool SweepHolds(const SweepPart& part, int depth)
+// Whether some sphere of the part holds the point its offsets are taken from. Coefficients within rounding of zero carry
+// no sign: with none clearly below, the point is within rounding of the surface and the middle value decides.
+bool SweepHolds(const SweepPart& part, int depth, ConstObjectPtr owner)
 {
     double gap[7];
-    SweepGap(part, gap);
+    const double floor = SweepGap(part, gap);
     if (gap[0] <= 0.0 || gap[6] <= 0.0) return true;
-    bool below = false;
-    for (int k = 1; k < 6; ++k) below = below || (gap[k] <= 0.0);
-    if (!below || depth >= kSweepMaxDepth) return false;
+    bool below = false, near = false;
+    for (int k = 1; k < 6; ++k)
+    {
+        below = below || (gap[k] < -floor);
+        near = near || (gap[k] <= floor);
+    }
+    if (!near) return false;
+    if (!below) return SweepGapAt(part, 0.5) <= 0.0;
+    if (depth >= kSweepMaxDepth) SweepTooDeep(owner);
     SweepPart left, right;
     SweepCut(part, 0.5, left, right);
-    return SweepHolds(left, depth + 1) || SweepHolds(right, depth + 1);
+    return SweepHolds(left, depth + 1, owner) || SweepHolds(right, depth + 1, owner);
 }
 
 // Every u in the part where the ray touches sphere u, the ends of the stretches of spheres it passes through. A part
 // whose coefficients change sign once holds one; more changes halve it; coefficients within rounding of zero carry no
 // sign, and a middle value there is itself an end.
-void SweepEnds(const SweepPart& part, int depth, std::vector<double>& ends)
+void SweepEnds(const SweepPart& part, int depth, ConstObjectPtr owner, std::vector<double>& ends)
 {
     double gap[7];
     const double floor = SweepGap(part, gap);
@@ -310,19 +320,15 @@ void SweepEnds(const SweepPart& part, int depth, std::vector<double>& ends)
         ends.push_back(part.lo + at * (part.hi - part.lo));
         return;
     }
+    if (depth >= kSweepMaxDepth) SweepTooDeep(owner);
     const double middle = 0.5 * (part.lo + part.hi);
-    if (depth >= kSweepMaxDepth)
-    {
-        ends.push_back(middle);
-        return;
-    }
     SweepPart left, right;
     SweepCut(part, 0.5, left, right);
-    SweepEnds(left, depth + 1, ends);
+    SweepEnds(left, depth + 1, owner, ends);
     double value = -Sqr(right.radius[0]);
     for (int axis = 0; axis < 3; ++axis) value += Sqr(right.across[axis][0]);
     if (std::abs(value) <= floor) ends.push_back(middle);
-    SweepEnds(right, depth + 1, ends);
+    SweepEnds(right, depth + 1, owner, ends);
 }
 
 struct SweepSpan final
@@ -341,7 +347,6 @@ double SweepFurthest(const SweepPart& stretch, double side, double& at, ConstObj
     // Halving u in [0,1] stops at 4 epsilons, within `digits` levels, and each level leaves one half waiting.
     const int capacity = std::numeric_limits<double>::digits + 4;
     SweepPart stack[capacity];
-    int deepest = 1;
     double best = -HUGE_VAL;
     auto offer = [&](const SweepPart& part, int end)
     {
@@ -379,36 +384,36 @@ double SweepFurthest(const SweepPart& stretch, double side, double& at, ConstObj
             for (int k = 0; k < 5; ++k) convex = convex && (bound[k + 2] - 2.0 * bound[k + 1] + bound[k] >= 0.0);
             if (convex)
             {
-                double slope[6], a = 0.0, b = 1.0, at = 0.5;
+                double slope[6], a = 0.0, b = 1.0, lowest = 0.5;
                 for (int k = 0; k < 6; ++k) slope[k] = bound[k + 1] - bound[k];
                 if (slope[0] >= 0.0 || slope[5] <= 0.0) continue;
                 // the slope rises through zero once: false position with the stale end's value halved
                 double fa = slope[0], fb = slope[5];
                 for (int step = 0, stale = 0; step < 100 && b - a > 1e-9; ++step)
                 {
-                    at = a - fa * (b - a) / (fb - fa);
-                    if (!(at > a && at < b)) at = 0.5 * (a + b);
+                    lowest = a - fa * (b - a) / (fb - fa);
+                    if (!(lowest > a && lowest < b)) lowest = 0.5 * (a + b);
                     double work[6];
                     for (int k = 0; k < 6; ++k) work[k] = slope[k];
                     for (int level = 5; level > 0; --level)
-                        for (int k = 0; k < level; ++k) work[k] = (1.0 - at) * work[k] + at * work[k + 1];
+                        for (int k = 0; k < level; ++k) work[k] = (1.0 - lowest) * work[k] + lowest * work[k + 1];
                     if (work[0] == 0.0) break;
                     if (work[0] < 0.0)
                     {
-                        a = at; fa = work[0];
+                        a = lowest; fa = work[0];
                         if (stale == 1) fb *= 0.5;
                         stale = 1;
                     }
                     else
                     {
-                        b = at; fb = work[0];
+                        b = lowest; fb = work[0];
                         if (stale == -1) fa *= 0.5;
                         stale = -1;
                     }
                 }
                 const double before = best;
                 SweepPart left, right;
-                SweepCut(part, at, left, right);
+                SweepCut(part, lowest, left, right);
                 offer(right, 0);
                 if (best > before) stack[top++] = part;
                 continue;
@@ -420,10 +425,7 @@ double SweepFurthest(const SweepPart& stretch, double side, double& at, ConstObj
         SweepCut(part, 0.5, stack[top], stack[top + 1]);
         offer(stack[top + 1], 0);
         top += 2;
-        deepest = std::max(deepest, top);
     }
-    for (int known = gSweepDeepestStack.load(std::memory_order_relaxed);
-         deepest > known && !gSweepDeepestStack.compare_exchange_weak(known, deepest, std::memory_order_relaxed);) {}
     return best;
 }
 
@@ -439,7 +441,7 @@ void SweepSegmentSpans(const BasicRay& ray, const SPHSWEEP_SEG& segment, int ind
     const Vector3d near = ray.Origin + ray.Direction * base;
     const SweepPart whole = SweepWhole(segment, near, &ray.Direction);
     breaks.assign(1, 0.0);
-    SweepEnds(whole, 0, breaks);
+    SweepEnds(whole, 0, owner, breaks);
     if (breaks.size() == 1 && !(SweepGapAt(whole, 0.5) < 0.0)) return;
     std::sort(breaks.begin() + 1, breaks.end());
     breaks.push_back(1.0);
@@ -473,11 +475,6 @@ void SweepSegmentSpans(const BasicRay& ray, const SPHSWEEP_SEG& segment, int ind
 
 }
 // end of anonymous namespace
-
-int SphereSweepDeepestCrossingStack()
-{
-    return gSweepDeepestStack.load(std::memory_order_relaxed);
-}
 
 // Precise linear sweeps are convex hulls of their two endpoint balls; see doc/PERF.md.
 static int IntersectPreciseLinearSweep(const BasicRay& ray, const SPHSWEEP_SEG& segment, SPHSWEEP_INT* intersections, ConstObjectPtr owner)
@@ -1196,7 +1193,7 @@ bool SphereSweep::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
         case B_SPLINE_SPHERE_SWEEP:
             // Inside where some sphere of a segment holds the point.
             for(i = 0; !inside && i < Num_Segments; i++)
-                inside = SweepHolds(SweepWhole(Segment[i], New_Point, nullptr), 0);
+                inside = SweepHolds(SweepWhole(Segment[i], New_Point, nullptr), 0, this);
             break;
     }
 

@@ -180,9 +180,6 @@ class SphereSweep final : public ObjectBase
         static int Comp_Isects(const void *Intersection_1, const void *Intersection_2);
 };
 
-/// The most parts a cubic sweep's crossing search has held at once in this process, for tests.
-int SphereSweepDeepestCrossingStack();
-
 /// @}
 ///
 //##############################################################################

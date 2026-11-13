@@ -1,7 +1,8 @@
 #!/bin/sh
 # Torus, surface of revolution and ovus solved their ray equations in object units against absolute thresholds, so a
 # solid modelled a few hundredths of a unit across lost crossings (and a small surface of revolution its end caps)
-# however it was scaled afterwards. The scene checks trace() against inside() with the same solids modelled in four units.
+# however it was scaled afterwards. The scene checks trace() against inside() with the same solids modelled in four units,
+# for missed, late and early (phantom) hits.
 set -eu
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 SRCDIR=$(cd "$2" && pwd)

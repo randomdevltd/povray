@@ -128,7 +128,7 @@ SphereSweep* Build(const Reference& reference, double tolerance)
 }
 
 // family: 0 thin, 1 fat, 2 stalk swelling into a head, 3 sharp bends with repeated points, 4 many segments, 5 tips of
-// zero or tiny radius; unit is the size of a coordinate.
+// zero or tiny radius, 6 four identical points and radii, a constant segment; unit is the size of a coordinate.
 Shape Random(int kind, int family, double unit, int placing, int index)
 {
     Shape shape;
@@ -138,9 +138,16 @@ Shape Random(int kind, int family, double unit, int placing, int index)
     int count = least + Pick(5);
     if (family == 4) count = 10 + Pick(6);
     Vector3d at(Uniform(-0.5, 0.5), Uniform(-0.5, 0.5), Uniform(-0.5, 0.5)), heading = Direction();
+    if (family == 6) count = std::max(count, 4);
+    const int still = (family == 6) ? Pick(count - 3) : count;
     for (int i = 0; i < count; ++i)
     {
         SPHSWEEP_SPH sphere;
+        if (family == 6 && i > still && i <= still + 3)
+        {
+            reference.spheres.push_back(reference.spheres.back());
+            continue;
+        }
         switch (family)
         {
             case 0: sphere.Center = Vector3d(Uniform(-1, 1), Uniform(-1, 1), Uniform(-1, 1)); sphere.Radius = Uniform(0.002, 0.03); break;
@@ -163,6 +170,7 @@ Shape Random(int kind, int family, double unit, int placing, int index)
                 sphere.Center = at;
                 sphere.Radius = Uniform(0.005, 0.15);
                 break;
+            case 6: sphere.Center = Vector3d(Uniform(-1, 1), Uniform(-1, 1), Uniform(-1, 1)); sphere.Radius = Uniform(0.01, 0.4); break;
             default:
                 sphere.Center = Vector3d(Uniform(-1, 1), Uniform(-1, 1), Uniform(-1, 1));
                 sphere.Radius = (i == 0 || i == count - 1 || Pick(3) == 0) ? (Pick(2) ? 0.0 : 1e-4) : Uniform(0.01, 0.2);
@@ -332,6 +340,8 @@ void CheckCrossings(const Shape& shape, const Vector3d& point, const Vector3d& d
     }
     std::sort(depths.begin(), depths.end());
     ++checks;
+    // a crossing lies within rounding of the wall, where the inside test must still answer
+    for (double depth : depths) sweep.Inside(point + direction * depth, &thread);
     if (!sound) { Fail("crossing depth or normal", Describe(shape, point, direction, "")); return; }
     const double far = measure.reach + 0.05 * measure.extent;
     auto expected = [&](double distance, bool& decided)
@@ -487,7 +497,7 @@ int main(int argc, char** argv)
     int sweeps = 0;
     for (int round = 0; round < rounds; ++round)
         for (int kind = LINEAR_SPHERE_SWEEP; kind <= B_SPLINE_SPHERE_SWEEP; ++kind)
-            for (int family = 0; family < 6; ++family)
+            for (int family = 0; family < 7; ++family)
                 for (double unit : units)
                     for (int placing = 0; placing < 3; ++placing)
                     {
@@ -511,7 +521,6 @@ int main(int argc, char** argv)
                         delete shape.sweep;
                     }
     std::printf("%d sphere sweeps, %d checks, %d failures\n", sweeps, checks, failures);
-    std::printf("deepest crossing stack %d of %d\n", SphereSweepDeepestCrossingStack(), std::numeric_limits<double>::digits + 4);
     Free_Noise_Tables();
     return failures == 0 ? 0 : 1;
 }

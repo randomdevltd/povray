@@ -102,10 +102,10 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
                                   DBL size, bool everyRoot, RenderStatistics& stats) const
 {
     // P and the depths are in units of the ovus's own size, as are these, so the solver's thresholds are relative to it
-    const DBL BottomRadius = this->BottomRadius / size, TopRadius = this->TopRadius / size;
-    const DBL BottomVertical = this->BottomVertical / size, TopVertical = this->TopVertical / size;
-    const DBL VerticalSpherePosition = this->VerticalSpherePosition / size, VerticalPosition = this->VerticalPosition / size;
-    const DBL HorizontalPosition = this->HorizontalPosition / size, ConnectingRadius = this->ConnectingRadius / size;
+    const DBL bottomRadius = this->BottomRadius / size, topRadius = this->TopRadius / size;
+    const DBL bottomVertical = this->BottomVertical / size, topVertical = this->TopVertical / size;
+    const DBL sphereHeight = this->VerticalSpherePosition / size, joinHeight = this->VerticalPosition / size;
+    const DBL joinOffset = this->HorizontalPosition / size, joinRadius = this->ConnectingRadius / size;
 
     DBL OCSquared, t_Closest_Approach, Half_Chord, t_Half_Chord_Squared;
     Vector3d Padj;
@@ -122,8 +122,8 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
 
     // compute intersection with bottom sphere
     Padj = -P;
-    Rad1 = Sqr(BottomRadius);
-    Rad2 = Sqr(TopRadius);
+    Rad1 = Sqr(bottomRadius);
+    Rad2 = Sqr(topRadius);
     OCSquared = Padj.lengthSqr();
 
     t_Closest_Approach = dot(Padj, D);
@@ -140,12 +140,12 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
             *Depth1 = t_Closest_Approach - Half_Chord;
             *Depth2 = t_Closest_Approach + Half_Chord;
             IPoint = P + *Depth1 * D;
-            if (IPoint[Y] < BottomVertical)
+            if (IPoint[Y] < bottomVertical)
             {
                 lcount++;
             }
             IPoint = P + *Depth2 * D;
-            if (IPoint[Y] < BottomVertical)
+            if (IPoint[Y] < bottomVertical)
             {
                 lcount++;
             }
@@ -154,7 +154,7 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
     // shape can only have a maximum of 2 intersections, if we have them already, return
     if (lcount > 1) return;
     // compute intersection with top sphere
-    Second_Center = Vector3d(0, VerticalSpherePosition, 0);
+    Second_Center = Vector3d(0, sphereHeight, 0);
     Padj = Second_Center - P;
 
     OCSquared = Padj.lengthSqr();
@@ -173,12 +173,12 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
             *Depth3 = t_Closest_Approach - Half_Chord;
             *Depth4 = t_Closest_Approach + Half_Chord;
             IPoint = P + *Depth3 * D;
-            if (IPoint[Y] > TopVertical)
+            if (IPoint[Y] > topVertical)
             {
                 lcount++;
             }
             IPoint = P + *Depth4 * D;
-            if (IPoint[Y] > TopVertical)
+            if (IPoint[Y] > topVertical)
             {
                 lcount++;
             }
@@ -188,11 +188,11 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
     // shape can only have a maximum of 2 intersections, if we have them already, return
     if (lcount > 1) return;
     // need to evaluate the spindle of the torus, because intersions are not yet all found
-    Second_Center = Vector3d(0, VerticalPosition, 0);
+    Second_Center = Vector3d(0, joinHeight, 0);
     Padj = P - Second_Center;
-    R2 = Sqr(HorizontalPosition);
-    r2 = Sqr(ConnectingRadius);
-    // Notice : ConnectingRadius > HorizontalPosition here !
+    R2 = Sqr(joinOffset);
+    r2 = Sqr(joinRadius);
+    // Notice : joinRadius > joinOffset here !
 
     Py2 = Padj[Y] * Padj[Y];
     Dy2 = D[Y] * D[Y];
@@ -227,11 +227,11 @@ void Ovus::Intersect_Ovus_Spheres(const Vector3d& P, const Vector3d& D,
         IPoint = P + r[n] * D;
 
         vertical = IPoint[Y];
-        if ((vertical > BottomVertical) && (vertical < TopVertical))
+        if ((vertical > bottomVertical) && (vertical < topVertical))
         {
             horizontal = sqrt(Sqr(IPoint[X]) + Sqr(IPoint[Z]));
-            OCSquared = Sqr((horizontal + HorizontalPosition)) + Sqr((vertical - VerticalPosition));
-            if (fabs(OCSquared - Sqr(ConnectingRadius)) < RootTolerance)
+            OCSquared = Sqr((horizontal + joinOffset)) + Sqr((vertical - joinHeight));
+            if (fabs(OCSquared - Sqr(joinRadius)) < RootTolerance)
             {
                 if (*Depth5 < 0)
                 {
