@@ -117,7 +117,7 @@ class Ovus final : public ObjectBase
         void Intersect_Ovus_Spheres(const Vector3d&, const Vector3d&,
                                     DBL * Depth1,DBL *Depth2, DBL * Depth3,
                                     DBL * Depth4, DBL * Depth5, DBL * Depth6,
-                                    RenderStatistics& stats) const;
+                                    DBL size, bool everyRoot, RenderStatistics& stats) const;
 
 };
 

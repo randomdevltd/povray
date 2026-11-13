@@ -672,6 +672,8 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_internal_hosts.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_coincident_seams.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cell_face.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/sphere_sweep_cubic_roots.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/revolved_solid_roots.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_volume_self.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_translucency_zero.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cavity_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -732,6 +734,11 @@ check-quick: all
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_sweep.cpp" \\
 	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/subsurface-internal-sweep/subsurface_internal_sweep.o" \\
 	  PREPARED_BINARY="\$(abs_top_builddir)/tests/subsurface-internal-sweep/subsurface_internal_sweep_test"
+	mkdir -p \$(top_builddir)/tests/sphere-sweep-oracle
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
+	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/sphere_sweep_oracle.cpp" \\
+	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/sphere-sweep-oracle/sphere_sweep_oracle.o" \\
+	  PREPARED_BINARY="\$(abs_top_builddir)/tests/sphere-sweep-oracle/sphere_sweep_oracle_test"
 	mkdir -p \$(top_builddir)/tests/subsurface-internal-boundary
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_boundary.cpp" \\

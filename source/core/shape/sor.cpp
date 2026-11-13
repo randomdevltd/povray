@@ -104,6 +104,8 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -198,6 +200,67 @@ bool Sor::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData
 }
 
 
+
+// x[0] k^3 + x[1] k^2 + x[2] k + x[3] with a cubic term small beside the quadratic one. The closed form then rounds the
+// near roots at the size of the far one, about -x[1] / x[0], so that root is refined alone and divided out from the
+// constant end, which leaves the near roots a quadratic of the solid's own size.
+static DBL PolishCubicRoot(const DBL* x, DBL t)
+{
+    DBL f = ((x[0] * t + x[1]) * t + x[2]) * t + x[3];
+    for (;;)
+    {
+        const DBL slope = (3.0 * x[0] * t + 2.0 * x[1]) * t + x[2];
+        if (slope == 0.0) return t;
+        const DBL next = t - f / slope;
+        const DBL g = ((x[0] * next + x[1]) * next + x[2]) * next + x[3];
+        if (!(fabs(g) < fabs(f))) return t;
+        t = next;
+        f = g;
+    }
+}
+
+// Whether t is a root of the cubic to within the rounding of its terms.
+static bool CubicRootHolds(const DBL* x, DBL t)
+{
+    const DBL f = ((x[0] * t + x[1]) * t + x[2]) * t + x[3];
+    const DBL terms = ((fabs(x[0]) * fabs(t) + fabs(x[1])) * fabs(t) + fabs(x[2])) * fabs(t) + fabs(x[3]);
+    return fabs(f) <= 16.0 * std::numeric_limits<DBL>::epsilon() * terms;
+}
+
+// The roots, or -1 where one does not hold and the general solver must decide.
+static int SolveFlatCubic(const DBL* x, DBL* y)
+{
+    DBL q[3] = {x[1], x[2], x[3]};
+    int n = 0;
+    if (x[0] != 0.0 && x[1] != 0.0)
+    {
+        const DBL distant = PolishCubicRoot(x, -x[1] / x[0]);
+        if (distant != 0.0)
+        {
+            y[n++] = distant;
+            q[2] = -x[3] / distant;
+            q[1] = (q[2] - x[2]) / distant;
+            q[0] = (q[1] - x[1]) / distant;
+        }
+    }
+    if (q[0] == 0.0)
+    {
+        if (q[1] != 0.0) y[n++] = PolishCubicRoot(x, -q[2] / q[1]);
+    }
+    else
+    {
+        const DBL d = q[1] * q[1] - 4.0 * q[0] * q[2];
+        if (d >= 0.0)
+        {
+            const DBL h = -0.5 * (q[1] + std::copysign(sqrt(d), q[1]));
+            y[n++] = PolishCubicRoot(x, h / q[0]);
+            if (h != 0.0) y[n++] = PolishCubicRoot(x, q[2] / h);
+        }
+    }
+    for (int i = 0; i < n; ++i)
+        if (!CubicRootHolds(x, y[i])) return -1;
+    return n;
+}
 
 /*****************************************************************************
 *
@@ -298,7 +361,7 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
     {
         /* Test base plane. */
 
-        if (Base_Radius_Squared > DEPTH_TOLERANCE)
+        if (Base_Radius_Squared > 0.0)
         {
             k = (Height1 - P[Y]) / D[Y];
 
@@ -323,7 +386,7 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
 
         /* Test cap plane. */
 
-        if (Cap_Radius_Squared > DEPTH_TOLERANCE)
+        if (Cap_Radius_Squared > 0.0)
         {
             k = (Height2 - P[Y]) / D[Y];
 
@@ -346,6 +409,9 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
             }
         }
     }
+
+    const DBL size = max(Radius2, Height2 - Height1);
+    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
 
     /* Intersect all cylindrical bounds. */
     std::vector<BCYL_INT>& intervals = Thread->BCyl_Intervals;
@@ -380,24 +446,39 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
             break;
         }
 
-        /* Cubic curve. */
-
-        x[0] = Entry->A * D[Y] * D[Y] * D[Y];
-
-/*
-        x[1] = D[Y] * D[Y] * (3.0 * Entry->A * P[Y] + Entry->B) - D[X] * D[X] - D[Z] * D[Z];
-*/
-        x[1] = D[Y] * D[Y] * (3.0 * Entry->A * P[Y] + Entry->B) - a;
-
-        x[2] = D[Y] * (P[Y] * (3.0 * Entry->A * P[Y] + 2.0 * Entry->B) + Entry->C) - 2.0 * (P[X] * D[X] + P[Z] * D[Z]);
-
-        x[3] = P[Y] * (P[Y] * (Entry->A * P[Y] + Entry->B) + Entry->C) + Entry->D - P[X] * P[X] - P[Z] * P[Z];
-
-        n = Solve_Polynomial(3, x, y, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
+        // The cubic in units of the solid's own size, so the solver's coefficient thresholds are relative to it.
+        auto cubic = [&](const Vector3d& from, DBL* c)
+        {
+            c[0] = Entry->A * D[Y] * D[Y] * D[Y] * size;
+            c[1] = D[Y] * D[Y] * (3.0 * Entry->A * from[Y] + Entry->B) - a;
+            c[2] = (D[Y] * (from[Y] * (3.0 * Entry->A * from[Y] + 2.0 * Entry->B) + Entry->C) -
+                    2.0 * (from[X] * D[X] + from[Z] * D[Z])) / size;
+            c[3] = (from[Y] * (from[Y] * (Entry->A * from[Y] + Entry->B) + Entry->C) + Entry->D -
+                    from[X] * from[X] - from[Z] * from[Z]) / (size * size);
+        };
+        cubic(P, x);
+        DBL shift = 0.0;
+        if (Test_Flag(this, STURM_FLAG) || precise)
+            n = Solve_Polynomial(3, x, y, true, 0.0, Thread->Stats());
+        else
+        {
+            // Taken from where the ray meets the segment's bounds, the cubic term of a ray almost square to the axis is
+            // small beside the rest.
+            DBL local[4];
+            cubic(P + D * intervals[j].d[0], local);
+            n = -1;
+            if (fabs(local[0]) < 1.0e-3 * fabs(local[1]))
+            {
+                n = SolveFlatCubic(local, y);
+                shift = (n < 0) ? 0.0 : intervals[j].d[0];
+            }
+            if (n < 0)
+                n = Solve_Polynomial(3, x, y, false, 0.0, Thread->Stats());
+        }
 
         while (n--)
         {
-            k = y[n];
+            k = y[n] * size + shift;
 
             h = P[Y] + k * D[Y];
 
@@ -408,7 +489,7 @@ bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread
                 {
                     found = true;
 
-                    if (y[n] < best)
+                    if (k < best)
                     {
                         best = k;
                     }
@@ -1193,7 +1274,10 @@ bool Sor::test_hit(const Ray &ray, IStack& Depth_Stack, DBL d, DBL k, int t, int
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
+    // a precise boundary query places its own start, so no depth is too near to be a crossing
+    const DBL minDepth = (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary()) ? 0.0 : DEPTH_TOLERANCE;
+
+    if ((d > minDepth) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
     {
         IPoint = ray.Evaluate(d);
 

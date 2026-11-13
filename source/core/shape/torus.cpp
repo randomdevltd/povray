@@ -51,7 +51,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -139,11 +139,14 @@ bool Torus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 
     Found = false;
 
-    if ((max_i = Intersect(ray, Depth, Thread->Stats())) > 0)
+    // a precise boundary query places its own start, so no depth is too near to be a crossing
+    const DBL minDepth = (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary()) ? 0.0 : DEPTH_TOLERANCE;
+
+    if ((max_i = Intersect(ray, Depth, Thread->Stats(), minDepth == 0.0)) > 0)
     {
         for (i = 0; i < max_i; i++)
         {
-            if ((Depth[i] > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth[i]))
+            if ((Depth[i] > minDepth) && IsFiniteIntersectionDepth(Depth[i]))
             {
                 IPoint = ray.Evaluate(Depth[i]);
 
@@ -168,11 +171,14 @@ bool SpindleTorus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceT
 
     Found = false;
 
-    if ((max_i = Intersect(ray, Depth, Thread->Stats())) > 0)
+    // a precise boundary query places its own start, so no depth is too near to be a crossing
+    const DBL minDepth = (ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary()) ? 0.0 : DEPTH_TOLERANCE;
+
+    if ((max_i = Intersect(ray, Depth, Thread->Stats(), minDepth == 0.0)) > 0)
     {
         for (i = 0; i < max_i; i++)
         {
-            if ((Depth[i] > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth[i]))
+            if ((Depth[i] > minDepth) && IsFiniteIntersectionDepth(Depth[i]))
             {
                 IPoint = ray.Evaluate(Depth[i]);
 
@@ -239,7 +245,7 @@ bool SpindleTorus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceT
 *
 ******************************************************************************/
 
-int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) const
+int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats, bool everyRoot) const
 {
     int i, n;
     DBL len, R2, Py2, Dy2, PDy2, k1, k2;
@@ -263,16 +269,23 @@ int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) c
 
     D /= len;
 
+    // solve in units of the torus's own size, so the solver's coefficient and root thresholds are relative to it
+    const DBL size = fabs(MajorRadius) + fabs(MinorRadius);
+    if (!(size > 0.0))
+        return 0;
+    const DBL major = MajorRadius / size, minor = MinorRadius / size;
+    P /= size;
+
     i = 0;
 
-    y1 = -MinorRadius;
-    y2 =  MinorRadius;
-    r1 = Sqr(MajorRadius - MinorRadius);
+    y1 = -minor;
+    y2 =  minor;
+    r1 = Sqr(major - minor);
 
-    if ( MajorRadius < MinorRadius )
+    if ( major < minor )
         r1 = 0;
 
-    r2 = Sqr(MajorRadius + MinorRadius);
+    r2 = Sqr(major + minor);
 
 #ifdef TORUS_EXTRA_STATS
     stats[Torus_Bound_Tests]++;
@@ -287,7 +300,7 @@ int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) c
         // Move P close to bounding sphere to have more precise root calculation.
         // Bounding sphere radius is R + r, we add r once more to ensure
         // that P is safely outside sphere.
-        BoundingSphereRadius = MajorRadius + MinorRadius + MinorRadius;
+        BoundingSphereRadius = major + minor + minor;
         DistanceP = P.lengthSqr(); // Distance is currently squared.
         Closer = 0.0;
         if (DistanceP > Sqr(BoundingSphereRadius))
@@ -297,8 +310,8 @@ int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) c
             P += Closer * D;
         }
 
-        R2   = Sqr(MajorRadius);
-        r2   = Sqr(MinorRadius);
+        R2   = Sqr(major);
+        r2   = Sqr(minor);
 
         Py2  = P[Y] * P[Y];
         Dy2  = D[Y] * D[Y];
@@ -317,10 +330,13 @@ int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) c
 
         c[4] = k1 * k1 + 4.0 * R2 * (Py2 - r2);
 
-        n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG), ROOT_TOLERANCE, stats);
+        // order reduction drops the root at the start: within ROOT_TOLERANCE object units, or that share of a torus
+        // smaller than a unit; a precise query keeps it
+        n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG),
+                                     everyRoot ? 0.0 : ROOT_TOLERANCE * std::min(1.0, 1.0 / size), stats);
 
         while(n--)
-            Depth[i++] = (r[n] + Closer) / len;
+            Depth[i++] = (r[n] + Closer) * size / len;
     }
 
     if (i)
