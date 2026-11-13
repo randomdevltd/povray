@@ -110,3 +110,12 @@ test('generators are stable: regenerating changes nothing', () => {
         execFileSync(process.execPath, [join(here, script)], { cwd: here });
     for (const p of paths) assert.equal(read(p), before[p], `${p} regenerated differently`);
 });
+
+test('light defaults keep their contextual cell count inside their light block', () => {
+    const { blocks } = JSON.parse(read('tools/language/grammar/blocks.json'));
+    assert.ok(blocks.default.items.includes('interior'));
+    assert.ok(blocks.default.items.includes('light'));
+    assert.ok(!blocks.default.items.includes('domain_cells'));
+    assert.ok(blocks.interior.items.includes('light'));
+    assert.ok(blocks.light.items.includes('domain_cells'));
+});

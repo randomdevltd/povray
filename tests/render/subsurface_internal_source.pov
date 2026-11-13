@@ -27,8 +27,8 @@ superellipsoid { <0.3, 0.3> scale <1, 0.5, 1> translate -y * 0.5
   interior { ior 1.4 }
   #if (BouncePasses > 0 | ExportMode > 0)
     light {
-      #if (ExportMode = 1 | ExportMode = 3) emission #end
-      #if (ExportMode = 2 | ExportMode = 3) bounce { passes 1 }
+      #if (ExportMode = 1) emission #end
+      #if (ExportMode = 2) bounce { passes 1 }
       #else #if (BouncePasses > 0) bounce { passes BouncePasses } #end #end
       samples 32
     }

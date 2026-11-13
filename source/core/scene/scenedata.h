@@ -317,8 +317,10 @@ class SceneData
         double refractionAngle;
         /// the default cell budget of a medium's domain (#default { media { domain_cells } })
         double domainCells;
-        /// the default cell budget of an interior light's domain (#default { light { domain_cells } })
+        /// the default cell budget of an interior light (#default { interior { light { domain_cells N } } })
         double lightDomainCells;
+        /// the node budget of each surface light (#default { light { domain_cells N } })
+        double surfaceDomainCells;
         /// the machine's method 2 photon memory ceiling in GB (INI/CLI Photon_Memory); zero when not given
         double machinePhotonMemory;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media

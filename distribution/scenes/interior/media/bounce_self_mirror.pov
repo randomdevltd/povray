@@ -37,7 +37,7 @@ box {
     media { method 4 emission rgb <1,0.3,0.045>*Power
       density { function { pow(max(0,1-((x-1.2)*(x-1.2)+(y-1.5)*(y-1.5)+z*z)/0.09),2) } }
     }
-    light { emission samples Samples photons { reflection on refraction on } bounce { passes 2 self Self } }
+    light { samples Samples photons { reflection on refraction on } bounce { passes 2 self Self } }
   }
 }
 // The spherical cap has its paraxial focus at the warm core.

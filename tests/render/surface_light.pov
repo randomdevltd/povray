@@ -87,8 +87,8 @@ object { Shape no_image
   pigment { Material }
   finish { ambient 0 #if (Passive) emission 0 diffuse 0.8 #else emission 2 diffuse 0 #end }
   light {
-    #if (Alias | (Bounce > 0 & !Passive)) emission #else #if (Case = 5 | Case = 10) pigment { Source } #end #end
-    #if (Passive) brightness Gain
+    #if (Bounce = 0) #if (Alias) emission #else #if (Case = 5 | Case = 10) pigment { Source } #end #end #end
+    #if (Passive | Bounce > 0) brightness Gain
     #else brightness #if (Units = 1) (8*4*pi*pi*0.25*0.25) lumens
       #else 8 #if (Units != 2) nits #end #end
     #end
@@ -101,7 +101,7 @@ object { Shape no_image
   sphere { <0.8,1.5,0>,0.2 no_image
     pigment { rgb <0.2,0.5,1> }
     finish { ambient 0 emission 1 diffuse 0.5 }
-    light { emission bounce { passes 1 } samples Samples }
+    light { bounce { passes 1 } samples Samples }
   }
 #end
 

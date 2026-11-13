@@ -331,6 +331,29 @@ MeshBuildTask::~MeshBuildTask()
 {
 }
 
+// The objects whose interiors hold fields to prepare: each interior once per object that introduces it.
+static std::vector<ObjectPtr> FieldInteriors(BackendSceneData& sceneData)
+{
+    std::vector<ObjectPtr> interiors;
+    std::unordered_set<ConstObjectPtr> seen;
+    std::function<void(ObjectPtr, ObjectPtr)> collect = [&](ObjectPtr object, ObjectPtr parent)
+    {
+        if ((object == nullptr) || !seen.insert(object).second)
+            return;
+        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
+            interiors.push_back(object);
+        if (LightSource *light = dynamic_cast<LightSource *>(object))
+            collect(light->Projected_Through_Object, nullptr);
+        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+            for (ObjectPtr child : compound->children)
+                collect(child, object);
+    };
+    for (const std::unique_ptr<PreparedSet>& set : sceneData.preparedSets)
+        for (ObjectPtr object : set->objects)
+            collect(object, nullptr);
+    return interiors;
+}
+
 void MeshBuildTask::Run()
 {
     Timer phase;
@@ -362,23 +385,7 @@ void MeshBuildTask::Run()
     for (Camera *camera : FramedCameras(*sceneData))
         collect(camera->frameTarget.get());
 
-    std::vector<ObjectPtr> interiors;
-    std::unordered_set<ConstObjectPtr> preparedFields;
-    std::function<void(ObjectPtr, ObjectPtr)> collectInteriors = [&](ObjectPtr object, ObjectPtr parent)
-    {
-        if ((object == nullptr) || !preparedFields.insert(object).second)
-            return;
-        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
-            interiors.push_back(object);
-        if (LightSource *light = dynamic_cast<LightSource *>(object))
-            collectInteriors(light->Projected_Through_Object, nullptr);
-        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
-            for (ObjectPtr child : compound->children)
-                collectInteriors(child, object);
-    };
-    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
-        for (ObjectPtr object : set->objects)
-            collectInteriors(object, nullptr);
+    const std::vector<ObjectPtr> interiors = FieldInteriors(*sceneData);
     // The console puts the task's name and " Info: " before each line.
     PreparationProgress progress(mpMessageFactory, std::strlen("Mesh Info: "));
     std::unordered_set<const Media::EagerField *> eagerFields;
@@ -612,41 +619,6 @@ void MeshBuildTask::Run()
             mpMessageFactory->Info("CSG child trees: %u CSG(s) of %u or more children index them by their boxes.", built, minimum);
     }
 
-    TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
-    finalFields.preparationProgress = &progress;
-    finalFields.mediaMessages = mpMessageFactory;
-    const auto cooperateFields = [&]()
-    {
-        try
-        {
-            progress.Poll();
-            Cooperate();
-        }
-        catch (...)
-        {
-            sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
-            throw;
-        }
-    };
-    if (!interiors.empty())
-        progress.Begin("media", interiors.size());
-    for (ObjectPtr object : interiors)
-    {
-        cooperateFields();
-        PrepareInteriorFields(object, &finalFields, cooperateFields);
-        progress.Advance();
-    }
-    progress.End();
-    if (!sceneData->atmosphere.empty())
-        progress.Begin("atmosphere", sceneData->atmosphere.size());
-    PrepareAtmosphereFields(&finalFields, cooperateFields);
-    progress.End();
-    PrepareLightFields(&finalFields, cooperateFields);
-    PrepareVolumeBounceLightFields(&finalFields, cooperateFields);
-    cooperateFields();
-    finalFields.preparationProgress = nullptr;
-    parseData->Stats() += finalFields.Stats();
-
     const size_t recorded = sceneData->deferredMeshes.size();
     if (recorded > 0)
     {
@@ -854,6 +826,86 @@ void MeshBuildTask::Finish()
 }
 
 void MeshBuildTask::SendFatalError(Exception& e)
+{
+    if (e.frontendnotified(true))
+        return;
+
+    POVMS_Message msg(kPOVObjectClass_ControlData, kPOVMsgClass_SceneOutput, kPOVMsgIdent_Error);
+
+    msg.SetString(kPOVAttrib_EnglishText, e.what());
+    msg.SetInt(kPOVAttrib_Error, 0);
+    msg.SetInt(kPOVAttrib_SceneId, sceneData->sceneId);
+    msg.SetSourceAddress(sceneData->backendAddress);
+    msg.SetDestinationAddress(sceneData->frontendAddress);
+
+    POVMS_SendMessage(msg);
+}
+
+FieldPreparationTask::FieldPreparationTask(std::shared_ptr<BackendSceneData> sd, size_t sd_seed, TraceThreadData *pd) :
+    SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), sd_seed, false), boost::bind(&FieldPreparationTask::SendFatalError, this, _1), "Fields", sd),
+    sceneData(sd),
+    seed(sd_seed),
+    parseData(pd)
+{
+}
+
+FieldPreparationTask::~FieldPreparationTask()
+{
+}
+
+void FieldPreparationTask::Run()
+{
+    const std::vector<ObjectPtr> interiors = FieldInteriors(*sceneData);
+    PreparationProgress progress(mpMessageFactory, std::strlen("Fields Info: "));
+    TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
+    finalFields.preparationProgress = &progress;
+    finalFields.mediaMessages = mpMessageFactory;
+    const auto cooperateFields = [&]()
+    {
+        try
+        {
+            progress.Poll();
+            Cooperate();
+        }
+        catch (...)
+        {
+            sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+            throw;
+        }
+    };
+    if (!interiors.empty())
+        progress.Begin("media", interiors.size());
+    for (ObjectPtr object : interiors)
+    {
+        cooperateFields();
+        PrepareInteriorFields(object, &finalFields, cooperateFields);
+        progress.Advance();
+    }
+    progress.End();
+    if (!sceneData->atmosphere.empty())
+        progress.Begin("atmosphere", sceneData->atmosphere.size());
+    PrepareAtmosphereFields(&finalFields, cooperateFields);
+    progress.End();
+    PrepareLightFields(&finalFields, cooperateFields);
+    PrepareVolumeBounceLightFields(&finalFields, cooperateFields);
+    cooperateFields();
+    finalFields.preparationProgress = nullptr;
+    parseData->Stats() += finalFields.Stats();
+}
+
+void FieldPreparationTask::Stopped()
+{
+    sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+}
+
+void FieldPreparationTask::Finish()
+{
+    parseData->realTime += ConsumedRealTime();
+    if (parseData->cpuTime >= 0)
+        parseData->cpuTime += ConsumedCPUTime();
+}
+
+void FieldPreparationTask::SendFatalError(Exception& e)
 {
     if (e.frontendnotified(true))
         return;

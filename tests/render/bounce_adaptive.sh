@@ -21,8 +21,9 @@ for case in 0 1 2 3 4 5; do
     [ -s one$case.nodes ] && cmp -s one$case.nodes four$case.nodes ||
         { cat one$case.nodes four$case.nodes; echo "bounce_adaptive: case $case refines differently" >&2; exit 1; }
 done
+# surfaces run one pass for now, and say so
 render passes2 Declare=Case=2 Declare=Passes=2 +wt3
-grep -q 'Bounce o2:' passes2.log || { cat passes2.log; echo "bounce_adaptive: no second order" >&2; exit 1; }
+grep -q 'runs one pass' passes2.log || { cat passes2.log; echo "bounce_adaptive: passes 2 ran without its note" >&2; exit 1; }
 # Means of the image's four quadrants, then the order's node count.
 blocks() {
     od -An -v -tu2 --endian=big -w6 "$1.pixels" | awk -v w=$W -v h=$H '{ i = NR - 1; b = (int(i % w * 2 / w)) + 2 * int(int(i / w) * 2 / h)

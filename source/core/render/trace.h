@@ -246,6 +246,9 @@ class Trace
             /// Fills the tree from nodes whose patches are their area weights over `trials`, with the irradiance entering each.
             void Build(const std::vector<SurfaceBounceNode>& nodes, const std::vector<MathColour>& irradiance, std::size_t trials);
         };
+        /// What a camera sees at a bounce node from the side `normal` faces: the light the surface diffuses and its own emission,
+        /// averaged over viewing directions; no highlights, mirror or see-through light, radiosity, or bounce lights.
+        MathColour BounceExport(const Intersection& hit, const Vector3d& normal, std::uint64_t key);
         /// Readies this trace to work on surface bounce nodes for the subsurface light leaving them, diffused through `field`.
         void BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field, const std::vector<LightSource*>& sources = {}, bool internalOnly = false);
         /// The light entering a node through its surface from the light arriving at it, and the relative index it leaves through.
@@ -458,6 +461,18 @@ class Trace
         const Vector3d *hitFold = nullptr;
         /// The object of the hit being shaded, whose surface its reflected and refracted rays leave.
         ConstObjectPtr hitObject = nullptr;
+        /// Whether a bounce node is being shaded for BounceExport.
+        bool bounceExport = false;
+        std::unordered_map<double, double> fresnelAverages, ftAverages;
+        bool ExportSkips(const LightSource& light) const;
+        std::map<std::pair<ConstObjectPtr, PreparedSetId>, ConstObjectPtr> placedObjects;
+        /// The placed object holding `part`, which the shadow walk meets.
+        ConstObjectPtr PlacedObject(ConstObjectPtr part, PreparedSetId preparedSetId);
+        /// The mean of f(cos) over viewing directions, weighted by the cosine.
+        static double ViewAverage(const std::function<double(double)>& f);
+        double ViewAveragedFresnel(double ior);
+        double ViewAveragedFt(double eta);
+        MathColour ViewAveragedReflectivity(const FINISH *finish, const MathColour& pigment, double relativeIor);
         /// Whether the ray being shaded reached max_trace_level: its hit is lit but not reflected, and its transmitted part goes straight on.
         bool traceLimit = false;
         /// How many surfaces in a row the ray being shaded has continued through without taking a level.
@@ -1382,7 +1397,7 @@ class Trace
         double ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, ConstObjectPtr object,
                                           ConstObjectPtr whole, double tolerance, const Vector3d& towardSource, TraceTicket& ticket);
         void SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d& normal, const Interior* interior, Ray& ray);
-        static void SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point);
+        void SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point);
         void SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate);
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,

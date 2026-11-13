@@ -11,6 +11,6 @@ sphere { 0, 1
   finish { ambient 0 diffuse 0.8 subsurface { translucency 0.4 } }
   interior { ior 1.4
     media { method 4 scattering { 1, rgb 0.5 } emission rgb <1, 0.6, 0.3> }
-    light { emission samples 4 #if (Bounce > 0) bounce { passes Bounce self Self } #end }
+    light { #if (Bounce > 0) bounce { passes Bounce self Self } #else emission #end samples 4 }
   }
 }

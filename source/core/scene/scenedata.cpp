@@ -437,6 +437,7 @@ SceneData::SceneData() :
     refractionAngle = 0.5;
     domainCells = 500000.0;
     lightDomainCells = 500000.0;
+    surfaceDomainCells = 4096.0; // 2D node budget per surface light, independent of volume cells
     machinePhotonMemory = 0.0;
     dielectrics = false;
     anyOpaque = false;

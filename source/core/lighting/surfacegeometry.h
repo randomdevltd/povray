@@ -178,17 +178,33 @@ private:
                     DBL skip = 0.0, bool facing = false) const
     {
         std::vector<Intersection> roots;
-        CollectRoots(ray, thread, minDepth, maxDepth, roots, skip);
+        // with a receiver, roots a rounding behind it may be the surface touching it
+        CollectRoots(ray, thread, skip > 0.0 ? 0.0 : minDepth, maxDepth, roots);
         if (facing || skip > 0.0)
-            roots.erase(std::remove_if(roots.begin(), roots.end(), [&](Intersection& root)
+        {
+            // The receiver's own point is skipped, within skip / cos^2 as a grazing root is solved less exactly. Where another
+            // surface touches it, facing it, that surface covers the receiver's side and is kept: a contact lights as an area.
+            std::vector<char> near(roots.size(), 0), along(roots.size(), 0);
+            bool touched = false, own = false;
+            for (std::size_t i = 0; i < roots.size(); ++i)
             {
                 Vector3d normal;
-                if (!OrientedNormal(thread, root, normal)) return true;
-                const DBL cosine = dot(normal, ray.Direction);
-                // A grazing root is solved less exactly, so the receiver's own point is skipped within skip / cos^2.
-                const DBL own = std::max(skip, root.Object->SurfaceTolerance());
-                return (facing && !(cosine < 0.0)) || (skip > 0.0 && (root.Depth - minDepth) * cosine * cosine <= own);
-            }), roots.end());
+                if (!OrientedNormal(thread, roots[i], normal)) { near[i] = 2; continue; }
+                const DBL cosine = dot(normal, ray.Direction), depth = roots[i].Depth - minDepth;
+                const DBL tolerance = std::max(skip, roots[i].Object->SurfaceTolerance());
+                along[i] = cosine < 0.0 ? 0 : 1;
+                near[i] = skip > 0.0 && (std::fabs(depth) <= tolerance || (depth > 0.0 && depth * cosine * cosine <= tolerance));
+                if (depth < 0.0 && !near[i]) { near[i] = 2; continue; }
+                touched = touched || (near[i] && !along[i]);
+                own = own || (near[i] && along[i]);
+            }
+            const bool contact = touched && own;
+            std::size_t kept = 0;
+            for (std::size_t i = 0; i < roots.size(); ++i)
+                if (near[i] != 2 && !(facing && along[i]) && (!near[i] || (contact && !along[i])))
+                    roots[kept++] = roots[i];
+            roots.resize(kept);
+        }
         if (roots.empty()) return false;
         sample.rootCount = roots.size();
         sample.intersection = roots[std::min(roots.size() - 1, static_cast<std::size_t>(Unit(rootU) * roots.size()))];

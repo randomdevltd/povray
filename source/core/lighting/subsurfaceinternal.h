@@ -46,6 +46,10 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     size_t events = 0;
     for (;;)
     {
+        // Survival is at most 0.95 from event 16, so a correct walk reaches 4096 events with probability below 1e-90.
+        if (events == 4096)
+            throw std::runtime_error("Internal subsurface walk reached 4096 scattering and reflection events, which roulette "
+                                     "makes impossible for a correct walk: this is a renderer bug, not a scene limit; please report it");
         const auto hit = boundary(position, direction);
         if (!(hit.distance >= 0.0) || !std::isfinite(hit.distance))
             throw std::runtime_error("Internal subsurface transport requires an enclosing boundary");

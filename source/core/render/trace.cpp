@@ -1040,7 +1040,8 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     // compute the surface normal
     isect.Object->Normal(rawnormal, &isect, threadData);
     bool sharedFace = photonPass;
-    if (!photonPass && TakeCoincident(ray, isect, rawnormal, weight, &sharedFace))
+    // a bounce node is a point of its own surface, whatever coincides with it
+    if (!photonPass && !bounceExport && TakeCoincident(ray, isect, rawnormal, weight, &sharedFace))
     {
         ipoint = isect.IPoint;
         isect.Object->Normal(rawnormal, &isect, threadData);
@@ -1157,7 +1158,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     // TODO - For photon rays we're still potentially doing double work on media.
     // TODO - For shadow rays we're still potentially doing double work on distance-based attenuation.
     // Calculate participating media effects.
-    if(ssltBridge == nullptr && !photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
+    if(ssltBridge == nullptr && !photonPass && !bounceExport && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
     {
         media.ComputeMedia(ray.GetInteriors(), ray, isect, tmpCol, tmpTransm);
     }
@@ -1745,7 +1746,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     radiosity_back_done = false;
 
     // This block just sets up radiosity for the code inside the loop, which is first-time-through.
-    radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
+    radiosity_needed = !bounceExport && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
                        (radiosity.CheckRadiosityTraceLevel(ray.GetTicket()) == true) &&
                        (Test_Flag(isect.Object, IGNORE_RADIOSITY_FLAG) == false);
 
@@ -1987,8 +1988,10 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                                     cos_Angle_Incidence, relativeIor);
 
                 ComputeMetallic(listWNRX->back().reflec, layer->Finish->Reflect_Metallic, layCol.colour(), cos_Angle_Incidence);
+                if (bounceExport)
+                    listWNRX->back().reflec = ViewAveragedReflectivity(layer->Finish, layCol.colour(), relativeIor);
                 if (layer->Finish->Fresnel != 0.0)
-                    layExit = 1.0 - layer->Finish->Fresnel * FresnelR(cos_Angle_Incidence, relativeIor);
+                    layExit = 1.0 - layer->Finish->Fresnel * (bounceExport ? ViewAveragedFresnel(relativeIor) : FresnelR(cos_Angle_Incidence, relativeIor));
             }
 
             if (layer->Finish->AlphaKnockout)
@@ -2164,7 +2167,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     if(layer->Finish->BrillianceOut != 1.0)
                     {
                         double cos_angle_of_incidence = dot(ray.Direction, layNormal);
-                        classicContribution *= pow(fabs(cos_angle_of_incidence), layer->Finish->BrillianceOut-1.0)* (layer->Finish->BrillianceOut+7.0)/8.0;
+                        classicContribution *= (bounceExport ? 2.0 / (layer->Finish->BrillianceOut + 1.0) : pow(fabs(cos_angle_of_incidence), layer->Finish->BrillianceOut-1.0)) * (layer->Finish->BrillianceOut+7.0)/8.0;
                     }
 #endif
 
@@ -2188,7 +2191,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     if(layer->Finish->BrillianceOut != 1.0)
                     {
                         double cos_angle_of_incidence = dot(ray.Direction, layNormal);
-                        photonsContribution *= pow(fabs(cos_angle_of_incidence), layer->Finish->BrillianceOut-1.0) * (layer->Finish->BrillianceOut+7.0)/8.0;
+                        photonsContribution *= (bounceExport ? 2.0 / (layer->Finish->BrillianceOut + 1.0) : pow(fabs(cos_angle_of_incidence), layer->Finish->BrillianceOut-1.0)) * (layer->Finish->BrillianceOut+7.0)/8.0;
                     }
 #endif
 
@@ -2230,7 +2233,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     // filtering it by filCol.
     tir_occured = false;
 
-    if (((interior = isect.Object->interior.get()) != nullptr) && (trans > ray.GetTicket().adcBailout) && qualityFlags.refractions)
+    // a bounce node exports only the light it diffuses: no see-through or mirror light
+    if (!bounceExport && ((interior = isect.Object->interior.get()) != nullptr) && (trans > ray.GetTicket().adcBailout) && qualityFlags.refractions)
     {
         // [CLi] changed filCol to RGB, as filter and transmit were always pinned to 1.0 and 0.0, respectively anyway
         // TODO CLARIFY - is this working properly if some filCol component is negative? (what would be the right thing then?)
@@ -2305,7 +2309,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     //
     // If total internal reflection occured all reflections using
     // TopNormal are skipped.
-    if(qualityFlags.reflections && !traceLimit)
+    if(qualityFlags.reflections && !traceLimit && !bounceExport)
     {
         layer = texture;
         for(i = 0; i < layer_number; i++)
@@ -2777,13 +2781,14 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
         for (unsigned int i : view.globalLights)
-            ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour,
-                                   colour, attenuation, object, relativeIor, i, &geometricNormal);
+            if (!ExportSkips(*threadData->lightSources[i]))
+                ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour,
+                                       colour, attenuation, object, relativeIor, i, &geometricNormal);
     }
 
     // local light sources from a light group, if any; a selected object's group is selected with it
     for(LightSource *light : object->LLights)
-        if(view.UsesGroupLight(light->index))
+        if(view.UsesGroupLight(light->index) && !ExportSkips(*light))
             ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, -1, &geometricNormal);
 
     // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
@@ -3528,7 +3533,7 @@ void Trace::ComputeOneLightContribution(const LightSource &lightsource, const Ve
         // NK rad - don't compute highlights for radiosity gather rays, since this causes
         // problems with colors being far too bright
         // don't compute highlights for diffuse backside illumination
-        if((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside) // TODO FIXME radiosity - is this really the right way to do it (speaking of realism)?
+        if((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside && !bounceExport) // TODO FIXME radiosity - is this really the right way to do it (speaking of realism)?
         {
             if(finish->Phong > 0.0)
             {
@@ -3568,7 +3573,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         for (int k = 0; k < count; k++)
         {
             Ray sampleRay(lightsourceray);
-            sampleRay.SetSurfaceOrigin(object, ipoint, geometricNormal ? *geometricNormal : layer_normal);
+            sampleRay.SetSurfaceOrigin(PlacedObject(object, eye.GetPreparedSetId()), ipoint, geometricNormal ? *geometricNormal : layer_normal, object);
             sampleRay.SetKey(DeriveKey(key, kDrawEmitter, k));
             const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(k, 0), count, Draw(key, kDrawEmitter, k)),
                                    sequence(k, 1), sequence(k, 2), sequence(k, 3),
@@ -3590,7 +3595,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                 ComputeDiffuseColour(finish, sampleRay.Direction, eye.Direction, layer_normal, tmp, incoming,
                                      layer_pigment_colour * PlainDiffuseChannels(finish), relativeIor, attenuation, backside, eye.GetKey(),
                                      (LightSlot(lightsource) << 32) + 1 + k);
-            if ((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside)
+            if ((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside && !bounceExport)
             {
                 if (finish->Phong > 0.0)
                     ComputePhongColour(finish, sampleRay.Direction, eye.Direction, layer_normal, tmp, incoming, layer_pigment_colour, relativeIor);
@@ -3729,7 +3734,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             // NK rad - don't compute highlights for radiosity gather rays, since this causes
             // problems with colors being far too bright
             // don't compute highlights for diffuse backside illumination
-            if((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside) // TODO FIXME radiosity - is this really the right way to do it (speaking of realism)?
+            if((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside && !bounceExport) // TODO FIXME radiosity - is this really the right way to do it (speaking of realism)?
             {
                 if(finish->Phong > 0.0)
                 {
@@ -3933,8 +3938,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         query.SetRootQuery(&postcond);
         // The walk's box for the object is looser than this exact one, so only a miss its roots were asked for leaves it out.
         const bool asked = query.HasExactShadowWindow() || RayEntersBox(entry.object, query, limit);
+        // the walk's own admission, so the receiver's surface at the ray's start is skipped whichever thread cached it
         if (!((Test_Flag(entry.object, OPAQUE_FLAG) && entry.object->Shadow_Hint_Intersection(query, &boundedIntersection, threadData) &&
                (boundedIntersection.Depth > startTolerance) && (boundedIntersection.Depth < limit) &&
+               (query.IsSubsurfaceRay() || query.HasExactShadowWindow() || (boundedIntersection.Depth >= MIN_ISECT_DEPTH)) &&
                postcond.Admit(entry.owner, boundedIntersection.Depth)) ||
               (asked && Find_Intersection_BBox_Passed(&boundedIntersection, entry.object, query, HeldRootCondition(postcond, entry.owner), threadData))))
         {
@@ -4830,7 +4837,7 @@ void Trace::ComputeDiffuseColour(const FINISH *finish, const Vector3d& lightDire
         // is such that we can just as well plug in the external angle of incidence
         // and straight relative refractive index.
         cos_angle_of_incidence = -dot(layer_normal, eyeDirection);
-        double f2 = finish->Fresnel * FresnelR(cos_angle_of_incidence, relativeIor);
+        double f2 = finish->Fresnel * (bounceExport ? ViewAveragedFresnel(relativeIor) : FresnelR(cos_angle_of_incidence, relativeIor));
 
         colour += intensity * layer_pigment_colour * light_colour * (1.0 - f1) * (1.0 - f2);
     }
@@ -4885,6 +4892,19 @@ void Trace::ComputeIridColour(const FINISH *finish, const Vector3d& lightDirecti
 
     // NOTE: Shouldn't we compute Cos_Angle_Of_Incidence just once?
     cos_angle_of_incidence_light = abs(dot(layer_normal, lightDirection));
+    if (bounceExport)
+    {
+        // 2 * integral of mu cos(k (c + mu)) over mu in [0, 1], the cosine-weighted mean over viewing directions
+        MathColour mean;
+        for (int i = 0; i < MathColour::channels; i++)
+        {
+            const double k = 2.0 * M_PI * film_thickness / sceneData->iridWavelengths[i], c = cos_angle_of_incidence_light;
+            mean[i] = (fabs(k) * 1.0e-4 < std::numeric_limits<double>::epsilon()) ? cos(k * (c + 2.0 / 3.0)) :
+                      2.0 * (sin(k * (c + 1.0)) / k + (cos(k * (c + 1.0)) - cos(k * c)) / (k * k));
+        }
+        colour *= 1.0 + finish->Irid * mean;
+        return;
+    }
     cos_angle_of_incidence_eye   = abs(dot(layer_normal, eyeDirection));
 
     // Calculate phase offset.
@@ -6438,6 +6458,119 @@ double Trace::ComputeFt(double cos_angle, double eta)
     return 1.0 - min(1.0,max(0.0,F));
 }
 
+// The radical inverse of n in base `base`, a low-discrepancy coordinate.
+static double RadicalInverse(std::uint64_t n, unsigned base)
+{
+    double result = 0.0, place = 1.0 / base;
+    for (; n != 0; n /= base, place /= base)
+        result += double(n % base) * place;
+    return result;
+}
+
+// Whether a texture, its layers or its materials carry subsurface scattering.
+static bool CarriesSubsurface(const TEXTURE *texture)
+{
+    for (; texture != nullptr; texture = texture->Next)
+    {
+        if ((texture->Finish != nullptr) && texture->Finish->UseSubsurface)
+            return true;
+        for (const TEXTURE *material : texture->Materials)
+            if (CarriesSubsurface(material))
+                return true;
+        if (texture->Blend_Map)
+            for (const auto& entry : texture->Blend_Map->Blend_Map_Entries)
+                if (CarriesSubsurface(entry.Vals))
+                    return true;
+    }
+    return false;
+}
+
+MathColour Trace::BounceExport(const Intersection& hit, const Vector3d& normal, std::uint64_t key)
+{
+    struct Restore { bool& slot; ~Restore() { slot = false; } } restore{bounceExport};
+    bounceExport = true;
+    TraceTicket ticket(sceneData->parsedMaxTraceLevel, sceneData->parsedAdcBailout);
+    // the virtual camera stands just off the side the node faces, in whatever material is there
+    const double tolerance = InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
+    Ray eye(ticket, hit.IPoint + normal * tolerance, -normal, Ray::OtherRay);
+    eye.SetKey(key);
+    // inside its own translucent material the light is the material's to carry
+    if (sceneData->useSubsurface && CarriesSubsurface(hit.Object->Texture) && hit.Object->Inside(eye.Origin, threadData))
+        return MathColour();
+    RayInteriorVector containing;
+    FindContainingInteriors(eye.Origin, containing);
+    eye.AppendInteriors(containing);
+    Intersection isect(hit);
+    isect.Depth = tolerance;
+    MathColour colour;
+    ColourChannel transm = 0.0;
+    ComputeTextureColour(isect, colour, transm, eye, 1.0, false);
+    return colour;
+}
+
+bool Trace::ExportSkips(const LightSource& light) const
+{
+    if (!bounceExport || !light.emitter || !light.emitterContainer)
+        return false;
+    const ConstObjectPtr owner = light.emitterContainer;
+    const MediaLight* settings = light.emitter->IsSurface() ? owner->surfaceLight.get() :
+                                 (owner->interior ? owner->interior->light.get() : nullptr);
+    return (settings != nullptr) && (settings->bouncePasses > 0);
+}
+
+double Trace::ViewAverage(const std::function<double(double)>& f)
+{
+    const auto g = [&](double mu) { return 2.0 * mu * f(mu); };
+    // adaptive Simpson, halving until the halves agree to the colours' float precision or an interval cannot split
+    std::function<double(double, double, double, double, double, double, double)> refine =
+        [&](double a, double b, double ga, double gm, double gb, double whole, double tolerance) -> double
+    {
+        const double m = 0.5 * (a + b), l = 0.5 * (a + m), r = 0.5 * (m + b);
+        const double gl = g(l), gr = g(r);
+        const double left = (m - a) * (ga + 4.0 * gl + gm) / 6.0, right = (b - m) * (gm + 4.0 * gr + gb) / 6.0;
+        const double delta = left + right - whole;
+        if (!(fabs(delta) > 15.0 * tolerance) || !((a < l) && (l < m) && (m < r) && (r < b)))
+            return left + right + delta / 15.0;
+        return refine(a, m, ga, gl, gm, left, 0.5 * tolerance) + refine(m, b, gm, gr, gb, right, 0.5 * tolerance);
+    };
+    const double g0 = g(0.0), gm = g(0.5), g1 = g(1.0), whole = (g0 + 4.0 * gm + g1) / 6.0;
+    return refine(0.0, 1.0, g0, gm, g1, whole, 64.0 * std::numeric_limits<float>::epsilon() * max(1.0, fabs(whole)));
+}
+
+double Trace::ViewAveragedFresnel(double ior)
+{
+    auto found = fresnelAverages.find(ior);
+    if (found == fresnelAverages.end())
+        found = fresnelAverages.emplace(ior, ViewAverage([ior](double mu) { return FresnelR(mu, ior); })).first;
+    return found->second;
+}
+
+double Trace::ViewAveragedFt(double eta)
+{
+    auto found = ftAverages.find(eta);
+    if (found == ftAverages.end())
+        found = ftAverages.emplace(eta, ViewAverage([this, eta](double mu) { return ComputeFt(mu, eta); })).first;
+    return found->second;
+}
+
+MathColour Trace::ViewAveragedReflectivity(const FINISH *finish, const MathColour& pigment, double relativeIor)
+{
+    MathColour result;
+    if (finish->Reflection_Max.IsZero() && finish->Reflection_Min.IsZero())
+        return result;
+    for (int c = 0; c < MathColour::channels; c++)
+        result[c] = ViewAverage([&](double mu)
+        {
+            double weight = 1.0;
+            MathColour reflectivity;
+            ComputeReflectivity(weight, reflectivity, finish->Reflection_Max, finish->Reflection_Min, finish->Reflection_Fresnel,
+                                finish->Reflection_Falloff, mu, relativeIor);
+            ComputeMetallic(reflectivity, finish->Reflect_Metallic, pigment, mu);
+            return double(reflectivity[c]);
+        });
+    return result;
+}
+
 void Trace::ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v)
 {
 #if 1
@@ -7069,7 +7202,24 @@ void Trace::SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d&
 void Trace::SetSubsurfaceShadowOrigin(Ray& ray, ConstObjectPtr whole, const Vector3d& point)
 {
     ray.SetPreciseShadowWindow();
-    ray.SetSurfaceOrigin(whole, point, ray.Direction);
+    ray.SetSurfaceOrigin(PlacedObject(whole, ray.GetPreparedSetId()), point, ray.Direction, whole);
+}
+
+ConstObjectPtr Trace::PlacedObject(ConstObjectPtr part, PreparedSetId preparedSetId)
+{
+    // A union kept whole names only its child on a hit, while the shadow walk meets the union.
+    const auto key = std::make_pair(part, preparedSetId);
+    const auto known = placedObjects.find(key);
+    if (known != placedObjects.end())
+        return known->second;
+    ConstObjectPtr placed = part;
+    for (ConstObjectPtr object : sceneData->GetPreparedSet(preparedSetId).objects)
+        if ((object == part) || IsObjectInCSG(part, object))
+        {
+            placed = object;
+            break;
+        }
+    return placedObjects[key] = placed;
 }
 
 void Trace::SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate)
@@ -7216,10 +7366,11 @@ void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const Lig
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
         for(unsigned int i : view.globalLights)
-            if (const LightSource *received = LightOnObject(*threadData->lightSources[i], object))
-                lights.push_back(received);
+            if (!ExportSkips(*threadData->lightSources[i]))
+                if (const LightSource *received = LightOnObject(*threadData->lightSources[i], object))
+                    lights.push_back(received);
     for(const LightSource *light : object->LLights)
-        if(view.UsesGroupLight(light->index))
+        if(view.UsesGroupLight(light->index) && !ExportSkips(*light))
             if (const LightSource *received = LightOnObject(*light, object))
                 lights.push_back(received);
 }
@@ -7452,8 +7603,22 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 if (skin == nullptr) return 1.0;
                 return double(Sqr((skin->skin != nullptr) ? ComputeSubsurfaceSkin(*skin, point)[channel] : skin->exitSkin[channel]));
             };
-            result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
-                boundary, source, connect, draw, bounce) / samples;
+            try
+            {
+                result[channel] += SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
+                    boundary, source, connect, draw, bounce) / samples;
+            }
+            catch (const pov_base::Exception&)
+            {
+                throw;
+            }
+            catch (const std::exception& error)
+            {
+                // the walk's own errors know no object; name it, the channel and the sample
+                throw POV_EXCEPTION(kUncategorizedError, std::string(error.what()) + " in " +
+                    DescribeSubsurfaceObject(out.Object) + ", channel " + std::to_string(channel) +
+                    ", sample " + std::to_string(sample));
+            }
         }
     }
     const double cosine = clip(fabs(dot(inward, normal)), 0.0, 1.0);
@@ -10682,7 +10847,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     }
 
     double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
-    double ftOut   = ComputeFt(cos_out, eta);
+    double ftOut   = bounceExport ? ViewAveragedFt(eta) : ComputeFt(cos_out, eta);
     // Method 2's light enters through the perturbed surface, averaged over the area each estimate of it stands for; it
     // leaves by the surface's own normal (see doc/PERF.md), and the paths inside keep that normal too.
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
@@ -10701,7 +10866,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double      sigma_prime_s_mean  = sigma_prime_s.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_t_mean  = sigma_a_mean + sigma_prime_s_mean;
 
-    bool radiosity_needed = (ssltBridge == nullptr) && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
+    bool radiosity_needed = (ssltBridge == nullptr) && !bounceExport && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
                             (sceneData->subsurfaceUseRadiosity == true) &&
                             (radiosity.CheckRadiosityTraceLevel(Eye.GetTicket()) == true) &&
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);
@@ -10859,6 +11024,78 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         Total_Colour *= flesh.entrySkin;
     if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
         Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftDiffuse);
+
+    if (bounceExport && (ssltBridge == nullptr))
+    {
+        // The parts that follow the viewing ray inside, averaged over viewing directions drawn cosine-weighted about the normal;
+        // directions double while that changes the result by more than adc_bailout and by more than the draws' own noise.
+        const Vector3d normal = out.INormal.normalized();
+        Vector3d t1, t2;
+        ComputeSurfaceTangents(normal, t1, t2);
+        const std::uint64_t viewKey = DeriveKey(key, kDrawSubsurface, 8);
+        const double turnU = Draw(viewKey, kDrawSubsurface, 0), turnV = Draw(viewKey, kDrawSubsurface, 1);
+        MathColour internalSum, singleSum;
+        double sum = 0.0, square = 0.0;
+        auto view = [&](std::size_t k)
+        {
+            double u = RadicalInverse(k + 1, 2) + turnU, v = RadicalInverse(k + 1, 3) + turnV;
+            u -= floor(u);
+            v -= floor(v);
+            const Vector3d toward = (t1 * cos(2.0 * M_PI * v) + t2 * sin(2.0 * M_PI * v)) * sqrt(u) + normal * sqrt(1.0 - u);
+            Ray eye(Eye);
+            eye.Direction = -toward;
+            const std::uint64_t pathKey = DeriveKey(viewKey, kDrawSubsurface, k + 2);
+            MathColour internal, single;
+            if (pointCloud)
+                internal = ComputeSubsurfaceInternalSource(out, eye, eta, sigma_a, sigma_s, lights, NumSamplesSingle,
+                    DeriveKey(pathKey, kDrawSubsurface, 0), !flesh.fleshAtDepth && layers.top->Next == nullptr,
+                    Finish->SubsurfaceHasColour ? &flesh : nullptr);
+            Vector3d refracted;
+            const double cosine = clip(dot(toward, normal), 0.0, 1.0);
+            if ((NumSamplesSingle > 0) && !estimate && SSLTComputeRefractedDirection(eye.Direction, out.INormal, 1.0 / eta, refracted))
+            {
+                Ray inside(Eye.GetTicket(), out.IPoint, refracted);
+                Intersection far;
+                const double dist = FindIntersection(far, inside) ? (out.IPoint - far.IPoint).length() * sceneData->mmPerUnit : HUGE_VAL;
+                const double cosInside = sqrt(1.0 - Sqr(1.0 / eta) * (1.0 - Sqr(cosine)));
+                ComputeSingleScatteringContribution(out, dist, ComputeFt(cosine, eta), cosInside, refracted, sigma_t_xo, sigma_s,
+                    NumSamplesSingle, single, lights, cloud ? &cloudData : nullptr, flesh, Eye.GetTicket(),
+                    DeriveKey(pathKey, kDrawSubsurface, 1), cloudData.bumps, pointCloud);
+                single /= NumSamplesSingle;
+                if (Finish->SubsurfaceHasColour)
+                    single *= flesh.entrySkin;
+            }
+            if (Finish->SubsurfaceHasColour)
+                internal *= flesh.exitSkin;
+            internalSum += internal;
+            singleSum += single;
+            const double seen = (internal + single * (Finish->SubsurfaceHasColour ? flesh.exitSkin : MathColour(1.0))).Greyscale();
+            sum += seen;
+            square += seen * seen;
+        };
+        view(0);
+        for (std::size_t count = 1;; count *= 2)
+        {
+            const double before = sum / count;
+            for (std::size_t k = count; k < 2 * count; k++)
+                view(k);
+            const std::size_t total = 2 * count;
+            const double after = sum / total, change = fabs(after - before);
+            const double error = sqrt(max(0.0, (square - total * after * after) / (total - 1)) / total);
+            const double seen = fabs(Total_Colour.Greyscale() + after);
+            if (!(change > Eye.GetTicket().adcBailout * seen) || (change < error))
+            {
+                Final_Colour += internalSum / double(total) * layers.weight;
+                Total_Colour += singleSum / double(total);
+                break;
+            }
+        }
+        if (Finish->SubsurfaceHasColour)
+            Total_Colour *= flesh.exitSkin;
+        Final_Colour += Total_Colour * layers.weight;
+        Eye.GetTicket().subsurfaceRecursionDepth--;
+        return;
+    }
 
     MathColour internalSource;
     if (pointCloud)

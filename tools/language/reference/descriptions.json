@@ -275,7 +275,7 @@
    "doc": "r3_7.html#r3_7_1_5"
   },
   "domain_cells": {
-   "text": "The domain_cells item sets the number of cells of a method 4 medium's prepared grid, spread evenly over its container's bounding box.",
+   "text": "The domain_cells item sets 3D media or interior-light source cells, or a 2D surface node budget (4096 per light by default, independent of volume budgets).",
    "doc": "r3_7.html#r3_7_2_3_1"
   },
   "double_illuminate": {

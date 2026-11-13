@@ -15,7 +15,7 @@ box { <-1, -0.7, -0.5>, <1, 0.7, 0.5> hollow pigment { rgbt 1 }
   interior {
     media { method 4 scattering { 1, rgb 0.5 } absorption rgb 0.05 }
     light {
-      pigment { rgb <1, 0.6, 0.3> } brightness 1 samples 4
+      #if (!Bounce) pigment { rgb <1, 0.6, 0.3> } brightness 1 #end samples 4
       photons { reflection on refraction on }
       #if (Bounce) bounce { passes 1 self off } #end
     }

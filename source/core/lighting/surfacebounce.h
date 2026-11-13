@@ -165,6 +165,32 @@ private:
     std::vector<MathColour> radiance;
 };
 
+/// The shaded colour per node, toward the side each node faces and, on an open surface, toward the other.
+class SurfaceShadedField final : public SurfaceBounceRadiance, private SurfaceNodeGuide
+{
+public:
+    SurfaceShadedField(std::shared_ptr<const SurfaceNodeIndex> index, std::vector<MathColour> front, std::vector<MathColour> back,
+        std::vector<float> power, const MathColour& integral) :
+        SurfaceNodeGuide(std::move(index), std::move(power), integral), front(std::move(front)), back(std::move(back))
+    {
+        if (this->front.size() != this->index->Size() || (!this->back.empty() && this->back.size() != this->front.size()))
+            throw std::invalid_argument("Surface shaded field requires one colour per node and side");
+    }
+    MathColour IntegratedRadiance() const override { return integral; }
+    void AccumulateGuide(SurfaceAngularGuide& guide, double scale = 1.0) const override { Guide(guide, scale); }
+    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData*) const override
+    {
+        const double cosine = dot(normal, outgoing);
+        const std::vector<MathColour>& side = cosine > 0.0 ? front : back;
+        if (!(cosine != 0.0) || side.empty()) return MathColour();
+        SurfaceNodeIndex::Weights weights;
+        index->Interpolate(hit.IPoint, normal, weights);
+        return Blend(weights, [&](std::uint32_t node) -> const MathColour& { return side[node]; });
+    }
+private:
+    std::vector<MathColour> front, back;
+};
+
 /// The brilliance of every diffuse finish an object's materials can show, sorted.
 inline std::vector<double> SurfaceDiffuseClasses(ConstObjectPtr object)
 {

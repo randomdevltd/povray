@@ -26,7 +26,7 @@ background { rgb 0 }
   light_source { <0.6, 2.2, -0.8>, rgb 3 fade_distance 1 fade_power 2 }
   box { <-0.4, 2.48, -0.4>, <0.4, 2.5, 0.4>
     pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0.5 }
-    light { emission brightness 4 nits samples Samples bounce { passes Passes } }
+    light { bounce { passes Passes } brightness 4 samples Samples }
   }
   #declare Walls = array[6] {
     <0.8, 0.8, 0.8>, <0.9, 0.2, 0.2>, <0.2, 0.9, 0.2>, <0.8, 0.8, 0.8>, <0.2, 0.3, 0.9>, <0.9, 0.9, 0.3>
