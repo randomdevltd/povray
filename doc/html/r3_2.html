@@ -2846,9 +2846,9 @@ Preparation: bounce finished 2.2s
 <ul>
   <li><code>done/total</code> counts the phase's meshes, interiors, media, lights, bounce nodes and cells, or photons. The total is <code>?</code> where it is not known ahead.</li>
   <li>The text after the semicolon says where in the phase the work is, shortened to fit the line: for <code>lights</code>, the light (<code>l1/3 surface</code>) or the <code>refraction</code> step; for <code>bounce</code>, the order (<code>o1/2</code>), the bounce source (<code>t1/3</code>) and the part being prepared: <code>surface</code>, <code>volume</code>, <code>subsurface</code> (the subsurface light of bounce surfaces), <code>proposal</code> or <code>final proposal</code>.</li>
-  <li>A count that has not moved for 60 seconds produces <code>Preparation: bounce stalled 60s at 4096/8195 61.0s</code>, and again every 60 seconds while it stays flat. The phase is still running; the line tells you where it waits.</li>
+  <li>A count that has not moved for 60 seconds produces <code>Preparation: bounce stalled 60s at 4096/8195 61.0s</code>, and again every 60 seconds while it stays flat. The phase is still running; the line tells you where it waits. While bounce nodes are gathered it names their objects in full instead: <code>Preparation: bounce stalled 60s at 4096/8195 61.0s; gathering on cone or cylinder at line 14 of scene.pov</code>.</li>
 </ul>
-<p>Each line stays below 80 columns together with the console prefix, and the numbers do not depend on the number of render threads.</p>
+<p>Each line other than a stalled one naming objects stays below 80 columns together with the console prefix, and the numbers do not depend on the number of render threads.</p>
 </div>
 
 <a name="r3_2_8"></a>

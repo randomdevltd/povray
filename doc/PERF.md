@@ -1476,19 +1476,21 @@ leaving: front and back sums of L·|cos θ|^brilliance for each brilliance its m
 the surface's own diffuse layers are evaluated at that point, so a texture costs no nodes and is exact.
 
 Nodes are seeded once per light. Each light has its own `domain_cells` 2D node budget, initially 4096 and independent of the volume default, and is drawn by area (`SurfaceGeometrySampler::SampleArea`,
-eight draws per expected node). Its baseline spacing r₀ targets the smaller of 4096 nodes and half its budget (at least one),
+eight draws per expected node). Its baseline spacing r₀ targets half its budget (at least one node),
 and its draws are thinned to a maximal Poisson disc set, a draw kept only when no node of the same
 sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
 
-Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
+Each order refines level by level, to r₀/64. A node starts with four draws, the node itself first, each other
 from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
 projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
-mean over the reachable disc and its draws give a standard error. A node splits
+mean over the reachable disc and its draws give a standard error. Each draw connects to one source: among those with
+power, half the time uniformly and half by power over squared distance, weighted by the inverse of that probability, so a
+draw's expected light is the sum over every source and its cost does not grow with the number of lights. A node splits
 when, relative to the local irradiance max(own, predicted):
 - between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
 - within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
   (a shadow edge or a contact crossing it);
-- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths); a buried source uses the local diffusion length in place of its distance below the skin.
+- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths).
 The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
 gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours and a spread trusted
 only from eight draws. A difference that is large but not yet certain, or a value whose standard error exceeds 10%,
@@ -2599,19 +2601,45 @@ A linear sphere sweep's precise-boundary intersections solve directly for ray di
 
 Ordinary superellipsoid rays retain the fast twenty-step hybrid solve; an exhausted solve now bisects its remaining sign bracket instead of returning an unconverged endpoint. This intentionally corrects previously inaccurate ordinary intersections. Every returned ordinary root therefore has implicit residual at most `ZERO_TOLERANCE`, or a bracket refined to floating-point precision. The implicit function plus one is positively homogeneous of degree one, so radial projection onto its unit surface bounds spatial error by `R |residual| / (1-|residual|)`. `SurfaceTolerance` reports four times `ZERO_TOLERANCE` times the bounding-box radius, covering the errors of two sampled surface points under transforms. Surface source sampling applies its existing grazing own-root exclusion to both one-sided and two-sided proposals; the hemisphere choice does not disable numerical root ownership. Concave surface returns beyond this error window remain eligible.
 
-### Surface preparation progress and bounded internal paths
+## Bounce preparation after the bounds
 
-A level's first four draws formerly consumed its entire progress share. The following resampling rounds (up to 64 draws), decisions, subdivision work and subsurface gathers passed zero progress units to `Workers::For`. A level-zero counter could therefore remain unchanged while thousands of nodes continued gathering. `Workers::For` now adds discovered work to the total and advances on every completed item. A 30-second gather watchdog checks cooperation and completion, naming the object's source location. Internal walks fail at 4096 scattering/reflection events with the object, channel and sample; the test supplies a defective always-surviving draw stream to exercise this error. No partial radiance is returned on failure.
+Light, media and bounce fields were prepared inside the mesh task, before the bounding tasks, so every shadow ray they
+traced tested each top-level object in turn (`Trace::FindIntersection` with no tree yet). They now run in their own task
+(`FieldPreparationTask`) after the sets' bounds are built, with the mailboxes sized by them, and use the render's tree.
+The geometry is final by then: meshes are built and rebounded and CSG child trees indexed; nothing in field preparation
+changes a box.
 
-`tests/render/surface_domain_cells.pov` is a small public capsule/vein case: method 2, a volume emitter just beneath the skin, and a surface bounce light. Its suite checks built-in/explicit 4096-node equality in both languages, per-order node ceilings, independence from both volume defaults, scene scales 0.001 and 1000, exported buried light with two bounce orders, and a one-node budget. `domain_cells.sh` checks independent volume defaults and both language parsers. The buried-source `bounce_self` fixture pins 32768 surface nodes so different bounce-order counts use identical, nonbinding export sampling.
+A surface light's `domain_cells` is its own node budget: half seeds it, the rest refines it, shared over its orders and
+exported light. Each draw at a node connects to one source among those with power, half uniformly and half by power over
+squared distance, weighted by the inverse of that probability; the draws still start at four and grow while a node is
+uncertain, so a node gathering one lit source draws as before.
 
-Counted comparison of `tests/render/surface_domain_cells.pov` at `Declare=Cells=0 +W48 +H32 +WT2 +PR -A` (the then-default surface budget, before the reduction to 4096 nodes per light), before at `8554844ac`, alternating before/after twice. The matching parse-only wrapper includes the scene then ends with `#error "parse-only complete"`; it uses the same declarations. Counts include preparation and tracing; none were multiplexed.
+No gather stops at a time or step count. Each context counts its trace's cooperation points per gather, one increment
+each; each order's summary names the heaviest, `Bounce o1 heaviest gather: N trace steps on <object>`, and a
+stalled progress line names the objects the workers are gathering on. The internal walk's check at 4096 events stays as an
+assertion: from event 16 roulette survives with at most 0.95, so a correct walk reaches it with probability below 1e-90.
 
-| Run | User instructions | Parse-only instructions | Difference |
-| --- | ---: | ---: | ---: |
-| before 1 | 187,577,601,538 | 12,853,029 | 187,564,748,509 |
-| before 2 | 187,564,473,945 | 12,850,507 | 187,551,623,438 |
-| after 1 | 187,841,654,190 | 12,855,487 | 187,828,798,703 |
-| after 2 | 187,850,048,517 | 12,852,133 | 187,837,196,384 |
+User-space instructions, render queue `counters=true`, against `performance` (`perf-0d719b821`):
 
-The added progress and watchdog checks cost 0.14–0.15% instructions on this case. Both builds produce 3492 nodes over three levels, 0.28 MiB of final fields, and pixel-identical decoded PNGs in both pairs. Peak RSS was 35 MiB before and 36–37 MiB after; no preparation work moves into tracing. Wall times varied with concurrent load and do not establish a speed change. At the fixture's explicit 64-node setting, preparation finished in 1.0 seconds, total instructions were 15.11 billion, peak RSS 21 MiB, and the decoded 48×32 image differed from that reference by one 8-bit level in one pixel. This is a small preview budget, not a general convergence guarantee.
+| Scene | `performance` | After | Change | Image |
+| --- | ---: | ---: | ---: | --- |
+| `tools/bench/bounce-crawl.pov`, 200×150, fields after bounds only | 2,055.7 G, bounce 311 s | 331.0 G, bounce 32 s | −84% | identical |
+| the same, per-light budgets, every source per draw | | 598.7 G, bounce 100 s | −71% | larger field |
+| the same, per-light budgets, one source per draw | | 443.1 G, bounce 38 s | −78% | larger field |
+| `tests/render/bounce_adaptive.pov` Case 0, one point light, 320×240 | 48.83 G | 44.91 G | −8% | field differs, mean 1/255 |
+| `scenes/interior/media/blend_candle.pov` `WaxBounce=1`, 160×120 | 2,847 G | 2,824 G | −0.8% | max 3/255 |
+| `scenes/interior/media/bounce_self_mirror.pov`, volume bounce, 200×115 | 1,213 G | 986 G | −19% | identical |
+| `scenes/interior/media/light_tubes.pov`, no bounce, 160×90 | 45.57 G | 45.56 G | 0% | identical |
+
+Per-light budget on `bounce_adaptive.pov` Case 2 (five passive surfaces), 320×240: `performance` 4006 nodes, 90.1 G;
+1024 per light 2697 nodes, 88.5 G; 4096 9553 nodes, 100.0 G; 16384 36645 nodes, 142.0 G; 173913 387292 nodes, 684.9 G.
+On the crawl bench (seven surface lights): 1024 per light 263 G, 4096 443 G, 16384 1,286 G.
+
+`tools/bench/bounce-crawl.pov` is six translucent stalks with buried lights, a bounce floor, 24 small volume lights and
+600 separate blades. Moving preparation after the bounds alone leaves its image pixel-identical. The per-light budgets
+give its seven lights 4096 nodes each where the scene shared one budget, so the field is larger; one source per draw then
+takes refinement from 49.9 s to 9.3 s at those budgets.
+
+`tests/render/surface_domain_cells.pov` checks per-light budgets, both defaults in both languages, scales 0.001 and 1000
+and a one-node budget. `tests/source/surface_preparation.cpp` checks the source choice's probabilities, progress counting,
+the stalled line's object, the heaviest gather and that 2^21 steps stop nothing.

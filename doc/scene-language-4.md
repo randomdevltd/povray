@@ -347,7 +347,7 @@ identifier; in `.pov4` it is a built-in name.
 The renderer prints `Preparation plan:` and `Preparation: <phase> ...` information
 lines while it prepares a scene, for the phases `parse meshes media atmosphere
 lights bounce photons`, ending each with `finished`, and a `stalled` line when a
-count stops moving for a minute. They are renderer output, not syntax; the
+count stops moving for a minute, naming the objects being gathered during bounce. They are renderer output, not syntax; the
 manual's text output section (3.2.7.6) describes them.
 
 ## Legacy behaviour at 3.7 and older

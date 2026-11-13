@@ -1,4 +1,8 @@
-- Surface light domain_cells is a 2D node budget per light covering its seeds and refinement across bounce orders and exported subsurface light; default 4096 nodes. Independent defaults: #default { interior { light { domain_cells 500000 } } light { domain_cells 4096 } }. domain_cells remains text-matched and free as an identifier. Surface preparation reports resampling progress, uses diffusion length for buried-source proximity, and diagnoses overlong gathers and internal walks with their objects.
+- Breaking change: `#default { light { domain_cells N } }` now sets the node budget of the surface lights parsed after it. The interior-light source-domain default it used to set is now `#default { interior { light { domain_cells N } } }`, at every scene version; move the old form inside `interior { }` to keep its meaning.
+- A surface light's `domain_cells` is its own node budget for bounce and exported subsurface light, 4096 by default: half seeds it evenly over its area, the rest refines it, shared over its bounce orders and exported light. Lights no longer share one scene-wide budget, so adding a light leaves the others unchanged.
+- Light, media and bounce fields are prepared after the scene's bounding tree is built, so their shadow rays use it instead of testing every top-level object in turn.
+- Each surface bounce draw connects to one source, chosen by power over squared distance and weighted by that choice, instead of to every source; sources with no power are left out.
+- Bounce preparation stops no gather for its time or step count. Each order's summary names its heaviest gather and object, and a stalled progress line names the objects being gathered. An internal subsurface walk that reaches 4096 events reports a renderer bug.
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
 
