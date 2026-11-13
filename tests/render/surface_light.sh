@@ -126,6 +126,8 @@ for block in "normal { bumps 0.5 max_trace_level 2 }:a normal" "pigment { bozo f
         { cat nested.log; exit 1; }
 done
 reject input 'one pigment or emission input' 'light { pigment { rgb 1 } emission }'
+reject bounce_emission 'A bounce light block takes no pigment or emission input' 'light { emission bounce }'
+reject bounce_pigment 'A bounce light block takes no pigment or emission input' 'light { bounce pigment { rgb 1 } }'
 reject brightness 'brightness must be finite and not negative' 'light { brightness -1 }'
 reject samples 'Expected at least 1' 'light { samples 0 }'
 reject zero_passes 'Bounce passes must be a positive integer' 'light { bounce { passes 0 } }'
@@ -134,9 +136,7 @@ reject fractional_passes 'Bounce passes must be a positive integer' 'light { bou
 reject overflow_passes 'Bounce passes must be a positive integer' 'light { bounce { passes 4294967296 } }'
 reject duplicate_bounce 'only one bounce setting' 'light { bounce bounce }'
 reject duplicate_passes 'only one passes setting' 'light { bounce { passes 1 passes 3 } }'
-reject bounce_aoi 'cannot depend on ray or camera context' 'pigment { aoi } light { bounce }'
 reject angular_finish 'cannot bake direction-dependent finish attenuation' 'finish { emission 1 fresnel on } light { emission }'
-reject bounce_crand 'cannot prepare stochastic crand diffuse finishes' 'finish { crand 0.5 } light { bounce }'
 reject surface_power 'attenuation accepts only cutoff; power and scale are for interior lights' 'light { attenuation { power 2 } }'
 reject surface_scale 'attenuation accepts only cutoff; power and scale are for interior lights' 'light { attenuation { cutoff 0 scale 1 } }'
 reject surface_attenuation_number 'attenuation is a block: attenuation { cutoff 0.000004 }' 'light { attenuation 1 }'

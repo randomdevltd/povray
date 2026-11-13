@@ -29,8 +29,8 @@ difference {
     finish { ambient 0 emission 0 diffuse 0.8 #if (Subsurface) subsurface { translucency 0.4 } #end }
     #if (Bounce > 0 | Emit | Buried)
       light {
-        #if (Buried) emission #end
-        #if (Emit) pigment { rgb <1, 0.6, 0.3> } brightness 0.1 #end
+        #if (Buried & Bounce = 0) emission #end
+        #if (Emit & Bounce = 0) pigment { rgb <1, 0.6, 0.3> } brightness 0.1 #end
         samples Samples
         #if (Buried) domain_cells 32768 #end
         #if (Photons) photons { reflection on } #end

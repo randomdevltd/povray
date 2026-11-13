@@ -35,7 +35,7 @@ union {
     interior { ior 1.5 }
   }
   box { <-0.06, 0, -0.5>, <0.06, 0.12, 0.5> pigment { rgb 0.8 } finish { ambient 0 diffuse 0.8 } }
-  #if (Bounce) light { emission bounce { passes 1 } samples Samples } #end
+  #if (Bounce) light { bounce { passes 1 } samples Samples } #end
   no_image
 }
 #else
@@ -47,7 +47,7 @@ difference {
     finish { ambient 0 diffuse 0.35, 0.35 specular 0.45 roughness 0.025 subsurface { translucency <0.08, 0.05, 0.1> } }
   }
   interior { ior 1.36 }
-  #if (Bounce) light { emission bounce { passes 1 } samples Samples } #end
+  #if (Bounce) light { bounce { passes 1 } samples Samples } #end
   no_image
   scale 0.9 translate <0, 0.25, 0>
 }

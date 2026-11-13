@@ -4057,6 +4057,8 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
         CASE (PIGMENT_TOKEN)
             if (light->pigment != nullptr || light->useEmission)
                 Error("A light block accepts exactly one pigment or emission input.");
+            if (light->bouncePasses != 0)
+                Error("A bounce light block takes no pigment or emission input; it exports its object's own emission and the light it diffuses.");
             light->pigment = Copy_Pigment(Default_Texture->Pigment);
             Parse_Begin();
             Parse_Pigment(&light->pigment);
@@ -4066,6 +4068,8 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
         CASE (EMISSION_TOKEN)
             if (light->pigment != nullptr || light->useEmission)
                 Error("A light block accepts exactly one pigment or emission input.");
+            if (light->bouncePasses != 0)
+                Error("A bounce light block takes no pigment or emission input; it exports its object's own emission and the light it diffuses.");
             light->useEmission = true;
         END_CASE
 
@@ -4128,6 +4132,8 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             {
                 if (light->bouncePasses != 0)
                     Error("A light block accepts only one bounce setting.");
+                if (light->pigment != nullptr || light->useEmission)
+                    Error("A bounce light block takes no pigment or emission input; it exports its object's own emission and the light it diffuses.");
                 Parse_Light_Bounce(*light);
             }
             else if (CurrentTokenText() == "attenuation")

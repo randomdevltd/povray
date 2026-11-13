@@ -41,7 +41,6 @@ constexpr unsigned kMostNodeDraws = 64;      // draws a node may grow to while i
 constexpr double kNeededDraws = 4.0;         // most draws over those its own variance needs to resolve the tolerance
 constexpr unsigned kChildDraws = 16;         // surface draws about a split node that may become its children
 constexpr unsigned kAreaDraws = 64;          // surface draws about a split node that share its area among it and them
-constexpr double kCoverStep = 1.0e-6;        // distance, over its part's radius, within which another surface seals a point
 constexpr double kPacking = 0.68;            // nodes per squared spacing of a maximal Poisson disc set
 constexpr double kFacing = 0.5;              // least cosine between normals of one sheet
 constexpr std::size_t kProbe = 256;          // first area draws of a part
@@ -49,59 +48,13 @@ constexpr std::size_t kDrawsPerSeed = 8;     // area draws per expected level 0 
 constexpr std::size_t kMostDraws = std::size_t(1) << 22;
 constexpr std::size_t kChunk = 65536;
 
-/// The opaque solids that may seal a part's surface, and the part: a point is buried where another surface passes within
-/// a vanishing distance along every probe line through it, sealed where no ray reaches, whatever either encloses.
-struct Cover final
-{
-    std::vector<ObjectPtr> solids;
-    ObjectPtr owner = nullptr;
-    double radius = 0.0;
-    bool Buried(const Vector3d& point, const Vector3d& normal, TraceThreadData* td) const
-    {
-        Vector3d t1, t2;
-        SurfaceGeometrySampler::TangentFrame(normal, t1, t2);
-        const Vector3d probes[] = {normal, normal + t1, normal - t1, normal + t2, normal - t2};
-        for (const Vector3d& probe : probes)
-            if (Surfaces(point, probe.normalized(), td) < 2) return false;
-        return true;
-    }
-    // Distinct surfaces the line through `point` along unit `direction` crosses within the vanishing distance; each
-    // probe starts a part's radius back, clear of any absolute intersection tolerance.
-    std::size_t Surfaces(const Vector3d& point, const Vector3d& direction, TraceThreadData* td) const
-    {
-        const double step = kCoverStep * radius;
-        TraceTicket ticket(1, 0.0);
-        Ray ray(ticket, point - direction * radius, direction);
-        IStack stack(td->stackPool);
-        std::vector<std::pair<ConstObjectPtr, double>> hits;
-        auto cross = [&](ObjectPtr object)
-        {
-            for (int a = X; a <= Z; ++a)
-            {
-                const double low = object->BBox.lowerLeft[a], high = low + object->BBox.size[a];
-                // Single-precision boxes may round inward by a few units in the last place.
-                const double margin = step + std::ldexp(std::fabs(low) + std::fabs(high) + std::fabs(point[a]), -20);
-                if (point[a] < low - margin || point[a] > high + margin) return;
-            }
-            object->All_Intersections(ray, stack, td);
-            for (; !stack->empty(); stack->pop())
-                if (std::fabs(stack->top().Depth - radius) <= step)
-                    hits.emplace_back(stack->top().Object, stack->top().Depth);
-        };
-        cross(owner);
-        for (ObjectPtr solid : solids) cross(solid);
-        std::sort(hits.begin(), hits.end());
-        return std::unique(hits.begin(), hits.end()) - hits.begin();
-    }
-};
-
 /// One bounce target's surface, over every order: its area draws, level 0 nodes and their areas.
 struct Part final
 {
     ObjectPtr owner = nullptr;
     std::shared_ptr<const SurfaceGeometrySampler> sampler;
     std::vector<double> classes;
-    Cover cover;
+    bool inside = false;                     // seen from inside too: an open surface, or one holding a light
     double area = 0.0, spacing = 0.0;
     std::size_t budget = 0, remaining = 0;
     std::uint64_t fields = 1;
@@ -149,7 +102,7 @@ struct Node final
     std::uint64_t key = 0;
     unsigned draws = 0, samples = 0;
     std::vector<MathColour> sums;
-    MathColour entry;
+    MathColour entry, front, back;
     double eta = 1.0;
     double sum = 0.0, square = 0.0, near = 0.0, nearWeight = 0.0;
     double half[2][2][3] = {};
@@ -157,7 +110,7 @@ struct Node final
     {
         draws = samples = 0;
         sums.assign(sums.size(), MathColour());
-        entry = MathColour();
+        entry = front = back = MathColour();
         eta = 1.0;
         sum = square = near = nearWeight = 0.0;
         std::fill(&half[0][0][0], &half[0][0][0] + 12, 0.0);
@@ -175,7 +128,7 @@ struct Node final
 struct Result final
 {
     std::shared_ptr<const SurfaceNodeIndex> index;
-    std::shared_ptr<const SurfaceBounceRadiance> diffuse;
+    std::shared_ptr<const SurfaceBounceRadiance> diffuse, shaded;
     std::vector<SurfaceBounceNode> nodes;
     std::vector<MathColour> entry;
     std::vector<double> etas, areas;
@@ -275,8 +228,7 @@ void Seed(std::vector<Part>& parts, Workers& workers, const std::function<void()
             TraceThreadData* const td = workers.Thread(worker);
             workers[worker].Watch(part.owner);
             hit[i] = part.sampler->SampleArea(ray, td, Radical(first + i + 1, 2), Draw(key, kDrawEmitter, 0),
-                                              Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), chunk[i]) &&
-                     !part.cover.Buried(chunk[i].intersection.IPoint, chunk[i].normal, td);
+                                              Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), chunk[i]);
         }, 0);
         for (std::size_t i = 0; i < chunk.size(); ++i)
             if (hit[i])
@@ -357,10 +309,12 @@ template<class Workers>
 class Order final
 {
 public:
+    /// With `shaders`, one per worker, a node's light is the shading call at its draws; otherwise its gathered irradiance.
     Order(Workers& workers, std::vector<Part>& parts, const std::vector<std::size_t>& active,
-          const std::vector<Sources>& sources, unsigned order, const std::vector<Trace*>& entries, const std::function<void()>& cooperate, std::size_t units) :
+          const std::vector<Sources>& sources, unsigned order, const std::vector<Trace*>& entries, const std::function<void()>& cooperate, std::size_t units,
+          const std::vector<Trace*>& shaders = {}) :
         workers(workers), parts(parts), active(active), sources(sources), order(order),
-        subsurface(!entries.empty()), entries(entries), cooperate(cooperate), units(units)
+        subsurface(!entries.empty()), entries(entries), shaders(shaders), cooperate(cooperate), units(units)
     {
     }
 
@@ -459,8 +413,33 @@ private:
         }, progress);
     }
 
-    // Draw 0 is the node itself, the others points of its disc on its surface; a draw that finds none, or a buried one,
-    // is left out.
+    // The old measurement: irradiance gathered at a draw, and the light entering a subsurface host there.
+    double Gather(Node& node, const Intersection& at, const Vector3d& normal, unsigned j, std::size_t worker)
+    {
+        const Part& part = parts[active[node.part]];
+        double scalar = 0.0;
+        const Sources& gathered = sources[node.part];
+        auto beams = Incident(workers[worker].trace, at, normal, gathered, BounceOrderSeed(node.key, order, j, 0));
+        if (subsurface)
+        {
+            node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{at, normal, 0.0}, beams, 0, node.eta);
+            node.eta = SubsurfaceBoundary::Quantise(node.eta);
+        }
+        for (auto& beam : beams)
+        {
+            beam.direction = Rotate(beam.direction, normal, node.normal);
+            const double cosine = -dot(node.normal, beam.direction), magnitude = std::fabs(cosine);
+            for (std::size_t c = 0; c < part.classes.size(); ++c)
+                node.sums[2 * c + (cosine < 0.0 ? 1 : 0)] += beam.angularWeight * std::pow(magnitude, part.classes[c]);
+            const double g = beam.angularWeight.Greyscale() * magnitude;
+            scalar += g;
+            node.nearWeight += g;
+            node.near += g / beam.distance;
+        }
+        return scalar;
+    }
+
+    // Draw 0 is the node itself, the others points of its disc on its surface; a draw that finds none is left out.
     void Sample(Node& node, unsigned last, std::size_t worker)
     {
         const Part& part = parts[active[node.part]];
@@ -476,31 +455,24 @@ private:
                 DiscPoint(node.key, j - 1, x, y);
                 TraceTicket ticket(1, 0.0);
                 Ray ray(ticket);
-                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, radius, x, y, ray, td, origin) ||
-                    part.cover.Buried(origin.intersection.IPoint, origin.normal, td))
+                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, radius, x, y, ray, td, origin))
                     continue;
             }
             const Intersection& at = j > 0 ? origin.intersection : node.hit;
             const Vector3d& normal = j > 0 ? origin.normal : node.normal;
-            const Sources& gathered = sources[node.part];
-            auto beams = Incident(workers[worker].trace, at, normal, gathered, BounceOrderSeed(node.key, order, j, 0));
-            if (subsurface)
-            {
-                node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{at, normal, 0.0}, beams, 0, node.eta);
-                node.eta = SubsurfaceBoundary::Quantise(node.eta);
-            }
             double scalar = 0.0;
-            for (auto& beam : beams)
+            if (!shaders.empty())
             {
-                beam.direction = Rotate(beam.direction, normal, node.normal);
-                const double cosine = -dot(node.normal, beam.direction), magnitude = std::fabs(cosine);
-                for (std::size_t c = 0; c < part.classes.size(); ++c)
-                    node.sums[2 * c + (cosine < 0.0 ? 1 : 0)] += beam.angularWeight * std::pow(magnitude, part.classes[c]);
-                const double g = beam.angularWeight.Greyscale() * magnitude;
-                scalar += g;
-                node.nearWeight += g;
-                node.near += g / beam.distance;
+                // Seen from outside, and from inside where light can be there.
+                const std::uint64_t key = BounceOrderSeed(node.key, order, j, 0);
+                const MathColour front = shaders[worker]->BounceExport(at, normal, key);
+                const MathColour back = part.inside ? shaders[worker]->BounceExport(at, -normal, BounceOrderMix(key)) : MathColour();
+                node.front += front;
+                node.back += back;
+                scalar = front.Greyscale() + back.Greyscale();
             }
+            else
+                scalar = Gather(node, at, normal, j, worker);
             node.sum += scalar;
             node.square += scalar * scalar;
             ++node.samples;
@@ -713,8 +685,7 @@ private:
                 TraceTicket ticket(1, 0.0);
                 Ray ray(ticket);
                 SurfaceGeometrySample draw;
-                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, Spacing(node.level, node.part), x, y, ray, td, draw) ||
-                    part.cover.Buried(draw.intersection.IPoint, draw.normal, td))
+                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, Spacing(node.level, node.part), x, y, ray, td, draw))
                     continue;
                 if (indices[node.part]->Nearest(draw.intersection.IPoint, draw.normal) == position[split[k]])
                     draws[k].push_back(std::move(draw));
@@ -801,6 +772,26 @@ private:
             Result& result = results[p];
             result.index = indices[p];
             const auto& source = result.index->Source();
+            if (!shaders.empty())
+            {
+                std::vector<MathColour> front(source.size()), back(source.size());
+                std::vector<float> power(source.size());
+                MathColour integral;
+                bool open = false;
+                for (std::size_t t = 0; t < source.size(); ++t)
+                {
+                    const Node& node = nodes[members[p][source[t]]];
+                    front[t] = node.front / float(node.samples);
+                    back[t] = node.back / float(node.samples);
+                    open = open || !back[t].IsZero();
+                    power[t] = float((front[t] + back[t]).Greyscale() * node.area);
+                    integral += (front[t] + back[t]) * float(node.area);
+                }
+                if (!open) back.clear();
+                result.shaded = std::make_shared<const SurfaceShadedField>(result.index, std::move(front), std::move(back),
+                                                                           std::move(power), integral);
+                continue;
+            }
             const std::size_t count = source.size(), stride = 2 * part.classes.size();
             std::vector<MathColour> irradiance(count * stride);
             std::vector<float> power(count);
@@ -841,6 +832,7 @@ private:
     std::size_t bytes = 0, reasons[3] = {0, 0, 0};
     bool subsurface, bound = false;
     const std::vector<Trace*>& entries;
+    const std::vector<Trace*>& shaders;
     const std::function<void()>& cooperate;
     std::size_t units;
     unsigned level = 0;

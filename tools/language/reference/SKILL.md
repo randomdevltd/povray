@@ -46,7 +46,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `background` | — | The colour or pigment shown behind every object. |
 | `bicubic_patch` | 38 | Bezier patch surface from a 4x4 control-point grid. |
 | `blob` | 37 | Metaball surface from sphere and cylinder strength components. |
-| `bounce` | 2 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets any finite scalar or RGB self share, including amplification and subtraction; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits. |
+| `bounce` | 2 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets any finite scalar or RGB self share, including amplification and subtraction; `off` keeps the bounce off its own medium or surface. It takes no pigment or emission input: a surface exports what its ordinary shading call sees, its own emission and the light it diffuses, and brightness multiplies it. |
 | `box` | 32 | Box from two opposite corner vectors. |
 | `bump_map` | 33 | Normal perturbation pattern wrapping a 2-D image file. |
 | `camera` | 35 | The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse. |

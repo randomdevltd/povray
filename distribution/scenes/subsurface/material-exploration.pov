@@ -168,8 +168,8 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #local BounceEnabled=(Export | (CurrentBounce & (A=2 | Case>=0)));
  #if (EmissionExport | BounceEnabled | SourceMode=2 | SurfaceSource)
   light {samples EmitterSamples
-   #if (SourceMode=2 | SurfaceSource) pigment {Veins} brightness Exposure*0.05 lumens
-   #elseif (EmissionExport) emission #end
+   #if (!BounceEnabled) #if (SourceMode=2 | SurfaceSource) pigment {Veins} brightness Exposure*0.05 lumens
+   #elseif (EmissionExport) emission #end #end
    #if (BounceEnabled) bounce {passes WaxBouncePasses} #end
   }
  #end

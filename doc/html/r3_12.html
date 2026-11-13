@@ -489,7 +489,7 @@ box { &lt;-30, 100, -2&gt;, &lt;30, 160, 2&gt;
 <a name="r3_12_8"></a>
 <div class="content-level-h3" contains="Bounced and Passive Lights" id="r3_12_8">
 <h3>3.12.8 Bounced and Passive Lights</h3>
-<p><code>bounce</code> makes the object, its surface or its interior's scattering media, re-emit the light it receives from other lights. <code>emission</code> (the material's or medium's own emission) or <code>pigment</code> gives a light block its own source. A block may have either or both: <code>light { emission bounce }</code> shines its own emission and re-emits what it receives; <code>light { bounce }</code> re-emits only what it receives, a <em>passive</em> source such as a wall lit by a lamp.</p>
+<p><code>bounce</code> makes the object, its surface or its interior's scattering media, re-emit the light it receives from other lights. A bounce light takes no <code>pigment</code> or <code>emission</code> input: a surface's <code>light { bounce }</code> exports what its ordinary shading would show a camera, averaged over viewing directions: its own emission and the light it diffuses, subsurface included, but no highlights, mirror or see-through light. With an input, <code>bounce</code> is a parse error.</p>
 <pre>
 BOUNCE:
   bounce | bounce { [passes Integer] [self Float | Vector | rgb Vector | on | off] }
@@ -510,7 +510,7 @@ box { &lt;-1.5, -0.1, -1.5&gt;, &lt;1.5, 0, 1.5&gt;
 sphere { 0, 1 pigment { rgbt 1 }
   interior {
     media { method 4 scattering { 1, rgb 0.3 } emission rgb 2 }
-    light { emission brightness 3 lumens bounce { passes 2 } samples 8 }
+    light { bounce { passes 2 } samples 8 }
   }
 }
 </pre>

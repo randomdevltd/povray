@@ -101,8 +101,7 @@ takes emission only from the material along a path. The second count of
 Where the subsurface block gives the flesh its own colour, the texture pigment is a skin
 crossed at the exit, twice at each internal reflection and at the far end of a straight
 path through a thin wall. A surface `light { emission }` on the host exports the flux
-leaving it, and a `bounce` block exports it in its first order; with both it is exported
-once. The host needs homogeneous coefficients (one texture layer, no `volume_sampling`
+leaving it, and so does a `bounce` block, through the host's ordinary internal source. The host needs homogeneous coefficients (one texture layer, no `volume_sampling`
 flesh). A volume light block on an open part (a non-cutting `disc`, or an `inside_vector`
 mesh with an open border) stops the parse, and so does one whose container lies inside an
 open subsurface mesh's `inside_vector` volume, naming both lines, with or without
@@ -187,13 +186,13 @@ receives its own emission and the self share of its bounce, which matters only
 where it faces itself (a concave or composite shape), while every other object
 receives the whole bounce.
 
-A light block emits light of its own only from an explicit `pigment` or `emission`
-input. Without one, a block without `bounce` is a solid white pigment light, and a
-block with `bounce` is bounce-only: it emits nothing of its own, whatever its
-material's or media's emission, and its `brightness` (default 1, physical) multiplies
-every order it re-emits. `nits` or `lumens` in a bounce-only block are a parse error,
-`A bounce-only light block takes a plain brightness multiplier; nits and lumens need an
-emission input.` An explicit input can precede or follow `bounce`.
+A light block is an emitter or a bounce light. An emitter has a `pigment` or `emission`
+input, or none for solid white. A bounce light has `bounce` and no input; both in one
+block stop the parse with `A bounce light block takes no pigment or emission input; it
+exports its object's own emission and the light it diffuses.` A bounce light's
+`brightness` (default 1, physical) multiplies what it exports; `nits` or `lumens` there are
+a parse error, `A bounce-only light block takes a plain brightness multiplier; nits and
+lumens need an emission input.`
 `bounce`, `passes` and `self` remain free identifiers outside their light-block contexts.
 
 Each pass produces the next scattering order from the preceding order across
@@ -203,17 +202,18 @@ once. With an input, brightness and its unit affect primary emission only, while
 received indirect energy keeps its transported magnitude; a bounce-only block's
 brightness scales each order it re-emits, so light it receives back from itself in
 a later pass is scaled again. The final source is
-primary emission plus the completed bounce orders. Surface bounce rejects
-stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
-reflection attenuation.
+primary emission plus the completed bounce orders.
 
-A passive source is a light block with `bounce` and no input, `light { bounce }`:
-it re-emits only the light it receives from other sources. A bounced surface whose finish uses
-subsurface scattering also sends its subsurface light on, which needs subsurface
-method 2 (the default from version 4.0). The render stops before tracing, without
-a line number, with `Surface bounce cannot prepare stochastic crand diffuse
-finishes` and `Surface bounce cannot prepare Fresnel or energy-conserving
-reflection attenuation`.
+A surface bounce light exports what a camera would see at each node: the ordinary shading
+call, averaged over viewing directions. That is the object's own emission (and ambient
+while radiosity is off), and the light it diffuses: diffuse, `diffuse_back`, method 2
+subsurface including buried volume lights, and subsurface flesh emission. Highlights,
+mirror reflection, see-through light and radiosity are not exported. Fresnel, `crand` and
+energy-conserving finishes are shaded as anywhere else. Surface bounce currently runs one
+pass, lit by the scene's ordinary lights, and notes when more `passes` were asked for.
+Nodes on faces sealed against another surface are shaded like any other: against a
+subsurface neighbour, including another part of the same object, their light crosses the
+contact into it.
 
 Media methods 1 to 3 and subsurface method 1 stay exactly as they were and take
 no part in a light block's light. Parsing stops, naming each line and its file, when
@@ -280,14 +280,8 @@ sphere { 0, 0.3
 }
 ```
 
-Passive surface bounce and volume bounce, two orders each. A light block emits light of its
-own only from an explicit `pigment` or `emission`. With neither and no `bounce` it is a solid
-white pigment light; with neither and `bounce` it is bounce-only: it emits nothing of its own,
-`brightness` (default 1, physical) multiplies every order it re-emits, and `nits` or `lumens`
-stop the parse with `A bounce-only light block takes a plain brightness multiplier; nits and
-lumens need an emission input.` So adding `bounce` to a block with no input makes it
-bounce-only; a white emitter that also bounces writes `pigment { rgb 1 }`. With an input the
-units apply to its emission and the bounced orders keep their physical strength:
+Passive surface bounce and volume bounce. A bounce light takes no input; `brightness` is a
+plain multiplier of what it exports:
 
 ```
 box { <-1.5, -0.1, -1.5>, <1.5, 0, 1.5>
@@ -298,7 +292,7 @@ box { <-1.5, -0.1, -1.5>, <1.5, 0, 1.5>
 sphere { 0, 1 pigment { rgbt 1 }
   interior {
     media { method 4 scattering { 1, rgb 0.3 } emission rgb 2 }
-    light { emission brightness 3 lumens bounce { passes 2 } samples 8 }
+    light { bounce { passes 2 } samples 8 }
   }
 }
 ```

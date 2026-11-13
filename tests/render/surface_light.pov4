@@ -65,8 +65,8 @@ object { Shape no_image
   pigment { Material }
   finish { ambient 0 if (Passive) { emission 0 diffuse 0.8 } else { emission 2 diffuse 0 } }
   light {
-    if (Alias || (Bounce > 0 && !Passive)) { emission } else { if (Case == 5 || Case == 10) { pigment { Source } } }
-    if (Passive) { brightness Gain }
+    if (Bounce == 0) { if (Alias) { emission } else { if (Case == 5 || Case == 10) { pigment { Source } } } }
+    if (Passive || Bounce > 0) { brightness Gain }
     else { if (Units == 1) { brightness (8*4*pi*pi*0.25*0.25) lumens } else { brightness 8 if (Units != 2) { nits } } }
     samples Samples
     if (Bounce == 1) { bounce }
@@ -79,7 +79,7 @@ if (Bounce == 4) {
   sphere { <0.8,1.5,0>,0.2 no_image
     pigment { rgb <0.2,0.5,1> }
     finish { ambient 0 emission 1 diffuse 0.5 }
-    light { emission bounce { passes 1 } samples Samples }
+    light { bounce { passes 1 } samples Samples }
   }
 }
 

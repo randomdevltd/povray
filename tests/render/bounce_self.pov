@@ -25,7 +25,7 @@ background { rgb 0 }
       }
       #if (Light)
         light {
-          #if (Emit) pigment { rgb <1, 0.6, 0.3> } brightness 0.5 #end
+          #if (Emit & Bounce = 0) pigment { rgb <1, 0.6, 0.3> } brightness 0.5 #end
           samples Samples
           #if (Bounce > 0) bounce { passes Bounce self Self } #end
         }

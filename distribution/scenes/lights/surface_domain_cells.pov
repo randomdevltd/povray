@@ -21,7 +21,7 @@ sphere_sweep {
   pigment { rgb <0.8,0.5,0.3> }
   finish { ambient 0 diffuse 1 subsurface { translucency 0.3 } }
   interior { ior 1.4 }
-  light { #if (Export) emission #end bounce { passes Passes } samples 4
+  light { bounce { passes Passes } samples 4
     #if (Cells > 0 & !UseDefault) domain_cells Cells #end }
   scale S
 }
