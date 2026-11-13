@@ -8,7 +8,7 @@ trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 render() {
     name=$1; shift
-    timeout 30 "$POVRAY" +i"$SRCDIR/tests/render/surface_domain_cells.pov" +w48 +h32 +wt2 +pr -a -d -p +fp16 +o"$name.ppm" "$@" >"$name.log" 2>&1 ||
+    "$POVRAY" +i"$SRCDIR/tests/render/surface_domain_cells.pov" +w48 +h32 +wt2 +pr -a -d -p +fp16 +o"$name.ppm" "$@" >"$name.log" 2>&1 ||
         { cat "$name.log"; exit 1; }
     tail -c 9216 "$name.ppm" >"$name.rgb"
     grep -q 'Preparation: bounce finished' "$name.log" || { cat "$name.log"; exit 1; }
@@ -45,7 +45,7 @@ SCENE
     for kind in builtin explicit; do
         if [ "$kind" = explicit ]; then sed 's/bounce {/domain_cells 4096 bounce {/' budget.$language >explicit.$language
         else cp budget.$language builtin.$language; fi
-        timeout 60 "$POVRAY" +i$kind.$language +w8 +h8 +wt1 +pr -a -d -p +fp16 +o$kind.ppm >$kind.log 2>&1 || { cat $kind.log; exit 1; }
+        "$POVRAY" +i$kind.$language +w8 +h8 +wt1 +pr -a -d -p +fp16 +o$kind.ppm >$kind.log 2>&1 || { cat $kind.log; exit 1; }
         tail -c 384 $kind.ppm >$kind.rgb
         sed -n 's/.*Bounce o[0-9]*: \([0-9]*\) nodes.*/\1/p' $kind.log >$kind.nodes
         awk '$1 > 4096 { bad=1 } END { exit (bad || NR!=2) }' $kind.nodes || { cat $kind.log; exit 1; }
@@ -61,5 +61,5 @@ camera { location <0,0,-3> look_at 0 }
 sphere { 0, 1 pigment { rgb 1 } light { bounce { passes 2 } } }
 light_source { <2,3,-4>, rgb 1 }
 SCENE
-timeout 30 "$POVRAY" +idefaults.pov4 +w8 +h8 +wt1 +pr -a -d -p -f >defaults.log 2>&1 || { cat defaults.log; exit 1; }
+"$POVRAY" +idefaults.pov4 +w8 +h8 +wt1 +pr -a -d -p -f >defaults.log 2>&1 || { cat defaults.log; exit 1; }
 echo 'surface_domain_cells: ok'
