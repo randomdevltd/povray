@@ -47,8 +47,7 @@ constexpr double kPacking = 0.68;            // nodes per squared spacing of a m
 constexpr double kFacing = 0.5;              // least cosine between normals of one sheet
 constexpr std::size_t kProbe = 256;          // first area draws of a part
 constexpr std::size_t kDrawsPerSeed = 8;     // area draws per expected level 0 node
-constexpr std::size_t kMostDraws = std::size_t(1) << 22;
-constexpr std::size_t kChunk = 65536;
+constexpr std::size_t kChunk = 65536;        // area draws in flight; only the exposed ones are kept
 
 /// The opaque solids that may seal a part's surface, and the part: a point is buried where another surface passes within
 /// a vanishing distance along every probe line through it, sealed where no ray reaches, whatever either encloses.
@@ -324,7 +323,7 @@ void Seed(std::vector<Part>& parts, Workers& workers, const std::function<void()
             part.spacing = std::sqrt(kPacking * part.area / part.draws / double(baseline));
             const double expected = double(baseline);
             const double rate = double(part.pool.size()) / part.draws;
-            const std::size_t wanted = std::min<std::size_t>(kMostDraws, std::size_t(std::ceil(kDrawsPerSeed * expected / rate)));
+            const std::size_t wanted = std::size_t(std::ceil(kDrawsPerSeed * expected / rate));
             more = more || part.draws < wanted;
             while (part.draws < wanted)
                 drawChunk(part, part.draws, std::min(wanted, part.draws + kChunk), partKey(p));
