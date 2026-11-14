@@ -1786,7 +1786,7 @@ AREA_LIGHT_ITEM:
 GENERAL_LIGHT_MODIFIERS:
   looks_like { OBJECT } |
   TRANSFORMATION fade_distance Fade_Distance |
-  fade_power Fade_Power | media_attenuation [Bool] |
+  fade_power Fade_Power | fade_cutoff Value | media_attenuation [Bool] |
   media_interaction [Bool] | photon_only [Bool] | projected_through |
   tags { "NAME" [, "NAME"...] }
 </pre>
@@ -1798,6 +1798,7 @@ falloff           : 70
 media_interaction : on
 photon_only       : off
 media_attenuation : off
+fade_cutoff       : 0.000004 (#version 4.0), 0 before
 point_at          : &lt;0,0,1&gt;
 radius            : 70
 tightness         : 10
@@ -2345,6 +2346,14 @@ light_source {
 <p class="Note"><strong>Note:</strong> For maximum realism, use <code>fade_power 2</code> and set <code>fade_distance</code> to the approximate radius of the object supposedly giving off the light, e.g. the radius of a frosted incandescent light bulb, half the length of the tungsten filament in a clear incandescent light bulb, etc.; if this makes the light seem too dim, compensate by boosting the light source brightness. There is nothing wrong with a light source having a color of <code>rgb &lt;10000,8000,2000&gt;</code> if that's what it takes.</p>
 
 <p><font class="New">New</font> in POV-Ray 3.8 is an alternative mode for distance-based light fading, in which the light intensity follows an inverse power law at all distances. To activate this mode, specify <code>fade_distance 0</code>. Nominal light intensity is then achieved at unit distance. For backward compatibility, this mode <em>requires</em> <code>#version 3.8</code> or higher to be set.</p>
+
+<p>The <code>fade_cutoff</code> keyword sets how faint a faded light may be at a lit point before it is left out there. <code>fade_cutoff Value</code> leaves the light out where the most it could add is fainter than <em>Value</em> in its brightest color channel, on the 0 to 1 output scale of <code>adc_bailout</code>: that point traces no shadow ray to it and adds nothing for it. The bound is the light's color times its fade at the point's distance from the light, from the nearest edge of an area light, before the spotlight cone, so it never drops a light that could add more, and it does not change when the whole scene is scaled. It is the same rule as a light block's <a href="r3_12.html#r3_12_2"><code>attenuation { cutoff }</code></a>. Only a light with <code>fade_power</code> above 0 takes the test; an unfaded light, or one with a negative <code>fade_distance</code>, is never left out and pays nothing for it. With <code>#version 4.0</code> the default is 0.000004, about a thousandth of the default <code>adc_bailout</code>: scenes with many faded lights, each faint over most of the scene, trace shadow rays only where a light is bright, and the image does not visibly change. Before 4.0 the default is 0. <code>fade_cutoff 0</code> turns it off, and <code>#default { light_source { fade_cutoff Value } }</code> sets it for the light sources placed after it (see <a href="r3_3.html#r3_3_2_4">#default</a>). A negative or non-finite value is the error <code>A light_source's fade_cutoff must be finite and not negative.</code> The render statistics count the light tests it dropped.</p>
+<pre>
+// street lamps: each lights its own stretch of road; points far from a lamp skip its shadow ray
+#for (I, 0, 99)
+  light_source { &lt;I * 20, 6, 0&gt;, rgb &lt;1, 0.8, 0.5&gt; * 50 fade_distance 0.5 fade_power 2 fade_cutoff 0.00001 }
+#end
+</pre>
 
 </div>
 <a name="r3_4_3_1_10"></a>

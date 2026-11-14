@@ -474,6 +474,9 @@ void Parser::Run()
             solidMediaSeen = false;
             hollowDeprecationWarned = false;
             defaultMix = kMediaBlendAuto;
+            lightSourceCutoffSet = false;
+            defaultSurfaceLightCutoff = kDefaultLightCutoff;
+            defaultInteriorLightCutoff = kDefaultLightCutoff;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -533,6 +536,7 @@ void Parser::Run()
             {
                 sceneData->lightSources[i]->index = i;
                 sceneData->lightSources[i]->lightGroupLight = false;
+                Light_Prepare_Fade_Reach(sceneData->lightSources[i]);
             }
 
             // post process local light sources
@@ -540,6 +544,7 @@ void Parser::Run()
             {
                 sceneData->lightGroupLightSources[i]->index = i;
                 sceneData->lightGroupLightSources[i]->lightGroupLight = true;
+                Light_Prepare_Fade_Reach(sceneData->lightGroupLightSources[i]);
             }
 
             for (LightSource* light : sceneData->mediaLights)
@@ -871,8 +876,13 @@ void Parser::Frame_Init()
 
 //******************************************************************************
 
+// About adc_bailout / 1000, as for light blocks: a faded light_source of a 4.0 scene is left out where it adds less than this.
+static const double kDefaultFadeCutoff = 4.0e-6;
+
 void Parser::InitDefaults(int version)
 {
+    if (!lightSourceCutoffSet)
+        defaultLightSourceCutoff = (version >= 400) ? kDefaultFadeCutoff : 0.0;
     if (!sceneData->explicitSubsurfaceMethod && !defaultsModified)
         sceneData->subsurfaceMethod = (version >= 400) ? kSubsurfaceMethodPointCloud : kSubsurfaceMethodSampled;
     // Initialize defaults depending on version:
@@ -3501,6 +3511,7 @@ void Parser::Make_Portal_Lights()
                     continue;
                 }
                 image->index = 0x100000 + sceneData->portalLights.size();
+                Light_Prepare_Fade_Reach(image);
                 sceneData->portalLights.push_back(image);
                 light->portalImages.push_back(image);
             }
@@ -4525,6 +4536,7 @@ ObjectPtr Parser::Parse_Light_Source ()
         return (reinterpret_cast<ObjectPtr>(Object));
 
     Object = new LightSource ();
+    Object->cutoff = defaultLightSourceCutoff;
 
     Parse_Vector(Object->Center);
 
@@ -4803,9 +4815,14 @@ ObjectPtr Parser::Parse_Light_Source ()
         OTHERWISE
             if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
                 Error("A light block makes a shape's surface a light; a light_source cannot take one.");
-            Reject_Nested_Item("light_source", "a light_source");
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "fade_cutoff")
+                Object->cutoff = Parse_Fade_Cutoff();
+            else
+            {
+                Reject_Nested_Item("light_source", "a light_source");
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -7829,6 +7846,41 @@ void Parser::Parse_Default ()
             Parse_Camera (Default_Camera);
         END_CASE
 
+        CASE (LIGHT_SOURCE_TOKEN)
+            Parse_Begin ();
+            EXPECT
+                OTHERWISE
+                    if (CurrentTokenText() == "fade_cutoff")
+                    {
+                        defaultLightSourceCutoff = Parse_Fade_Cutoff();
+                        lightSourceCutoffSet = true;
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
+                END_CASE
+            END_EXPECT
+            Parse_End ();
+        END_CASE
+
+        CASE (INTERIOR_TOKEN)
+            Parse_Begin ();
+            EXPECT
+                OTHERWISE
+                    if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+                        Parse_Default_Light(true);
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
+                END_CASE
+            END_EXPECT
+            Parse_End ();
+        END_CASE
+
         CASE (MEDIA_TOKEN)
             Parse_Begin ();
             EXPECT
@@ -7850,14 +7902,53 @@ void Parser::Parse_Default ()
         END_CASE
 
         OTHERWISE
-            // an interior light's default grid size, its own setting apart from the media's
             if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+                Parse_Default_Light(false);
+            else
             {
+                UNGET
+                EXIT
+            }
+        END_CASE
+    END_EXPECT
+
+    Parse_End();
+
+    Not_In_Default = true;
+}
+
+// `#default { light { ... } }` and `#default { interior { light { ... } } }`. An attenuation cutoff in the plain form
+// sets every light block's, surface and interior; the interior form sets the interior lights' alone.
+void Parser::Parse_Default_Light(bool interior)
+{
+    Parse_Begin ();
+    EXPECT
+        OTHERWISE
+            // an interior light's default grid size, its own setting apart from the media's
+            if (!interior && (CurrentTokenText() == "domain_cells"))
+                sceneData->lightDomainCells = Parse_Domain_Cells();
+            else if (CurrentTokenText() == "attenuation")
+            {
+                if (!Peek_Token(LEFT_CURLY_TOKEN))
+                    Error("A default light's attenuation is a block: attenuation { cutoff 0.000004 }.");
                 Parse_Begin ();
                 EXPECT
+                    CASE (SCALE_TOKEN)
+                        Error("A default light's attenuation accepts only cutoff; power and scale belong to each interior light.");
+                    END_CASE
+
                     OTHERWISE
-                        if (CurrentTokenText() == "domain_cells")
-                            sceneData->lightDomainCells = Parse_Domain_Cells();
+                        if (CurrentTokenText() == "cutoff")
+                        {
+                            const double cutoff = Parse_Float ();
+                            if (!std::isfinite(cutoff) || (cutoff < 0.0))
+                                Error("An attenuation block's cutoff must be finite and not negative.");
+                            defaultInteriorLightCutoff = cutoff;
+                            if (!interior)
+                                defaultSurfaceLightCutoff = cutoff;
+                        }
+                        else if (CurrentTokenText() == "power")
+                            Error("A default light's attenuation accepts only cutoff; power and scale belong to each interior light.");
                         else
                         {
                             UNGET
@@ -7874,10 +7965,7 @@ void Parser::Parse_Default ()
             }
         END_CASE
     END_EXPECT
-
-    Parse_End();
-
-    Not_In_Default = true;
+    Parse_End ();
 }
 
 //******************************************************************************

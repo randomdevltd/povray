@@ -3137,6 +3137,7 @@
         "cylinder",
         "double_illuminate",
         "dtag",
+        "fade_cutoff",
         "fade_distance",
         "fade_power",
         "falloff",

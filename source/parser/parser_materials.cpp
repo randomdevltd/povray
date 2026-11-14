@@ -3988,6 +3988,14 @@ void Parser::Parse_Light_Attenuation(MediaLight& light, bool surface)
         Error("An attenuation block takes a power greater than 0 and a scale of 0 or more.");
 }
 
+double Parser::Parse_Fade_Cutoff()
+{
+    const double cutoff = Parse_Float();
+    if (!std::isfinite(cutoff) || (cutoff < 0.0))
+        Error("A light_source's fade_cutoff must be finite and not negative.");
+    return cutoff;
+}
+
 double Parser::Parse_Light_Samples()
 {
     const double multiplier = Parse_Float();
@@ -4050,6 +4058,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
     light->where = CurrentSourceLine();
+    light->cutoff = surface ? defaultSurfaceLightCutoff : defaultInteriorLightCutoff;
     bool haveAttenuation = false;
     Parse_Begin();
 

@@ -1,0 +1,1 @@
+light_source { <4, 6, -3> rgb 1 fade_distance 1 fade_power 2 fade_cutof 0.001 }

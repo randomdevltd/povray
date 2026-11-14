@@ -3,7 +3,7 @@
 set -e
 POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
-NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media refraction povm"}
+NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media lights_default_cutoff refraction povm"}
 render() {
     "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/distribution/include" +L. +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"
@@ -40,6 +40,8 @@ fails err_include "err_items.inc4' line 2"
 fails err_loop "err_loop.pov4' line 2"
 fails err_depth "err_depth.pov4:1:11: Function calls nested deeper than 10000 levels"
 fails err_light_source_light "a light_source cannot take one"
+fails err_default_light_power "A default light's attenuation accepts only cutoff"
+fails err_fade_cutoff_typo "'light_source' has no item 'fade_cutof'; did you mean 'fade_cutoff'?"
 fails err_prop "'finish' has no item 'phon'; did you mean 'phong'?"
 fails err_subsurface "'subsurface' has no item 'memroy'; did you mean 'memory'?"
 fails err_misplaced_item "err_misplaced_item.pov4:2:19: 'count' belongs inside the photons or radiosity block of global_settings."

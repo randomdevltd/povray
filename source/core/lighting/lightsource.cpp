@@ -704,6 +704,31 @@ bool Light_Below_Cutoff(const LightSource *Light, const Vector3d& Point)
     return brightest * EmitterLawBound(Light, Light->emitter->Reach(Point)) < M_PI * Light->cutoff;
 }
 
+void Light_Prepare_Fade_Reach(LightSource *Light)
+{
+    Light->fadeReach = HUGE_VAL;
+    // only a classic light with a well-defined decreasing fade can be left out; a negative fade_distance has no such law
+    if ((Light->emitter != nullptr) || !(Light->cutoff > 0.0) || !(Light->Fade_Power > 0.0) || (Light->Fade_Distance <= -EPSILON))
+        return;
+    DBL brightest = 0.0;
+    for (int i = 0; i < MathColour::channels; i++)
+        brightest = std::max(brightest, fabs(double(Light->colour[i]))); // magnitude: negative lights count too
+    // the distance beyond which brightest * Light_Distance_Attenuation() < cutoff; the spotlight cone only lowers it
+    const DBL ratio = brightest / Light->cutoff;
+    DBL reach = -HUGE_VAL;
+    if (Light->Fade_Distance >= EPSILON)
+    {
+        if (2.0 * ratio > 1.0)
+            reach = Light->Fade_Distance * pow(2.0 * ratio - 1.0, 1.0 / Light->Fade_Power);
+    }
+    else if (ratio > 0.0)
+        reach = pow(ratio, 1.0 / Light->Fade_Power);
+    // an area light's lamps sit off its centre by at most its axes, and jitter stays within them
+    if (Light->Area_Light)
+        reach += Light->Axis1.length() + Light->Axis2.length();
+    Light->fadeReach = reach;
+}
+
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)
 {
     if (Light->emitter != nullptr)
