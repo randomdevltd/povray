@@ -94,6 +94,8 @@ DBL Light_Distance_Attenuation(const LightSource *Light_Source, DBL Distance);
 DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length);
 /// Whether an emitter light's attenuation cutoff leaves it out at Point: its bound there is below the cutoff.
 bool Light_Below_Cutoff(const LightSource *Light, const Vector3d& Point);
+/// Settle a classic light's fadeReach from its colour, fade, area extent and cutoff; call once its fields stop changing.
+void Light_Prepare_Fade_Reach(LightSource *Light);
 /// Photon method 2 deposit weight at path Length from the light, A(L) * L^2 so photons match the direct light; A(L) when parallel.
 DBL Light_Photon_Path_Weight(const LightSource *Light_Source, DBL Length);
 

@@ -62,7 +62,10 @@ rays, where the most it could add there is below C on the 0 to 1 output scale of
 `adc_bailout`. That bound is the light's prepared power, falling with the attenuation
 law from the nearest point of the emitter's bounds, so it never depends on the light's
 shape or kind. It applies to surface shading, media scattering, subsurface and bounce
-preparation alike; `cutoff 0` turns it off.
+preparation alike; `cutoff 0` turns it off. `default { light { attenuation { cutoff C } } }`
+(classic `#default`) sets the cutoff of every light block parsed after it, surface and
+interior; `default { interior { light { attenuation { cutoff C } } } }` sets interior
+lights' alone. A default attenuation block takes only `cutoff`.
 Interior lights also take `domain_cells N` (once, an integer of 1 to 1000000000),
 the cell count of that light's prepared source domain; without it the light takes
 the scene's light default, `default { light { domain_cells N } }` (classic `#default`),
@@ -149,6 +152,13 @@ only `attenuation { cutoff C }`; the volume light's artistic `power` and `scale`
 are an error there. The default cutoff applies to surface and bounce lights too. A `light_source`
 does not take a `light` block: both syntaxes stop with `A light block makes a
 shape's surface a light; a light_source cannot take one.`
+A faded `light_source` (`fade_power` above 0) takes `fade_cutoff C`, the same rule:
+a lit point where the light's colour times its fade, at the point's distance from the
+light (from the nearest edge of an area light), is below C in its brightest channel
+traces no shadow ray to it. The default is 0.000004 from `#version 4.0` and 0 before;
+`default { light_source { fade_cutoff C } }` (classic `#default`) sets it for light sources
+parsed after it, and `fade_cutoff 0` turns it off. Unfaded lights never take the test.
+`fade_cutoff` is contextual; the render statistics count the light tests it dropped.
 `brightness` is followed by an optional unit written after the number, as in
 `brightness 12 lumens`; `nits` and `lumens` are read only there. Surface and
 volume lights are not imaged by portals, which divert the light of ordinary

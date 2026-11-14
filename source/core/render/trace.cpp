@@ -3748,19 +3748,42 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
     }
 }
 
-// see do_light in v3.6's lighting.cpp
-void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, bool forceAttenuate)
+// Kept out of line: an emitter's draw is large beside a classic light's test, which then inlines into its callers.
+#if defined(__GNUC__)
+__attribute__((noinline))
+#endif
+void Trace::ComputeOneEmitterLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour)
+{
+    const Vector2d uv(Draw(lightsourceray.GetKey(), kDrawEmitter, 0), Draw(lightsourceray.GetKey(), kDrawEmitter, 1));
+    SampleEmitterConnection(lightsource, ipoint, lightsourceray, lightsourcedepth, lightcolour, uv, false);
+    lightcolour /= M_PI;
+}
+
+// A faded light left out by its fade_cutoff; out of line, so the test adds only its compare.
+POV_COLD_PATH static void DropFadedLight(MathColour& lightcolour, TraceThreadData *threadData)
+{
+    lightcolour.Clear();
+    threadData->Stats()[Light_Fade_Cutoff_Drops]++;
+}
+
+// see do_light in v3.6's lighting.cpp; inline, as it runs for every light at every shaded point
+inline void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, bool forceAttenuate)
 {
     if (lightsource.emitter != nullptr)
     {
-        const Vector2d uv(Draw(lightsourceray.GetKey(), kDrawEmitter, 0), Draw(lightsourceray.GetKey(), kDrawEmitter, 1));
-        SampleEmitterConnection(lightsource, ipoint, lightsourceray, lightsourcedepth, lightcolour, uv, false);
-        lightcolour /= M_PI;
+        ComputeOneEmitterLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour);
         return;
     }
 
     double attenuation;
     ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint);
+
+    // A faded light past its fade_cutoff reach adds less than the cutoff here; every other light's reach is HUGE_VAL.
+    if (lightsourcedepth > lightsource.fadeReach)
+    {
+        DropFadedLight(lightcolour, threadData);
+        return;
+    }
 
     // Get the light source colour.
     lightcolour = lightsource.colour;

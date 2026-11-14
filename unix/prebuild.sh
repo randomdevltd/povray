@@ -764,6 +764,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/volume_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/light_emission.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/surface_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/light_source_fade_cutoff.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/light_samples_by_contribution.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/trace_limit.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_legacy_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
