@@ -42,6 +42,8 @@ fails err_depth "err_depth.pov4:1:11: Function calls nested deeper than 10000 le
 fails err_light_source_light "a light_source cannot take one"
 fails err_default_light_power "A default light's attenuation accepts only cutoff"
 fails err_fade_cutoff_typo "'light_source' has no item 'fade_cutof'; did you mean 'fade_cutoff'?"
+fails err_fade_cutoff_no_fade "fade_cutoff needs fade_power above 0"
+fails err_default_cutoff_twice "accepts only one cutoff"
 fails err_prop "'finish' has no item 'phon'; did you mean 'phong'?"
 fails err_subsurface "'subsurface' has no item 'memroy'; did you mean 'memory'?"
 fails err_misplaced_item "err_misplaced_item.pov4:2:19: 'count' belongs inside the photons or radiosity block of global_settings."

@@ -4537,6 +4537,7 @@ ObjectPtr Parser::Parse_Light_Source ()
 
     Object = new LightSource ();
     Object->cutoff = defaultLightSourceCutoff;
+    bool fadeCutoffGiven = false;
 
     Parse_Vector(Object->Center);
 
@@ -4816,7 +4817,10 @@ ObjectPtr Parser::Parse_Light_Source ()
             if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
                 Error("A light block makes a shape's surface a light; a light_source cannot take one.");
             if (CurrentTokenText() == "fade_cutoff")
+            {
                 Object->cutoff = Parse_Fade_Cutoff();
+                fadeCutoffGiven = true;
+            }
             else
             {
                 Reject_Nested_Item("light_source", "a light_source");
@@ -4832,6 +4836,9 @@ ObjectPtr Parser::Parse_Light_Source ()
         Object->Fade_Power    = 0;
         Object->Fade_Distance = 0;
     }
+
+    if (fadeCutoffGiven && (Object->Fade_Power <= 0))
+        Error("fade_cutoff needs fade_power above 0: this light_source has no fade.");
 
     Parse_End ();
 
@@ -7931,6 +7938,7 @@ void Parser::Parse_Default_Light(bool interior)
             {
                 if (!Peek_Token(LEFT_CURLY_TOKEN))
                     Error("A default light's attenuation is a block: attenuation { cutoff 0.000004 }.");
+                bool defaultCutoffSeen = false;
                 Parse_Begin ();
                 EXPECT
                     CASE (SCALE_TOKEN)
@@ -7940,6 +7948,9 @@ void Parser::Parse_Default_Light(bool interior)
                     OTHERWISE
                         if (CurrentTokenText() == "cutoff")
                         {
+                            if (defaultCutoffSeen)
+                                Error("A default light's attenuation accepts only one cutoff.");
+                            defaultCutoffSeen = true;
                             const double cutoff = Parse_Float ();
                             if (!std::isfinite(cutoff) || (cutoff < 0.0))
                                 Error("An attenuation block's cutoff must be finite and not negative.");

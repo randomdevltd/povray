@@ -44,8 +44,8 @@ render o38 light_source_fade_cutoff_38 Declare=Cutoff=0
 render d38 light_source_fade_cutoff_38
 same o38 d38
 [ "$(drops d38)" -eq 0 ] || fail "#version 3.8 dropped light tests by default"
-render u light_source_fade_cutoff Declare=Fade=0 Declare=Cutoff=1
-render un light_source_fade_cutoff Declare=Fade=0 Declare=Far=0 Declare=Cutoff=1
+render u light_source_fade_cutoff Declare=Fade=0 Declare=DefaultCutoff=1
+render un light_source_fade_cutoff Declare=Fade=0 Declare=Far=0 Declare=DefaultCutoff=1
 differ u un
 [ "$(drops u)" -eq 0 ] || fail "an unfaded light was dropped"
 # a spotlight with a negative tightness is brighter off its axis than its colour, so it is never dropped
@@ -64,6 +64,7 @@ same sl so
 same sl s0
 same si s
 
+bad "fade_cutoff needs fade_power above 0: this light_source has no fade" Declare=Fade=0 Declare=Cutoff=1
 bad "fade_cutoff must be finite and not negative" Declare=Cutoff=-1
 bad "fade_cutoff must be finite and not negative" Declare=DefaultCutoff=-1
 bad "cutoff must be finite and not negative" Declare=DefaultLightCutoff=-1

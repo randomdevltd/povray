@@ -157,7 +157,11 @@ a lit point where the light's colour times its fade, at the point's distance fro
 light (from the nearest edge of an area light), is below C in its brightest channel
 traces no shadow ray to it. The default is 0.000004 from `#version 4.0` and 0 before;
 `default { light_source { fade_cutoff C } }` (classic `#default`) sets it for light sources
-parsed after it, and `fade_cutoff 0` turns it off. Unfaded lights never take the test.
+parsed after it, and `fade_cutoff 0` turns it off. Unfaded lights never take the test, and an explicit
+`fade_cutoff` on one is the error `fade_cutoff needs fade_power above 0: this light_source has no fade.`
+The bound does not change when the whole scene (with `fade_distance`) is scaled, except for the
+pure power law, `fade_distance 0`, where the fade follows the distance in scene units.
+A `cutoff` repeated inside a default attenuation block is an error.
 `fade_cutoff` is contextual; the render statistics count the light tests it dropped.
 `brightness` is followed by an optional unit written after the number, as in
 `brightness 12 lumens`; `nits` and `lumens` are read only there. Surface and
