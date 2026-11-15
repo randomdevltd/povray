@@ -37,3 +37,8 @@ Lamp(< 1, 1.5,  1>, rgb <0.2, 0.3, 0.4>, 0.5)
   box { <29, 5, 25>, <30, 5.2, 26> pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 0 } no_image
         light { brightness 400 samples 4 #ifdef (SurfaceCutoff) attenuation { cutoff SurfaceCutoff } #end } }
 #end
+#ifdef (TightCutoff)
+  // a negative tightness brightens the cone's edge without bound, so its light is never left out
+  light_source { <0, 0.05, 0>, rgb 1 spotlight point_at <0, -1, 0> radius 89 falloff 90 tightness -3
+                 fade_distance 0.01 fade_power 2 fade_cutoff TightCutoff }
+#end

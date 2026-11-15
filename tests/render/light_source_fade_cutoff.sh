@@ -48,6 +48,11 @@ render u light_source_fade_cutoff Declare=Fade=0 Declare=Cutoff=1
 render un light_source_fade_cutoff Declare=Fade=0 Declare=Far=0 Declare=Cutoff=1
 differ u un
 [ "$(drops u)" -eq 0 ] || fail "an unfaded light was dropped"
+# a spotlight with a negative tightness is brighter off its axis than its colour, so it is never dropped
+render t light_source_fade_cutoff Declare=Far=0 Declare=TightCutoff=0.2
+render t0 light_source_fade_cutoff Declare=Far=0 Declare=TightCutoff=0
+same t t0
+differ t n_FadeDistance1
 # a light block's cutoff from #default { light { } } covers surface lights; the interior route leaves them alone
 render s light_source_fade_cutoff Declare=Surface=1
 render sl light_source_fade_cutoff Declare=Surface=1 Declare=DefaultLightCutoff=10

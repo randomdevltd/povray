@@ -710,6 +710,9 @@ void Light_Prepare_Fade_Reach(LightSource *Light)
     // only a classic light with a well-defined decreasing fade can be left out; a negative fade_distance has no such law
     if ((Light->emitter != nullptr) || !(Light->cutoff > 0.0) || !(Light->Fade_Power > 0.0) || (Light->Fade_Distance <= -EPSILON))
         return;
+    // a negative tightness raises a spotlight or cylinder light above its colour off the axis, so no distance bounds it
+    if (((Light->Light_Type == SPOT_SOURCE) || (Light->Light_Type == CYLINDER_SOURCE)) && (Light->Coeff < 0.0))
+        return;
     DBL brightest = 0.0;
     for (int i = 0; i < MathColour::channels; i++)
         brightest = std::max(brightest, fabs(double(Light->colour[i]))); // magnitude: negative lights count too
