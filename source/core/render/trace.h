@@ -868,6 +868,9 @@ class Trace
         ///
         void ComputeOneLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                 const Vector3d& ipoint, MathColour& lightcolour, bool forceAttenuate = false);
+        /// ComputeOneLightRay() for a light drawn from an emitter, out of line so the classic light test stays small.
+        void ComputeOneEmitterLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                       const Vector3d& ipoint, MathColour& lightcolour);
 
         void TraceShadowRay(const LightSource &light, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour,
                             const Vector2d* areaSample = nullptr);

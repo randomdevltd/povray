@@ -365,7 +365,8 @@ class LightSource final : public CompoundObject
         DBL Fade_Distance, Fade_Power;
         /// an emitter light's distance law: factor A'(r) = A·(1/scale)^(1−A) over Radius², A = (Radius/max(r,Radius))^power
         DBL attenuationScale = 1.0, attenuationPower = 2.0, lawRadius = 0.0;
-        DBL cutoff = 0.0; ///< an emitter light leaves out points its bound lights less than this
+        DBL cutoff = 0.0; ///< an emitter light leaves out points its bound lights less than this; a classic light, its fade_cutoff
+        DBL fadeReach = HUGE_VAL; ///< a classic faded light adds less than its cutoff where its ray is longer; HUGE_VAL never
         /// an interior light's own domain_cells; 0 = its medium's, else the scene default
         double sourceDomainCells = 0.0;
         int Area_Size1, Area_Size2;

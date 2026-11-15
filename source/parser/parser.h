@@ -611,6 +611,8 @@ class Parser final
         double Parse_Light_Samples();
         /// domain_cells N: an integer cell count from 1 to 1000000000
         DBL Parse_Domain_Cells();
+        double Parse_Fade_Cutoff();
+        void Parse_Default_Light(bool interior);
         void Parse_Light_Attenuation(MediaLight& light, bool surface);
         std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
         void Reject_Nested_Item(const char* block, const char* where);
@@ -843,6 +845,10 @@ class Parser final
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
+        double defaultLightSourceCutoff;    ///< `fade_cutoff` of light_sources placed after it; from the version unless set
+        bool lightSourceCutoffSet;          ///< Whether `#default { light_source { fade_cutoff } }` set it.
+        double defaultSurfaceLightCutoff;   ///< `attenuation { cutoff }` of surface light blocks placed after it
+        double defaultInteriorLightCutoff;  ///< `attenuation { cutoff }` of interior light blocks placed after it
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
         bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.
 

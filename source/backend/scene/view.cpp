@@ -1686,6 +1686,13 @@ void View::GetStatistics(POVMS_Object& renderStats)
                          double(stats[Subsurface_Cloud_Depth_Floor]));
     }
 
+    if (stats[Light_Fade_Cutoff_Drops] > 0)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Lights", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Info("%.0f light_source tests dropped by fade_cutoff.", double(stats[Light_Fade_Cutoff_Drops]));
+    }
+
     if (stats[Subsurface_Thin_Walls] > 0)
     {
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,

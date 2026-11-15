@@ -1,0 +1,2 @@
+default { light { attenuation { power 2 } } }
+light_source { <4, 6, -3> rgb 1 }

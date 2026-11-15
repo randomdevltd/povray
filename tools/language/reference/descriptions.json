@@ -318,6 +318,10 @@
    "text": "The keywords fade_power, fade_distance and fade_color are specified in the interior statement.",
    "doc": "r3_7.html#r3_7_2_1_6"
   },
+  "fade_cutoff": {
+   "text": "The fade_cutoff keyword sets how faint a faded light may be at a lit point before it is left out there.",
+   "doc": "r3_4.html#r3_4_3_1_9"
+  },
   "fade_distance": {
    "text": "The keywords fade_power, fade_distance and fade_color are specified in the interior statement.",
    "doc": "r3_7.html#r3_7_2_1_6"
@@ -1637,15 +1641,20 @@
    "code": "fade_color : <0,0,0>",
    "from": "doc/html/r3_7.html"
   },
+  "fade_cutoff": {
+   "rank": 77,
+   "code": "light_source { <2, 3, 0> rgb 0.5 fade_distance 1 fade_power 2 fade_cutoff 0 }",
+   "from": "tests/pov4/lights_default_cutoff.pov4:8"
+  },
   "fade_distance": {
-   "rank": 1019,
-   "code": "fade_distance : 0.0",
-   "from": "doc/html/r3_7.html"
+   "rank": 62,
+   "code": "light_source { <0, 3, -2> rgb 1 fade_distance 1 fade_power 2 }",
+   "from": "tests/pov4/lights_default_cutoff.pov4:6"
   },
   "fade_power": {
-   "rank": 1016,
-   "code": "fade_power : 0.0",
-   "from": "doc/html/r3_7.html"
+   "rank": 62,
+   "code": "light_source { <0, 3, -2> rgb 1 fade_distance 1 fade_power 2 }",
+   "from": "tests/pov4/lights_default_cutoff.pov4:6"
   },
   "fallback": {
    "rank": 27,

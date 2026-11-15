@@ -426,7 +426,7 @@ an easier means of doing the same thing).
 <div class="content-level-h4" contains="Keywords" id="r3_3_1_2">
 <h4>3.3.1.2 Keywords</h4>
 <p>POV-Ray has a number of reserved keywords which are listed below.</p>
-<p>A few words are read only where they are expected and are not reserved: <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, <code>full</code> and <code>by_contribution</code> after a finish's <code>light_samples</code> value, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code> and <code>interface_texture</code>, and the interior item <code>ior_mix</code>, themselves. The words <code>light</code> (before a block on an object or in an <code>interior</code>), <code>nits</code> and <code>lumens</code> (after a <code>brightness</code> value), <code>bounce</code> (in a <code>light</code> block), <code>passes</code> (in a <code>bounce</code> block) and <code>domain_cells</code> (in a <code>media</code> block, a <code>#default</code> media or light block or an interior <code>light</code> block) are read the same way. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
+<p>A few words are read only where they are expected and are not reserved: <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, <code>full</code> and <code>by_contribution</code> after a finish's <code>light_samples</code> value, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code> and <code>interface_texture</code>, and the interior item <code>ior_mix</code>, themselves. The words <code>light</code> (before a block on an object or in an <code>interior</code>), <code>nits</code> and <code>lumens</code> (after a <code>brightness</code> value), <code>bounce</code> (in a <code>light</code> block), <code>passes</code> (in a <code>bounce</code> block) <code>domain_cells</code> (in a <code>media</code> block, a <code>#default</code> media or light block or an interior <code>light</code> block) and <code>fade_cutoff</code> (in a <code>light_source</code> or a <code>#default</code> light_source block) are read the same way. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
 <table class="tablelist">
 <tr>
 <th colspan="3" align="left">a</th>
@@ -676,6 +676,7 @@ an easier means of doing the same thing).
 <code><a href="r3_6.html#r3_6_2_1_10">facets</a></code><br>
 <code><a href="r3_7.html#r3_7_2_1_6">fade_color</a></code><br>
 <code><a href="r3_7.html#r3_7_2_1_6">fade_colour</a></code><br>
+<code><a href="r3_4.html#r3_4_3_1_9">fade_cutoff</a></code> <em>light_source, contextual word</em><br>
 <code><a href="r3_4.html#r3_4_3_1_9">fade_distance</a></code><br>
 <code><a href="r3_4.html#r3_4_3_1_9">fade_power</a></code><br>
 <code><a href="r3_10.html#r3_10_2_3">fallback</a></code> <em>screen</em><br>
@@ -4436,7 +4437,9 @@ DEFAULT_DIRECTIVE:
   #default {DEFAULT_ITEM }
 DEFAULT_ITEM:
   TEXTURE | PIGMENT | NORMAL | FINISH | media { [DEFAULT_MEDIA_ITEM...] } |
-  light { [domain_cells Integer] }
+  light { [domain_cells Integer] [attenuation { cutoff Value }] } |
+  interior { light { [attenuation { cutoff Value }] } } |
+  light_source { [fade_cutoff Value] }
 DEFAULT_MEDIA_ITEM:
   mix add | replace | subtract | multiply | domain_cells Integer
 </pre>
@@ -4462,6 +4465,7 @@ or a texture with a <code>texture_map</code> may not be used as defaults.</p>
 <p>The <code>mix</code> default applies to every object placed afterwards whose first medium does not set its own. An object without media is affected only by <code>mix replace</code>, which makes it clear the media beneath it; <code>add</code>, <code>subtract</code> and <code>multiply</code> leave it inert. A <code>hollow</code> object ignores the default and uses <code>add</code>. The word after <code>mix</code> is read as text, so it cannot come from a variable. See <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>.</p>
 <p>The <code>domain_cells</code> default, an integer from 1 to 1000000000 and 500000 when no default is given, is the cell count of the prepared grid of every method 4 medium parsed afterwards that does not state its own, as in <code>#default { media { domain_cells 2000000 } }</code>. Twice its value at the end of the parse caps the prepared fields that belong to no single medium or light. See <a href="r3_7.html#r3_7_2_3_1">Domain Cells</a>.</p>
 <p>The light <code>domain_cells</code> default, an integer from 1 to 1000000000 and 500000 when no default is given, is the cell count of the prepared source domain of every interior light parsed afterwards that does not state its own, as in <code>#default { light { domain_cells 64000 } }</code>. A light never takes its medium's count. See <a href="r3_12.html#r3_12_1">Interior lights</a>.</p>
+<p>The cutoff defaults let a scene state its light cutoff once. <code>#default { light { attenuation { cutoff Value } } }</code> sets the cutoff of every surface and interior light block parsed afterwards that does not state its own; <code>#default { interior { light { attenuation { cutoff Value } } } }</code> sets it for interior lights alone. Without them the cutoff is 0.000004. <code>#default { light_source { fade_cutoff Value } }</code> sets the <a href="r3_4.html#r3_4_3_1_9"><code>fade_cutoff</code></a> of faded light sources parsed afterwards; without it the cutoff follows the language version, 0.000004 from <code>#version 4.0</code> and 0 before, and a later <code>#version</code> leaves a stated default alone. A default attenuation block takes only <code>cutoff</code>: a light's <code>power</code> and <code>scale</code> describe that light. See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</p>
 <p>You may change the defaults several times throughout a scene as you wish. Subsequent <code>#default</code> statements begin with the defaults that were in effect at the time. If you wish to reset to the original POV-Ray defaults then you should first save them as follows:</p>
 <pre>
 //At top of file
@@ -4518,6 +4522,7 @@ VERSION_DIRECTIVE:
 <tr><td><a href="r3_7.html#r3_7_2_1_4">ior_mix</a></td><td><code>surface</code></td><td><code>mean</code></td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></td><td>1.0</td><td>1.00029</td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_16">interface_texture</a></td><td><code>far</code></td><td><code>blend</code></td></tr>
+<tr><td><a href="r3_4.html#r3_4_3_1_9">fade_cutoff</a> of a faded light_source</td><td>0</td><td>0.000004</td></tr>
 <tr><td><a href="r3_6.html#r3_6_1_3_by_contribution">light_samples</a> mode of a finish that states none</td><td><code>full</code></td><td><code>by_contribution</code></td></tr>
 <tr><td>a ray that reaches <a href="r3_4.html#r3_4_1_7">max_trace_level</a></td><td>black</td><td>lit without reflection; through transparent surfaces, straight on</td></tr>
 </table>
