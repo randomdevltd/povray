@@ -179,6 +179,14 @@ class Emitter;
 struct MediaLight;
 struct PhotonTargetGroup final { BoundingBox box; }; ///< the bounds of the split union the group was
 
+/// What a box is to an object: wholly outside it and off its surface, wholly inside it and off its surface, or not known.
+enum class BoxClass : std::uint8_t { Unknown, Outside, Inside };
+/// What a box is to the object's inverse, for shapes whose inside test reads INVERTED_FLAG.
+inline BoxClass Inverted_Class(BoxClass c, bool inverted)
+{
+    return !inverted ? c : (c == BoxClass::Outside) ? BoxClass::Inside : (c == BoxClass::Inside) ? BoxClass::Outside : c;
+}
+
 /// One box of where an object's surface can be, the piece of the object it belongs to, and a sphere holding that piece if known.
 struct SurfaceBox final
 {
@@ -302,6 +310,14 @@ class ObjectBase
         virtual ObjectPtr Invert();
 
         virtual void Compute_BBox() = 0;
+
+        /// Classifies the box lo..hi of a frame that toWorld maps to world (null: the box is in world space). Outside: no
+        /// point of the box is inside, plain or precise, and no hit the object reports lies in it; Inside: every point is
+        /// inside under both, and again no hit lies in it; anything unproven is Unknown. Clips are not this method's: see
+        /// Classify_Object. The default answers from the certified box.
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const;
+        /// Whether Classify_Box can answer more than the certified box does.
+        virtual bool Has_Box_Test() const { return false; }
 
         /// Reports where the surface can be, one box per piece, numbering the pieces from `firstPiece` in the structure's order.
         virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const;
@@ -515,6 +531,10 @@ void Destroy_Object(ObjectPtr Object);
 /// Flags an object infinite exactly when its bounding box is, as parsing does.
 void Update_Infinite_Flag(ObjectPtr Object);
 void Destroy_Single_Object(ObjectPtr *ObjectPtr);
+/// Classify_Box with the object's clips: outside any clip is outside, and inside needs every clip inside too.
+BoxClass Classify_Object(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld);
+/// Whether Classify_Object can answer more than the object's certified box does.
+bool Has_Box_Test(ConstObjectPtr object);
 /// A short name of an object's shape for messages.
 const char *ShapeName(ConstObjectPtr object);
 /// Which piece and leaf of `object` a hit on it belongs to; false when the hit is no surface, as a portal's window is not.

@@ -840,6 +840,33 @@ bool CompoundObject::ReturnsAllRoots() const
     return std::all_of(children.begin(), children.end(), [](ConstObjectPtr child) { return child->ReturnsAllRoots(); });
 }
 
+BoxClass ObjectBase::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    return Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+BoxClass Classify_Object(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld)
+{
+    // a clip keeps only the hits and inside points inside it
+    BoxClass result = object->Classify_Box(lo, hi, toWorld);
+    for (ConstObjectPtr clip : object->Clip)
+    {
+        if (result == BoxClass::Outside)
+            break;
+        const BoxClass c = Classify_Object(clip, lo, hi, toWorld);
+        if (c == BoxClass::Outside)
+            return BoxClass::Outside;
+        if (c != BoxClass::Inside)
+            result = BoxClass::Unknown;
+    }
+    return result;
+}
+
+bool Has_Box_Test(ConstObjectPtr object)
+{
+    return object->Has_Box_Test() || std::any_of(object->Clip.begin(), object->Clip.end(), [](ConstObjectPtr c) { return Has_Box_Test(c); });
+}
+
 void ObjectBase::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const
 {
     SurfaceBox box;

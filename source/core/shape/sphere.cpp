@@ -47,6 +47,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
@@ -301,6 +302,29 @@ bool Sphere::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
         else
             return(OCSquared < Sqr(Radius));
     }
+}
+
+BoxClass Sphere::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // the squared distance from the centre as Inside computes it, against the same Sqr(Radius)
+    Interval p[3], d2;
+    if (Do_Ellipsoid)
+    {
+        Local_Box(lo, hi, toWorld, Trans, p);
+        d2 = LengthSqr(p);
+    }
+    else
+    {
+        Local_Box(lo, hi, toWorld, nullptr, p);
+        const Interval o[3] = {Interval(Center[X]) - p[X], Interval(Center[Y]) - p[Y], Interval(Center[Z]) - p[Z]};
+        d2 = LengthSqr(o);
+    }
+    const DBL r2 = Sqr(Radius);
+    const BoxClass c = (d2.low > r2) ? BoxClass::Outside : (d2.high < r2) ? BoxClass::Inside : BoxClass::Unknown;
+    if (c == BoxClass::Unknown)
+        return ObjectBase::Classify_Box(lo, hi, toWorld);
+    return Inverted_Class(c, Test_Flag(this, INVERTED_FLAG));
 }
 
 

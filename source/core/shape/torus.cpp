@@ -59,6 +59,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/math/polynomialsolver.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
@@ -436,6 +437,21 @@ bool SpindleTorus::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
         return(!Test_Flag(this, INVERTED_FLAG));
     else
         return(Test_Flag(this, INVERTED_FLAG));
+}
+
+BoxClass Torus::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // the squared distance from the core circle as Inside computes it; a spindle can carve the inside, never the outside
+    Interval p[3];
+    Local_Box(lo, hi, toWorld, Trans, p);
+    const Interval r = Sqrt(Square(p[X]) + Square(p[Z]));
+    const Interval r2 = Square(p[Y]) + Square(r - Interval(MajorRadius));
+    const DBL m2 = Sqr(MinorRadius);
+    const BoxClass c = (r2.low > m2) ? BoxClass::Outside : ((r2.high < m2) && Inside_Is_Tube()) ? BoxClass::Inside : BoxClass::Unknown;
+    if (c == BoxClass::Unknown)
+        return ObjectBase::Classify_Box(lo, hi, toWorld);
+    return Inverted_Class(c, Test_Flag(this, INVERTED_FLAG));
 }
 
 

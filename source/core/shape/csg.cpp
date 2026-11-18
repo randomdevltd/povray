@@ -56,6 +56,7 @@
 #include "core/bounding/boundingbox.h"
 #include "core/lighting/lightgroup.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/math/halfspacebounds.h"
 #include "core/render/ray.h"
 #include "core/lighting/lightsource.h"
@@ -1527,6 +1528,74 @@ void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_
             Prepare_CSG_Child_Trees(child, minimum, visited, built);
     if (CSG *csg = dynamic_cast<CSG *>(object))
         built += csg->Prepare_Child_Tree(minimum) ? 1 : 0;
+}
+
+BoxClass Classify_By_Certified_Box(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld)
+{
+    // the conditions the child trees take a child's box on (Prepare_Child_Tree)
+    if ((object->Type & LIGHT_SOURCE_OBJECT) || !Usable_Box(object->BBox) || !object->BBox.finiteInterior)
+        return BoxClass::Unknown;
+    box_class::Interval w[3];
+    box_class::Local_Box(lo, hi, toWorld, nullptr, w);
+    const CSGChildTree::Box padded = Padded_Box(object->BBox);
+    bool misses = false;
+    for (int d = X; d <= Z; ++d)
+        misses = misses || (w[d].high < padded.lo[d]) || (w[d].low > padded.hi[d]);
+    if (!misses)
+        return BoxClass::Unknown;
+    if (!Test_Flag(object, INVERTED_FLAG))
+        return BoxClass::Outside;
+    return (object->Clip.empty() && Honours_Inversion(object)) ? BoxClass::Inside : BoxClass::Unknown;
+}
+
+bool CSG::Has_Box_Test() const
+{
+    return std::any_of(children.begin(), children.end(), [](ConstObjectPtr c) { return pov::Has_Box_Test(c); });
+}
+
+BoxClass CSGUnion::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    bool outside = true, inside = false, unknown = false;
+    for (ConstObjectPtr child : children)
+    {
+        const BoxClass c = Classify_Object(child, lo, hi, toWorld);
+        outside = outside && (c == BoxClass::Outside);
+        inside = inside || (c == BoxClass::Inside);
+        unknown = unknown || (c == BoxClass::Unknown);
+        if (!outside && unknown)
+            break;
+    }
+    if (outside)
+        return BoxClass::Outside;
+    if (inside && !unknown)
+        return BoxClass::Inside;
+    return Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+BoxClass CSGMerge::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    bool outside = true;
+    for (ConstObjectPtr child : children)
+    {
+        const BoxClass c = Classify_Object(child, lo, hi, toWorld);
+        if (c == BoxClass::Inside)
+            return BoxClass::Inside;
+        outside = outside && (c == BoxClass::Outside);
+    }
+    return outside ? BoxClass::Outside : Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+BoxClass CSGIntersection::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    bool inside = true;
+    for (ConstObjectPtr child : children)
+    {
+        const BoxClass c = Classify_Object(child, lo, hi, toWorld);
+        if (c == BoxClass::Outside)
+            return BoxClass::Outside;
+        inside = inside && (c == BoxClass::Inside);
+    }
+    return inside ? BoxClass::Inside : Classify_By_Certified_Box(this, lo, hi, toWorld);
 }
 
 /// The CSG's surface index, made on first use: parsing pays nothing, and threads racing to make it make the same one.

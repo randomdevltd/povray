@@ -106,6 +106,8 @@ class CSG : public CompoundObject
         virtual bool Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool split, std::uint32_t& piece,
                                        std::uint32_t& leaf) const override;
         virtual ObjectPtr Surface_Leaf(std::uint32_t leaf) override;
+        /// A CSG answers through its children, so it can answer more than its box when one of them can.
+        virtual bool Has_Box_Test() const override;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
@@ -117,6 +119,10 @@ class CSG : public CompoundObject
 
         virtual void Determine_Textures(Intersection *isect, bool hitinside, WeightedTextureVector& textures, TraceThreadData *Threaddata) override;
 };
+
+/// The certified box's answer: a box missing it is outside an object that holds its inside there, and inside an inverted
+/// one whose inside test honours the inversion; this is what the child trees assume of a child outside its box.
+BoxClass Classify_By_Certified_Box(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld);
 
 /// The child count from which a CSG indexes its children; POV_CSG_CHILD_TREE=<n> overrides it, 0 turns the trees off.
 unsigned CSG_Child_Tree_Minimum();
@@ -140,6 +146,8 @@ class CSGUnion : public CSG
         /// A union's members, and a merge's, are its pieces.
         virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const override;
         virtual std::uint32_t Surface_Pieces() const override;
+        /// Outside when every member is, inside when one is and none is unknown: a union reports its inner surfaces.
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
 };
 
 class CSGMerge final : public CSGUnion
@@ -151,6 +159,8 @@ class CSGMerge final : public CSGUnion
         virtual ObjectPtr Copy() override;
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
+        /// Outside when every member is, inside when any is: a merge drops the surface inside its other members.
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
 };
 
 class CSGIntersection final : public CSG
@@ -164,6 +174,8 @@ class CSGIntersection final : public CSG
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual ObjectPtr Invert() override;
+        /// Outside when any child is, inside when every child is; a difference's later children were inverted at parse.
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
 
         bool isDifference;
 };

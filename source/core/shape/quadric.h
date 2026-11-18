@@ -91,6 +91,8 @@ class Quadric final : public ObjectBase
         virtual bool ReturnsAllRoots() const override { return true; }
         virtual bool Intersect_BBox(BBoxDirection, const BBoxVector3d&, const BBoxVector3d&, BBoxScalar) const override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
+        virtual bool Has_Box_Test() const override { return true; }
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;

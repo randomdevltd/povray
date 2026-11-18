@@ -49,6 +49,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
@@ -384,6 +385,31 @@ bool Cone::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
             return (!Test_Flag(this, INVERTED_FLAG));
         }
     }
+}
+
+BoxClass Cone::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // an open cone's inside test does not follow its surface
+    if (!Test_Flag(this, CLOSED_FLAG))
+        return ObjectBase::Classify_Box(lo, hi, toWorld);
+    Interval p[3];
+    Local_Box(lo, hi, toWorld, Trans, p);
+    const Interval w2 = Square(p[X]) + Square(p[Y]);
+    const DBL offset = -EPSILON;
+    const bool cylinder = Test_Flag(this, CYLINDER_FLAG);
+    // the side's square radius against w2 as both the precise and the plain test take it (the plain one EPSILON inside)
+    const Interval side = cylinder ? Interval(1.0) : Square(p[Z]);
+    const Interval plainSide = cylinder ? Interval(1.0 + offset) : Square(p[Z]) + Interval(offset);
+    const DBL base = cylinder ? 0.0 : dist;
+    BoxClass c = BoxClass::Unknown;
+    if ((w2.low > side.high) || (p[Z].high < base) || (p[Z].low > 1.0))
+        c = BoxClass::Outside;
+    else if ((w2.high <= plainSide.low) && (p[Z].low >= base - offset) && (p[Z].high <= 1.0 + offset))
+        c = BoxClass::Inside;
+    if (c == BoxClass::Unknown)
+        return ObjectBase::Classify_Box(lo, hi, toWorld);
+    return Inverted_Class(c, Test_Flag(this, INVERTED_FLAG));
 }
 
 
