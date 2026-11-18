@@ -255,8 +255,10 @@ bool HField::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
     // This deals with fringe cases that could slip through the above floating-point tests,
     // and would cause out-of-bounds array accesses (most notably #IND values).
-    px = clip(px, 0, this->Data->max_x - 2);
-    pz = clip(pz, 0, this->Data->max_z - 2);
+    // Data->max_x and max_z are the last cell, the one intersect_pixel tests too; a lower clip would put the last cells
+    // on an earlier cell's plane, so inside would disagree with the surface the ray crosses there.
+    px = clip(px, 0, this->Data->max_x);
+    pz = clip(pz, 0, this->Data->max_z);
 
     x = Test[X] - (DBL)px;
     z = Test[Z] - (DBL)pz;

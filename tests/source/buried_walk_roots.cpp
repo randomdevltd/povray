@@ -7,9 +7,12 @@
 // name: a lathe's ray polynomial in its spline parameter has a pair of roots closer than its rounding for a ray almost
 // square to the axis (the crossings either side of the axis at one height), and a superellipsoid seen along an axis
 // can report its crossing early; neither is fixed yet.
+// A height field (name height-field) is checked apart: its sides and floor are no surface, so only its top's crossings
+// are asked for, in its own inside test and cut from a cylinder.
 #include "core/lighting/subsurfaceinternalboundary.h"
 #include "core/shape/cone.h"
 #include "core/shape/csg.h"
+#include "core/shape/heightfield.h"
 #include "core/shape/lathe.h"
 #include "core/shape/polynomial.h"
 #include "core/shape/prism.h"
@@ -20,6 +23,8 @@
 #include "core/shape/torus.h"
 #include "core/material/interior.h"
 #include "core/material/noise.h"
+#include "core/support/imageutil.h"
+#include "base/image/image.h"
 #include "core/math/matrix.h"
 #include "core/render/trace.h"
 #include "core/scene/scenedata.h"
@@ -412,15 +417,9 @@ void CheckRay(const Host& host, const Vector3d& point, const Vector3d& direction
     }
 }
 
-void CheckShape(const Kind& kind, double unit, int placing, int rays)
+// The scene, material and tracer the walk needs around a host shape.
+void Prepare(Host& host)
 {
-    char name[120];
-    std::snprintf(name, sizeof(name), "%s unit %g %s", kind.name, unit, placing == 0 ? "in its parameters" : placing == 1 ? "scaled" : "stretched and turned");
-    const bool baked = (placing == 0);
-    if ((baked && !kind.baked) || (!baked && !kind.placed)) return;
-    Host host;
-    host.object = kind.make(baked ? unit : 1.0);
-    Place(host.object, unit, placing);
     host.scene = std::make_shared<SceneData>();
     host.scene->preparedSets.emplace_back(new PreparedSet);
     host.object->interior = std::make_shared<Interior>();
@@ -443,6 +442,18 @@ void CheckShape(const Kind& kind, double unit, int placing, int rays)
     static Trace::MediaFunctor media;
     static Trace::RadiosityFunctor radiosity;
     host.trace = new InternalTrace(host.scene, host.thread, QualityFlags(9), cooperate, media, radiosity);
+}
+
+void CheckShape(const Kind& kind, double unit, int placing, int rays)
+{
+    char name[120];
+    std::snprintf(name, sizeof(name), "%s unit %g %s", kind.name, unit, placing == 0 ? "in its parameters" : placing == 1 ? "scaled" : "stretched and turned");
+    const bool baked = (placing == 0);
+    if ((baked && !kind.baked) || (!baked && !kind.placed)) return;
+    Host host;
+    host.object = kind.make(baked ? unit : 1.0);
+    Place(host.object, unit, placing);
+    Prepare(host);
     const PreciseInsideScope precision(host.thread);
     Vector3d axis(0.0, 1.0, 0.0);
     if (placing != 0)
@@ -493,6 +504,118 @@ void CheckShape(const Kind& kind, double unit, int placing, int rays)
     if (found < rays) std::printf("       only %d buried starts found\n", found);
 }
 
+
+// A height field on an 8 by 8 map, 0.2 high but for its last two columns at 0.8, over x and z from -1 to 1 times unit: the
+// last cells are where the inside test once took an earlier cell's plane, the forest mist's pool and ground fields' edge.
+ObjectPtr MakeHeightField(double unit)
+{
+    const int size = 8;
+    auto* field = new HField;
+    field->bounding_corner1 = Vector3d(0.0);
+    field->bounding_corner2 = Vector3d(size - 1.0, 65536.0, size - 1.0);
+    Compute_Scaling_Transform(field->Trans, Vector3d(1.0) / field->bounding_corner2);
+    ImageData image;
+    image.iwidth = image.iheight = size;
+    image.width = image.height = SNGL(size);
+    image.data = Image::Create(size, size, ImageDataType::Gray_Int16);
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+            image.data->SetGrayValue(x, y, (x >= size - 2) ? 0.8f : 0.2f);
+    field->Compute_HField(&image);
+    TRANSFORM transform;
+    const Vector3d scale(2.0 * unit, unit, 2.0 * unit), shift(-unit, 0.0, -unit);
+    Compute_Scaling_Transform(&transform, scale);
+    field->Scale(scale, &transform);
+    Compute_Translation_Transform(&transform, shift);
+    field->Translate(shift, &transform);
+    field->Compute_BBox();
+    return field;
+}
+
+// Whether a height field's inside test agrees with the surface its rays cross, over its whole footprint and in a difference
+// that cuts it from a cylinder, as the mist's volume cuts its pool and ground: a straight drop onto the last columns must
+// leave the material where it meets the field's top.
+void CheckHeightFieldEdge(double unit)
+{
+    Host field;
+    field.object = MakeHeightField(unit);
+    Prepare(field);
+    const PreciseInsideScope fieldPrecision(field.thread);
+    TraceTicket ticket(1, 0.0);
+    int bad = 0, checked = 0;
+    std::string first;
+    for (int k = 0; k < 400; ++k)
+    {
+        const Vector3d top(Uniform(-0.999, 0.999) * unit, 2.0 * unit, Uniform(-0.999, 0.999) * unit);
+        Ray ray(ticket, top, Vector3d(0.0, -1.0, 0.0));
+        Intersection hit;
+        if (!Find_Intersection(&hit, field.object, ray, field.thread)) continue;
+        ++checked;
+        const double band = 1e-6 * unit;
+        const bool below = field.Inside(hit.IPoint - Vector3d(0.0, band, 0.0)), above = field.Inside(hit.IPoint + Vector3d(0.0, band, 0.0));
+        if (below && !above) continue;
+        if (++bad == 1)
+            first = Describe("inside test", top, ray.Direction, below ? "inside above the surface" : "outside under the surface");
+    }
+    char name[120];
+    std::snprintf(name, sizeof(name), "height field unit %g inside against surface", unit);
+    std::printf("%-6s %-52s rays %3d  disagree %3d\n", bad ? "FAIL" : "ok", name, checked, bad);
+    if (bad)
+    {
+        ++failures;
+        std::printf("       first: %s\n", first.c_str());
+    }
+
+    Host host;
+    auto* difference = new CSGIntersection(true);
+    auto* cylinder = new Cone;
+    cylinder->Cylinder();
+    cylinder->apex = Vector3d(0.0, 1.2, 0.0) * unit;
+    cylinder->base = Vector3d(0.0, 0.05, 0.0) * unit;
+    cylinder->apex_radius = cylinder->base_radius = 1.5 * unit;
+    cylinder->Compute_Cylinder_Data();
+    cylinder->Compute_BBox();
+    difference->children = {cylinder, MakeHeightField(unit)->Invert()};
+    for (auto* child : difference->children) child->Type |= IS_CHILD_OBJECT;
+    difference->Compute_BBox();
+    difference->Begin_Cells();
+    difference->Type |= CSG_DIFFERENCE_OBJECT;
+    host.object = difference;
+    Prepare(host);
+    const PreciseInsideScope precision(host.thread);
+    bad = 0;
+    first.clear();
+    const int drops = 40;
+    for (int k = 0; k < drops; ++k)
+    {
+        // over the last two cells, from the steep cell to the flat one, falling 0.2 to the field's top at 0.8
+        const Vector3d point(Uniform(0.43, 0.99) * unit, 1.0 * unit, Uniform(-0.99, 0.99) * unit);
+        const Vector3d direction = (Vector3d(0.0, -1.0, 0.0) + Direction() * 1e-3).normalized();
+        Ray ray(ticket, point, direction);
+        Intersection top;
+        if (!Find_Intersection(&top, field.object, ray, field.thread)) continue;
+        char text[200];
+        try
+        {
+            const double exit = host.trace->SubsurfaceInternalBoundaryAt(point, direction, host.object, host.object, ticket).distance;
+            if (std::abs(exit - top.Depth) <= kSame * host.extent) continue;
+            std::snprintf(text, sizeof(text), "exit at %.17g, the field's top at %.17g", exit, top.Depth);
+        }
+        catch (const std::exception& error)
+        {
+            std::snprintf(text, sizeof(text), "%s", error.what());
+        }
+        if (++bad == 1) first = Describe("exit search", point, direction, text);
+    }
+    std::snprintf(name, sizeof(name), "height field unit %g cut from a cylinder", unit);
+    std::printf("%-6s %-52s rays %3d  wrong exit %3d\n", bad ? "FAIL" : "ok", name, drops, bad);
+    if (bad)
+    {
+        ++failures;
+        std::printf("       first: %s\n", first.c_str());
+    }
+}
+
 }
 
 int main(int argc, char** argv)
@@ -532,6 +655,12 @@ int main(int argc, char** argv)
                 CheckShape(kind, unit, placing, rays);
             }
     }
+    if ((argc < 2) || (std::strcmp(argv[1], "height-field") == 0))
+        for (double unit : units)
+        {
+            engine.seed(20261116u + int(unit * 7));
+            CheckHeightFieldEdge(unit);
+        }
     std::printf("%s: %d shape placings failed\n", failures ? "FAIL" : "PASS", failures);
     Free_Noise_Tables();
     return failures ? 1 : 0;
