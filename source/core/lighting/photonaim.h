@@ -118,6 +118,17 @@ class PhotonAimDomain final
 
         bool Empty() const { return rowCdf.empty() || !(rowCdf.back() > 0.0); }
 
+        /// The angular radius of the raster cell holding direction d, as the cap's own cell cones take it; false outside the cap.
+        bool CellAngle(const Vector3d& d, double& angle) const
+        {
+            std::uint32_t cell;
+            if (!Locate(d, cell))
+                return false;
+            const std::uint32_t i = cell % cells, j = cell / cells;
+            CellCone(double(i) / cells, double(j) / cells, double(i + 1) / cells, double(j + 1) / cells, angle);
+            return true;
+        }
+
         /// Density of a sample in the cell, per steradian for a cap and per unit area for a plane.
         double Pdf(std::uint32_t cell) const
         {
