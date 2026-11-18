@@ -2,7 +2,6 @@
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (SurfaceOnly) #declare SurfaceOnly = 0; #end
 #ifndef (Samples) #declare Samples = 256; #end
-#ifndef (Spacing) #declare Spacing = 0.35; #end
 #ifndef (PhotonCount) #declare PhotonCount = 200000; #end
 #ifndef (GatherMin) #declare GatherMin = 0; #end
 #ifndef (GatherMax) #declare GatherMax = 20000; #end
@@ -23,7 +22,7 @@
 #ifndef (MapFile) #declare MapFile = "subsurface-prism.ph"; #end
 global_settings {
   assumed_gamma 1 max_trace_level 16 mm_per_unit 1
-  subsurface { method Method samples Samples, 0 spacing Spacing }
+  subsurface { method Method samples Samples, 0 }
   #if (Photons)
     photons { count PhotonCount gather GatherMin, GatherMax radius GatherRadius autostop 0
       #ifdef (SaveMap) save_file MapFile #end

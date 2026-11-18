@@ -50,6 +50,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/render/ray.h"
 #include "core/shape/plane.h"
 #include "core/scene/tracethreaddata.h"
@@ -272,6 +273,22 @@ bool Quadric::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     return((IPoint[X] * (QA * IPoint[X] + QB * IPoint[Y] + QD) +
             IPoint[Y] * (QE * IPoint[Y] + QF * IPoint[Z] + QG) +
             IPoint[Z] * (QH * IPoint[Z] + QC * IPoint[X] + QI) + QJ) <= 0.0);
+}
+
+BoxClass Quadric::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // the polynomial in Inside's own order; inversion is in the coefficients
+    Interval p[3];
+    Local_Box(lo, hi, toWorld, nullptr, p);
+    const Interval v = p[X] * (Interval(QA) * p[X] + Interval(QB) * p[Y] + Interval(QD)) +
+                       p[Y] * (Interval(QE) * p[Y] + Interval(QF) * p[Z] + Interval(QG)) +
+                       p[Z] * (Interval(QH) * p[Z] + Interval(QC) * p[X] + Interval(QI)) + Interval(QJ);
+    if (v.low > 0.0)
+        return BoxClass::Outside;
+    if (v.high < 0.0)
+        return BoxClass::Inside;
+    return ObjectBase::Classify_Box(lo, hi, toWorld);
 }
 
 

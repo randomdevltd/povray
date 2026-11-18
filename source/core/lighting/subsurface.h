@@ -122,6 +122,8 @@ enum SubsurfaceUnserved
     kUnservedLights,      ///< the exit point's part has a light the object's parts were not found to have
     kUnservedReach,       ///< the diffusion's reach is not finite
     kUnservedCoordinates, ///< the cells lie too far from the origin to be numbered
+    kUnservedNoSurface,   ///< the surface map found no surface on the object at any level, so it has no area to share points over
+    kUnservedFarPoints,   ///< served, but the map had no point beyond one point's area of the exit point: lit as the exit point
     kUnservedReasons
 };
 
@@ -132,6 +134,11 @@ const int kCloudNoDepthLevel = -10000;
 /// one they take the memory they need, and the system's own out-of-memory failure stops the render.
 const double kSubsurfaceUncappedMB = 0.0;
 
+/// The most map points per square millimetre a bounded method 2 body without its own subsurface { domain_cells } asks: it
+/// asks one per square of its material's shortest diffusion length 1/sigma_tr at its colour, at most this many, a spacing
+/// floor of 1 / sqrt(1.73) = 0.760 mm. A body whose colour varies over its surface, as the stock leaf's flesh does, takes
+/// the floor: the stock leaf's former 4096 over its area; see changes.txt.
+const double kSubsurfacePointsPerMM2 = 1.73;
 /// Memory method 2's boundary and layer tables keep for reuse, besides those render threads are using; see doc/PERF.md.
 const double kSubsurfaceTablesMB = 32.0;
 
@@ -140,14 +147,16 @@ const double kSubsurfaceAlbedoFloor = 1e-4;
 
 class SubsurfaceBoundary;
 
-/// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, or the floor.
-enum SubsurfaceStepTerm { kStepDiffusion, kStepPixel, kStepObject, kStepFinest, kStepTerms };
+/// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, the floor, or
+/// the object's domain_cells on the surface map.
+enum SubsurfaceStepTerm { kStepDiffusion, kStepPixel, kStepObject, kStepFinest, kStepMap, kStepTerms };
 
 /// The clouds' totals for the render statistics.
 struct SubsurfaceCloudStatistics final
 {
-    double spacing = 1.0, peakBytes = 0.0, chargedBytes = 0.0, cells = 0.0, points = 0.0, read = 0.0;
+    double peakBytes = 0.0, chargedBytes = 0.0, mapBytes = 0.0, cells = 0.0, points = 0.0, read = 0.0;
     double termCells[kStepTerms] = {}, termPoints[kStepTerms] = {};
+    std::uint64_t digest = 0; ///< the cells' points and light, combined independently of build order
     double boundaries = 0.0, layers = 0.0, evicted = 0.0, tablesPeakBytes = 0.0; ///< method 2's tables built, dropped for the cap, and the most alive at once
 };
 
@@ -217,6 +226,11 @@ struct SubsurfaceCell final
     std::vector<std::vector<float>> tapRows; ///< the perturbed normals over each row's points' areas, in point order
     std::vector<float> taps; ///< while lighting, those of all points in point order, three floats a normal
     std::vector<size_t> tapStart; ///< while lighting, where each point's normals begin in taps
+    /// On the surface map, while lighting: the read its points came from, and each point's part, chunk in the part and record
+    /// in the chunk, from which its hit is rebuilt when it is lit.
+    std::shared_ptr<const void> mapRead;
+    struct MapRef final { std::uint32_t part, chunk, record; };
+    std::vector<MapRef> mapRefs;
 };
 
 /// Where a cell sits: the object, the cell size level (its side is 2^level scene units) and the cell's integer position.
@@ -280,7 +294,7 @@ class SubsurfaceCache final
     public:
         /// capMB in MB caps the clouds when at least 1; below it (kSubsurfaceUncappedMB, the scene's default) they are
         /// uncapped.
-        explicit SubsurfaceCache(double capMB = kSubsurfaceUncappedMB, double spacing = 1.0);
+        explicit SubsurfaceCache(double capMB = kSubsurfaceUncappedMB);
         SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
         /// The cell for key, and whether the caller is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
@@ -292,6 +306,9 @@ class SubsurfaceCache final
         /// Whether one cell's own points fit the cap; past it, the stop is recorded, as no total could then fit.
         bool CellFits(size_t bytes);
         void Refund(SubsurfaceCell& cell);
+        /// Counts what the surface map `map` holds now against the cap, past what was counted for it before; throws the
+        /// fatal error once the clouds and maps pass it.
+        void ChargeMap(const void *map, size_t bytes);
         /// Throws the fatal error once any cell has passed the cap.
         void CheckCap() const;
         /// The share of the image done; once past half, whether cells built at the second quarter's rate would pass the cap.
@@ -301,6 +318,11 @@ class SubsurfaceCache final
         std::atomic<std::uint64_t>& UnservedCounter(const void *object, SubsurfaceUnserved reason, const std::string& description);
         struct UnservedObject { std::string description; SubsurfaceUnserved reason; std::uint64_t count; };
         std::vector<UnservedObject> Unserved() const;
+        /// Each bounded object's point budget as the clouds use it: its area on the map, domain_cells, and the spacing and map
+        /// level they give, in scene units.
+        struct BudgetObject { std::string description; double area, budget, spacing; int level; };
+        void ReportBudget(const void *object, const BudgetObject& budget);
+        std::vector<BudgetObject> Budgets() const;
         /// Whether a mesh's triangles close it: each edge shared by exactly two of them; computed once per mesh.
         bool ClosedMesh(const void *mesh, const std::function<bool()>& compute);
         /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
@@ -342,6 +364,7 @@ class SubsurfaceCache final
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
         struct UnservedEntry { std::string description; std::atomic<std::uint64_t> count{0}; };
         std::map<std::pair<const void*, int>, std::unique_ptr<UnservedEntry>> unserved;
+        std::map<const void*, BudgetObject> budgets;
         std::map<const void*, bool> closedMeshes;
         std::mutex closedMeshesMutex;
         std::mutex photonBoundariesMutex;
@@ -350,7 +373,7 @@ class SubsurfaceCache final
         double progress = 0.0, refusedAt = 0.0, firstFraction = 0.0;
         size_t firstCharged = 0;
         bool projected = false;
-        double spacing;
+        std::unordered_map<const void*, size_t> mapBytes; ///< what each map read by the clouds held when last counted
         bool cameraSet = false;
         Vector3d cameraLocation;
         double cameraPixelSize = 0.0, cameraPixelAngle = 0.0;
@@ -417,7 +440,8 @@ class SubsurfaceBoundary final
 
         /// A part 2^(k/4) reduced mean free paths deep, for k from kLayerFirst to kLayerLast, at the albedo whose u is
         /// step / kLayerSteps (see doc/PERF.md): for k and k + 1 in BeamRatio's layout, the ratios to the dipole of Rd and its
-        /// disc integral on the near face, then from kLayerFar on, of Rd through to the far face; SubsurfaceCache keeps them.
+        /// disc integral on the near face, then from kLayerFar on, of Rd through to the far face and of its integral over the disc
+    /// (over the dipole's at the straight distance through); SubsurfaceCache keeps them.
         static const int kLayerFirst = -40, kLayerLast = 48, kLayerFar = 4 * kBeamColumns, kLayerSteps = 4096;
         static const size_t kLayerFloats = 2 * kLayerFar;
         void BuildLayer(int step, int k, float *rows) const;

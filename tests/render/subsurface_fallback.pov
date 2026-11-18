@@ -4,11 +4,10 @@
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (Diffuse) #declare Diffuse = 16; #end
-#ifndef (Spacing) #declare Spacing = (Case = 6 ? 100 : Case = 10 ? 200 : Case = 4 ? 50 : 1); #end
 global_settings {
   assumed_gamma 1
   mm_per_unit 10
-  subsurface { samples Diffuse, 4 method Method spacing Spacing radiosity (Case = 13) }
+  subsurface { samples Diffuse, 4 method Method radiosity (Case = 13) }
   #if (Case = 9) photons { count 4000 } #end
   #if (Case = 13) radiosity { pretrace_start 0.08 pretrace_end 0.04 count 20 recursion_limit 1 } #end
 }

@@ -76,6 +76,9 @@ namespace pov
 ******************************************************************************/
 
 const DBL DEPTH_TOLERANCE = 1.0e-4;
+
+// A query naming the segment it wants roots in starts off the surface and keeps only that segment's roots: no cut in
+// scene units. Only the surface map's lines name one, so every other ray keeps the cut.
 const DBL INSIDE_TOLERANCE = 1.0e-4;
 const DBL ROOT_TOLERANCE = 1.0e-4;
 const DBL COEFF_LIMIT = 1.0e-20;
@@ -243,7 +246,7 @@ bool Poly::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 
         default:
 
-            cnt = intersect(New_Ray, Order, Coeffs, Test_Flag(this, STURM_FLAG), Depths, Thread->Stats());
+            cnt = intersect(New_Ray, Order, Coeffs, Test_Flag(this, STURM_FLAG), Depths, Thread->Stats(), ray.PreciseRoots());
     }
 
     if (cnt > 0)
@@ -251,9 +254,11 @@ bool Poly::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
         Thread->Stats()[Ray_Poly_Tests_Succeeded]++;
     }
 
+    // a precise query places its own start, so no depth is too near to be a crossing
+    const DBL leastDepth = ray.PreciseRoots() ? 0.0 : DEPTH_TOLERANCE;
     for (i = 0; i < cnt; i++)
     {
-        if (Depths[i] > DEPTH_TOLERANCE)
+        if (Depths[i] > leastDepth)
         {
             same_root = false;
 
@@ -653,7 +658,7 @@ DBL Poly::inside(const Vector3d& IPoint, int Order, const DBL *Coeffs)
 *
 ******************************************************************************/
 
-int Poly::intersect(const BasicRay &ray, int Order, const DBL *Coeffs, int Sturm_Flag, DBL *Depths, RenderStatistics& stats)
+int Poly::intersect(const BasicRay &ray, int Order, const DBL *Coeffs, int Sturm_Flag, DBL *Depths, RenderStatistics& stats, bool precise)
 {
     DBL eqn_v[3][MAX_ORDER+1], eqn_vt[3][MAX_ORDER+1];
     DBL eqn[MAX_ORDER+1];
@@ -763,6 +768,9 @@ int Poly::intersect(const BasicRay &ray, int Order, const DBL *Coeffs, int Sturm
         }
     }
 
+    // a precise query takes every root to the rounding of the ray's polynomial, in units of the roots' own size
+    if (precise && (j > 0))
+        return Solve_Polynomial_Precise(j, &eqn[i], Depths, stats);
     if (j > 1)
     {
         return(Solve_Polynomial(j, &eqn[i], Depths, Sturm_Flag, ROOT_TOLERANCE, stats));
@@ -1139,7 +1147,9 @@ bool Poly::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
     Result = inside(New_Point, Order, Coeffs);
 
-    if (Result < INSIDE_TOLERANCE)
+    // A precise boundary query asks which side the point is on exactly: INSIDE_TOLERANCE is a value of the
+    // polynomial, whose size follows the cube or higher power of the scene's unit.
+    if (Result < (((Thread != nullptr) && Thread->preciseInside) ? 0.0 : INSIDE_TOLERANCE))
     {
         return ((int)(!Test_Flag(this, INVERTED_FLAG)));
     }

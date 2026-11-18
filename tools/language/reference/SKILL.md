@@ -44,69 +44,69 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 |---|---|---|
 | `attenuation` | 3 | Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C. |
 | `background` | — | The colour or pigment shown behind every object. |
-| `bicubic_patch` | 38 | Bezier patch surface from a 4x4 control-point grid. |
-| `blob` | 37 | Metaball surface from sphere and cylinder strength components. |
-| `bounce` | 2 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets a scalar or RGB self share from 0 to 1; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits. |
-| `box` | 32 | Box from two opposite corner vectors. |
+| `bicubic_patch` | 39 | Bezier patch surface from a 4x4 control-point grid. |
+| `blob` | 38 | Metaball surface from sphere and cylinder strength components. |
+| `bounce` | 3 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets any finite scalar or RGB self share, including amplification and subtraction; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits. |
+| `box` | 33 | Box from two opposite corner vectors. |
 | `bump_map` | 33 | Normal perturbation pattern wrapping a 2-D image file. |
 | `camera` | 35 | The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse. |
-| `composite` | 75 | Legacy CSG grouping from before union; still parsed. |
-| `cone` | 33 | Cone or frustum from two end points and radii; open removes the caps. |
-| `cubic` | 32 | Third-degree polynomial shape; a special case of poly. |
-| `cylinder` | 33 | Cylinder from two end points and one radius; open removes the caps. |
-| `default` | — | Item values every later object begins from: default { texture { ... } }. |
+| `composite` | 76 | Legacy CSG grouping from before union; still parsed. |
+| `cone` | 34 | Cone or frustum from two end points and radii; open removes the caps. |
+| `cubic` | 33 | Third-degree polynomial shape; a special case of poly. |
+| `cylinder` | 34 | Cylinder from two end points and one radius; open removes the caps. |
+| `default` | 10 | Defaults for subsequent materials, media, and independent interior and surface light budgets. |
 | `density` | 102 | Pattern block scaling media density across its container. |
-| `difference` | 75 | CSG: first child minus every following child. |
-| `disc` | 32 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
+| `difference` | 76 | CSG: first child minus every following child. |
+| `disc` | 33 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
 | `finish` | 22 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
 | `global_settings` | 24 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
-| `height_field` | 58 | Triangle mesh whose heights come from an image's brightness. |
+| `height_field` | 59 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
 | `interior` | 15 | Inside-the-surface properties: ior, caustics, fading, media, and the volume light of a light block. |
-| `intersection` | 75 | CSG: points inside every child. |
-| `isosurface` | 44 | Implicit surface where f(x,y,z) is zero, solved while rendering. |
-| `isosurface_mesh` | 44 | Isosurface tessellated into a mesh2 at parse time, sharp edges exact. |
-| `julia_fractal` | 55 | 3-D slice of a 4-D quaternion Julia set. |
-| `lathe` | 36 | Solid of revolution: a 2-D profile curve spun about y. |
-| `lemon` | 33 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
-| `light` | 13 | A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling. |
-| `light_group` | 75 | Objects lit only by the lights named inside it. |
-| `light_source` | 54 | A light: position, colour, area, shadowing and photon options. |
+| `intersection` | 76 | CSG: points inside every child. |
+| `isosurface` | 45 | Implicit surface where f(x,y,z) is zero, solved while rendering. |
+| `isosurface_mesh` | 45 | Isosurface tessellated into a mesh2 at parse time, sharp edges exact. |
+| `julia_fractal` | 56 | 3-D slice of a 4-D quaternion Julia set. |
+| `lathe` | 37 | Solid of revolution: a 2-D profile curve spun about y. |
+| `lemon` | 34 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
+| `light` | 14 | A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling. |
+| `light_group` | 76 | Objects lit only by the lights named inside it. |
+| `light_source` | 55 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
 | `media` | 23 | Participating medium: scattering, emission, absorption, intervals. |
-| `merge` | 75 | CSG union that removes inner surfaces, for transparent children. |
-| `mesh` | 35 | One object collecting explicit triangle components. |
-| `mesh2` | 41 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
+| `merge` | 76 | CSG union that removes inner surfaces, for transparent children. |
+| `mesh` | 36 | One object collecting explicit triangle components. |
+| `mesh2` | 42 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
 | `normal` | 102 | Perturbed surface normals: bump pattern, bump map, slope. |
-| `object` | 75 | Copies or wraps an already-declared object with new modifiers. |
+| `object` | 76 | Copies or wraps an already-declared object with new modifiers. |
 | `output` | 3 | Camera item that renders this camera as its own view: the scene parses once, each camera with one renders its own image in order, cameras without one are not rendered. Bare output keeps the command line's size, window and file; the block's parts are optional, and a later output replaces an earlier one. Refused with animation, STDOUT output or photon save_file/load_file. |
-| `ovus` | 35 | Egg shape from bottom and top radius, with radius, distance and precision controls. |
-| `parametric` | 39 | Surface from three functions of u and v; precompute caches its mesh. |
+| `ovus` | 36 | Egg shape from bottom and top radius, with radius, distance and precision controls. |
+| `parametric` | 40 | Surface from three functions of u and v; precompute caches its mesh. |
 | `pigment` | 102 | Surface colour: a pattern, colour map or image map. |
-| `plane` | 32 | Infinite solid half-space from a surface normal and a distance. |
-| `poly` | 32 | Polynomial surface up to seventh degree from numbered coefficients. |
-| `polygon` | 32 | Flat shape from a loop of 2-D points, with optional hole loops. |
-| `polynomial` | 32 | Poly with named coefficients in any order; omitted coefficients default to 0. |
-| `portal` | 45 | Rays entering its body continue from the mapped point elsewhere. |
-| `prism` | 39 | Solid swept from closed 2-D curves in the x-z plane along y. |
-| `quadric` | 32 | Second-degree polynomial surface from ten coefficients. |
-| `quartic` | 32 | Fourth-degree polynomial surface from thirty-five coefficients. |
+| `plane` | 33 | Infinite solid half-space from a surface normal and a distance. |
+| `poly` | 33 | Polynomial surface up to seventh degree from numbered coefficients. |
+| `polygon` | 33 | Flat shape from a loop of 2-D points, with optional hole loops. |
+| `polynomial` | 33 | Poly with named coefficients in any order; omitted coefficients default to 0. |
+| `portal` | 46 | Rays entering its body continue from the mapped point elsewhere. |
+| `prism` | 40 | Solid swept from closed 2-D curves in the x-z plane along y. |
+| `quadric` | 33 | Second-degree polynomial surface from ten coefficients. |
+| `quartic` | 33 | Fourth-degree polynomial surface from thirty-five coefficients. |
 | `rainbow` | — | An arc of colour bands across the sky: direction, angle, width, distance. |
-| `refraction` | 3 | Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off. |
+| `refraction` | 4 | Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off. |
 | `sky_sphere` | — | A pigment wrapped on a huge sphere around the scene to suggest a sky. |
-| `smooth_triangle` | 33 | Triangle carrying per-vertex normals for smooth shading. |
-| `sor` | 33 | Surface of revolution: a curve of points spun about the y axis. |
-| `sphere` | 32 | Sphere from a center and a radius. |
-| `sphere_sweep` | 36 | Tube of varying radius sweeping a spline of sphere centers. |
-| `superellipsoid` | 32 | Superquadric shape, rounded box to pinched cylinder, from two exponents. |
+| `smooth_triangle` | 34 | Triangle carrying per-vertex normals for smooth shading. |
+| `sor` | 34 | Surface of revolution: a curve of points spun about the y axis. |
+| `sphere` | 33 | Sphere from a center and a radius. |
+| `sphere_sweep` | 37 | Tube of varying radius sweeping a spline of sphere centers. |
+| `superellipsoid` | 33 | Superquadric shape, rounded box to pinched cylinder, from two exponents. |
 | `tagged` | — | Object value: copies of the objects placed so far that a tag expression selects, with the containers around them, as in look_at tagged { "subject" } or object { tagged { "statue" } translate x }. Expands once; matched by text before a block, so tagged stays free as a name. |
 | `tags` | 2 | Names a filter matches: omitted inherits the parent's, a list replaces them, inherit adds them, none clears them; a later tags block on the same object replaces earlier ones. |
-| `text` | 36 | TrueType font rendered as geometry, with thickness and offset. |
+| `text` | 37 | TrueType font rendered as geometry, with thickness and offset. |
 | `texture` | 105 | One material layer: pigment, normal, finish and transformations. |
-| `torus` | 32 | Ring in the x-z plane from major and minor radii. |
-| `triangle` | 32 | Flat triangle from three corner points. |
-| `union` | 75 | CSG: children grouped as one object. |
+| `torus` | 33 | Ring in the x-z plane from major and minor radii. |
+| `triangle` | 33 | Flat triangle from three corner points. |
+| `union` | 76 | CSG: children grouped as one object. |
 <!-- generated:end block table -->
 
 ## Rules of thumb
@@ -118,8 +118,8 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 - A classic twin of a `.pov4` scene is `#version 4.0;` classic syntax — same semantics, two spellings. A `#version 3.7` twin does not match: 4.0 changed defaults (gamma among them).
 - `finish { light_samples M [full | by_contribution] }`: `M` multiplies every surface and volume light's `samples`; `by_contribution` (the 4.0 default) scales each hit's samples by its share of the pixel, so hits seen through reflections or clear layers take fewer while directly seen surfaces keep all. `full` is the classic sampling: choose it where reflections or refractions carry the look and their noise shows. Scene-wide: `default { finish { light_samples 1 full } }`.
 - `max_trace_level` (4.0 default): a ray that reaches it is not black. Its hit is lit without reflection, and through transparent surfaces it goes straight on, filtered and faded, to the first opaque surface or the background. Raise the level where the bent or reflected image itself matters.
-- `media { method 4 domain_cells N }` is the prepared grid's cell count (500000 by default), cubic cells spread over the container's box, so quality survives rescaling; the grid is capped at 2N. Media take no cell width: for cells about `w` wide write the product over the axes of ceil(box extent / w). Scene-wide: `default { media { domain_cells N } }`, which also sets (doubled) the cap of ownerless grids. An interior `light { domain_cells N }` sets the light's source domain, else `default { light { domain_cells N } }`, 500000; a light never takes its medium's count.
-- A volume `light` inside a closed subsurface method 2 solid lights it from within (homogeneous material, one texture layer); `subsurface { samples D, S }`'s S is the internal paths per shaded point. A surface `light { emission }` (or `bounce`) on the host exports the light that escapes. A volume light in or on an open mesh or a disc host is a parse error.
+- `media { method 4 domain_cells N }` is the prepared grid's cell count (500000 by default), cubic cells spread over the container's box, so quality survives rescaling; the grid is capped at 2N. Media take no cell width: for cells about `w` wide write the product over the axes of ceil(box extent / w). Scene-wide: `default { media { domain_cells N } }`, which also sets (doubled) the cap of ownerless grids. An interior `light { domain_cells N }` sets the light's source domain, else `default { interior { light { domain_cells N } } }`, 500000; a light never takes its medium's count. Surface lights budget seeds and refinement with their own `domain_cells`, else `default { light { domain_cells N } }`, initially 4096 nodes per light (a 2D budget independent of the volume default); seeds are reused across orders.
+- A volume `light` inside a closed subsurface method 2 solid lights it from within (using the local material coefficients); `subsurface { samples D, S }`'s S is the internal paths per shaded point. A surface `light { emission }` (or `bounce`) on the host exports the light that escapes. A volume light in or on an open mesh or a disc host is a parse error.
 
 ## Canonical examples
 

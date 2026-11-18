@@ -251,7 +251,7 @@
    "doc": "r3_6.html#r3_6_2_1_9"
   },
   "detail": {
-   "text": "Per-field detail D is a finite positive length in scene units; omitted detail or detail auto uses the scene's default domain_cells and bounds-derived integration controls.",
+   "text": "Per-field detail D, a finite positive length in scene units or auto, sets the resolution of the field's grid.",
    "doc": "r3_11.html#r3_11_3_2"
   },
   "diffuse": {
@@ -275,7 +275,7 @@
    "doc": "r3_7.html#r3_7_1_5"
   },
   "domain_cells": {
-   "text": "The domain_cells item sets the number of cells of a method 4 medium's prepared grid, spread evenly over its container's bounding box.",
+   "text": "The domain_cells item sets 3D media or interior-light source cells, or a 2D surface node budget (4096 per light by default, independent of volume budgets).",
    "doc": "r3_7.html#r3_7_2_3_1"
   },
   "double_illuminate": {
@@ -1229,7 +1229,7 @@
    "from": "doc/html/r3_4.html"
   },
   "bounce": {
-   "code": "bounce { [passes Integer] [self Float | Vector | rgb Vector | on | off] }",
+   "code": "bounce { [passes Integer] [view_directions Integer] [self Float | Vector | rgb Vector | on | off] }",
    "from": "doc/html/r3_12.html:3"
   },
   "bounded_by": {
@@ -1583,8 +1583,8 @@
    "from": "tests/pov4/ok_param_shadows_input.pov4:14"
   },
   "error_bound": {
-   "rank": 68,
-   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT memory FLOAT }",
+   "rank": 54,
+   "code": "subsurface { method 2 error_bound FLOAT memory FLOAT }",
    "from": "doc/html/r3_6.html"
   },
   "evaluate": {
@@ -2118,9 +2118,9 @@
    "from": "tests/pov4/interior_all_options.pov4:19"
   },
   "memory": {
-   "rank": 68,
-   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT memory FLOAT }",
-   "from": "doc/html/r3_6.html"
+   "rank": 82,
+   "code": "global_settings { mm_per_unit 10 subsurface { samples 8, 2 method 2 memory 256 } }",
+   "from": "tests/pov4/subsurface.pov4:2"
   },
   "merge": {
    "code": "merge { SOLID_OBJECTS... [OBJECT_MODIFIERS...] }",
@@ -2150,9 +2150,9 @@
    "from": "doc/html/r3_6.html"
   },
   "method": {
-   "rank": 25,
-   "code": "subsurface { method INT }",
-   "from": "doc/html/r3_6.html"
+   "rank": 82,
+   "code": "global_settings { mm_per_unit 10 subsurface { samples 8, 2 method 2 memory 256 } }",
+   "from": "tests/pov4/subsurface.pov4:2"
   },
   "metric": {
    "rank": 1019,
@@ -2337,8 +2337,8 @@
    "from": "doc/html/r3_4.html"
   },
   "passes": {
-   "rank": 27,
-   "code": "bounce [{ passes Integer }]",
+   "rank": 39,
+   "code": "light { bounce { passes 2 } samples 8 }",
    "from": "doc/html/r3_12.html"
   },
   "pattern": {
@@ -2382,8 +2382,8 @@
    "from": "doc/html/r3_4.html"
   },
   "photons": {
-   "rank": 26,
-   "code": "photons { PHOTON_ITEMS...}",
+   "rank": 28,
+   "code": "photons { PHOTON_ITEMS...} |",
    "from": "doc/html/r3_5.html"
   },
   "pigment": {
@@ -2643,9 +2643,9 @@
    "from": "doc/html/r3_6.html"
   },
   "samples": {
-   "rank": 1011,
-   "code": "samples 256",
-   "from": "tests/pov4/interior_all_options.pov4:16"
+   "rank": 82,
+   "code": "global_settings { mm_per_unit 10 subsurface { samples 8, 2 method 2 memory 256 } }",
+   "from": "tests/pov4/subsurface.pov4:2"
   },
   "save_file": {
    "rank": 1021,
@@ -2752,9 +2752,9 @@
    "from": "doc/html/r3_5.html:3"
   },
   "spacing": {
-   "rank": 68,
-   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT memory FLOAT }",
-   "from": "doc/html/r3_6.html"
+   "rank": 1024,
+   "code": "spacing : 1.0 (method 2)",
+   "from": "doc/html/r3_4.html"
   },
   "specular": {
    "rank": 21,
@@ -2850,9 +2850,9 @@
    "from": "doc/html/r3_3.html"
   },
   "subsurface": {
-   "rank": 13,
-   "code": "subsurface {}",
-   "from": "doc/html/r3_6.html"
+   "rank": 82,
+   "code": "global_settings { mm_per_unit 10 subsurface { samples 8, 2 method 2 memory 256 } }",
+   "from": "tests/pov4/subsurface.pov4:2"
   },
   "superellipsoid": {
    "code": "superellipsoid { <Value_E, Value_N> [OBJECT_MODIFIERS...] }",

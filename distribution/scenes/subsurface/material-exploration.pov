@@ -98,7 +98,7 @@
  box {<-0.020,0.005,-0.006>,<0.020,0.0062,0.006>}
 }
 global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12
- subsurface {method 2 samples SubsurfaceSamples,InternalSamples spacing 1 error_bound 0.15} }
+ subsurface {method 2 samples SubsurfaceSamples,InternalSamples error_bound 0.15} }
 #default {finish {ambient 0 diffuse 0.7}}
 #if (!LibraryOnly)
 background {rgb <0.012,0.019,0.031>}
@@ -165,11 +165,13 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   }
  #end
  interior {ior 1.4}
- #local BounceEnabled=(Export | (CurrentBounce & (A=2 | Case>=0)));
+ // a bounce block takes no pigment or emission: a surface-pattern source does not bounce, and bounce already exports
+ // what the emission alias would
+ #local BounceEnabled=((Export | (CurrentBounce & (A=2 | Case>=0))) & !(SourceMode=2 | SurfaceSource));
  #if (EmissionExport | BounceEnabled | SourceMode=2 | SurfaceSource)
   light {samples EmitterSamples
    #if (SourceMode=2 | SurfaceSource) pigment {Veins} brightness Exposure*0.05 lumens
-   #elseif (EmissionExport) emission #end
+   #elseif (EmissionExport & !BounceEnabled) emission #end
    #if (BounceEnabled) bounce {passes WaxBouncePasses} #end
   }
  #end

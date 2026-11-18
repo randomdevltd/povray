@@ -49,6 +49,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
@@ -603,6 +604,24 @@ bool Box::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     /* Inside the box. */
 
     return (!Test_Flag(this, INVERTED_FLAG));
+}
+
+BoxClass Box::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // Inside keeps the closed box, whose faces are the surface: outside and inside are both strict
+    Interval p[3];
+    Local_Box(lo, hi, toWorld, Trans, p);
+    bool outside = false, inside = true;
+    for (int a = X; a <= Z; ++a)
+    {
+        outside = outside || (p[a].high < bounds[0][a]) || (p[a].low > bounds[1][a]);
+        inside = inside && (p[a].low > bounds[0][a]) && (p[a].high < bounds[1][a]);
+    }
+    const BoxClass c = outside ? BoxClass::Outside : inside ? BoxClass::Inside : BoxClass::Unknown;
+    if (c == BoxClass::Unknown)
+        return ObjectBase::Classify_Box(lo, hi, toWorld);
+    return Inverted_Class(c, Test_Flag(this, INVERTED_FLAG));
 }
 
 

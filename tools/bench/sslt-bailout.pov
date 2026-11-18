@@ -6,7 +6,6 @@
 #ifndef (Single) #declare Single = 12; #end
 #ifndef (Subsurface) #declare Subsurface = 1; #end
 #ifndef (Method) #declare Method = 2; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (Leaves) #declare Leaves = 6; #end
 #ifndef (Through) #declare Through = 0.4; #end
 #ifndef (Mirror) #declare Mirror = 0.7; #end
@@ -16,7 +15,7 @@ global_settings {
   mm_per_unit 20
   max_trace_level (Case = 2 ? 40 : 24)
   #if (Subsurface)
-    subsurface { samples Diffuse, Single method Method spacing Spacing }
+    subsurface { samples Diffuse, Single method Method }
   #end
 }
 

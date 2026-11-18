@@ -94,6 +94,8 @@ class Cone final : public ObjectBase
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool ReturnsAllRoots() const override { return true; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
+        virtual bool Has_Box_Test() const override { return Test_Flag(this, CLOSED_FLAG); }
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
 #ifdef POV_ENABLE_CONE_UV
         /// @attention
@@ -112,6 +114,7 @@ class Cone final : public ObjectBase
         void Compute_Cylinder_Data();
     protected:
         int Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistics& stats) const;
+        int IntersectPrecise(const BasicRay& ray, CONE_INT *Intersection, RenderStatistics& stats) const;
 #ifdef POV_ENABLE_CONE_UV
         void CalcUV(const Vector3d& IPoint, Vector2d& Result) const;
 #endif // POV_ENABLE_CONE_UV

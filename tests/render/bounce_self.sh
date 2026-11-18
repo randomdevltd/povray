@@ -1,8 +1,8 @@
 #!/bin/sh
-# bounce_self.sh <povray> <srcdir>: with bounce { self off } a lone cloud, glowing or not, renders as without bounce while
-# its bounce lights a second cloud and a floor, alike on any thread count; an open box with a surface light keeps
-# its own bounce off itself in the same way, beneath the surface, lit from within and through photons too; 4.0 scenes
-# take it.
+# bounce_self.sh <povray> <srcdir>: with bounce { self off } a lone cloud renders as without bounce while its bounce
+# lights a second cloud and a floor, alike on any thread count; an open box with a surface light keeps its own bounce off
+# itself in the same way, beneath the surface, lit from within and through photons too; on a light that does not bounce,
+# self scales what its own object or media receive of it; a bounce block takes no pigment; 4.0 scenes take it.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -38,10 +38,8 @@ render half2 Declare=Bounce=2 Declare=Self=0.5 +wt3
 [ "$(sum half2)" -gt "$(sum half)" ] && [ "$(sum half2)" -lt "$(sum on)" ] ||
     { echo "bounce_self: a fractional share did not scale subsequent self orders" >&2; exit 1; }
 render glow Declare=Emit=1 +wt3
-render glowoff Declare=Emit=1 Declare=Bounce=1 Declare=Self=0 +wt3
-same glow glowoff "a lone glowing cloud without self bounce differs from one without bounce"
-render glowhalf Declare=Emit=1 Declare=Bounce=1 Declare=Self=0.5 +wt3
-render glowon Declare=Emit=1 Declare=Bounce=1 +wt3
+render glowoff Declare=Emit=1 Declare=Self=0 +wt3
+render glowhalf Declare=Emit=1 Declare=Self=0.5 +wt3
 render modifieroff Declare=Modifier=1 Declare=Bounce=1 Declare=Self=0 +wt3
 render modifierhalf Declare=Modifier=1 Declare=Bounce=1 Declare=Self=0.5 +wt3
 render modifieron Declare=Modifier=1 Declare=Bounce=1 +wt3
@@ -54,10 +52,9 @@ midpoint() {
         { for (c=1;c<=3;c++) if (abs($(c+3)-($c+$(c+6))/2)>1) exit 1 }' ||
         { echo "bounce_self: $4" >&2; exit 1; }
 }
-# The compensation adds a second sampled emitter, so compare image energy rather than individual draws.
-echo "$(sum glowoff) $(sum glowhalf) $(sum glowon)" | awk '
-    { m=($1+$3)/2; d=$2-m; if (d<0) d=-d; if (!($2>$1 && $2<$3) || d>0.02*m) exit 1 }' ||
-    { echo "bounce_self: fractional self changes original emission" >&2; exit 1; }
+# self on a light that does not bounce: its own media scatter that share of it, and only that
+[ "$(sum glowoff)" -lt "$(sum glow)" ] || { echo "bounce_self: self off left a glowing cloud's own media lit by it" >&2; exit 1; }
+midpoint glowoff glowhalf glow "an emitting cloud's self share does not scale its light in its own media"
 midpoint modifieroff modifierhalf modifieron "self share must follow subtraction modifiers"
 render mask Declare=Scene=1 Declare=Mask=1 +wt3
 # Per region, the summed pixels: the floor, then the left (bouncing) and right clouds above it.
@@ -99,11 +96,15 @@ surface shalf2 Declare=Bounce=2 Declare=Self=0.5 +wt3
 [ "$(sum shalf2)" -gt "$(sum shalf)" ] && [ "$(sum shalf2)" -lt "$(sum son)" ] ||
     { echo "bounce_self: a surface's fractional share did not scale its later orders" >&2; exit 1; }
 surface sglow Declare=Emit=1 +wt3
-surface sglowoff Declare=Emit=1 Declare=Bounce=1 Declare=Self=0 +wt3
-surface sglowon Declare=Emit=1 Declare=Bounce=1 +wt3
-echo "$(sum sglow) $(sum sglowoff) $(sum sglowon)" | awk '
-    { d=$2-$1; if (d<0) d=-d; if (d>0.02*$1 || !($3>$2)) exit 1 }' ||
-    { echo "bounce_self: a glowing surface without self bounce lost or gained its own emission" >&2; exit 1; }
+surface sglowoff Declare=Emit=1 Declare=Self=0 +wt3
+surface sglowhalf Declare=Emit=1 Declare=Self=0.5 +wt3
+[ "$(sum sglowoff)" -lt "$(sum sglow)" ] || { echo "bounce_self: self off left a glowing surface lit by itself" >&2; exit 1; }
+midpoint sglowoff sglowhalf sglow "an emitting surface's self share does not scale its light on itself"
+# A bounce block re-emits what its object shows and takes no input of its own.
+"$POVRAY" +i"$SRCDIR/tests/render/bounce_self_surface.pov" +w8 +h8 -d -p -f Declare=Emit=1 Declare=Bounce=1 > sglowbounce.log 2>&1 &&
+    { echo "bounce_self: a bounce light block took a pigment" >&2; exit 1; }
+grep -q "takes no pigment or emission" sglowbounce.log ||
+    { cat sglowbounce.log; echo "bounce_self: a bounce light block with a pigment gave the wrong error" >&2; exit 1; }
 surface smask Declare=Scene=1 Declare=Mask=1 +wt3
 # Per region, the summed pixels: the floor, then the box.
 sregions() {
@@ -125,15 +126,15 @@ surface ssuboff Declare=Subsurface=1 Declare=Bounce=1 Declare=Self=0 +wt3
 surface ssubon Declare=Subsurface=1 Declare=Bounce=1 +wt3
 same ssubnone ssuboff "a subsurface surface without self bounce differs from one without bounce"
 [ "$(sum ssubon)" -gt "$(sum ssubnone)" ] || { echo "bounce_self: self bounce does not reach beneath a surface" >&2; exit 1; }
-# A lamp buried in the wall: the box's own light, from within and from its earlier orders, never returns to it at self 0.
+# A lamp buried in the wall: the box's own light, from within and from its earlier passes, never returns to it at self 0.
 surface sburnone Declare=Subsurface=1 Declare=Buried=1 +wt3
 surface sburoff Declare=Subsurface=1 Declare=Buried=1 Declare=Bounce=2 Declare=Self=0 +wt3
 surface sburon Declare=Subsurface=1 Declare=Buried=1 Declare=Bounce=2 +wt3
 same sburnone sburoff "a subsurface surface lit from within without self bounce differs from one without bounce"
 [ "$(sum sburon)" -gt "$(sum sburnone)" ] || { echo "bounce_self: self bounce does not return light from within beneath a surface" >&2; exit 1; }
-surface sphnone Declare=Photons=1 Declare=Emit=1 +wt2
-surface sphoff Declare=Photons=1 Declare=Emit=1 Declare=Bounce=1 Declare=Self=0 +wt2
-surface sphon Declare=Photons=1 Declare=Emit=1 Declare=Bounce=1 +wt2
+surface sphnone Declare=Photons=1 +wt2
+surface sphoff Declare=Photons=1 Declare=Bounce=1 Declare=Self=0 +wt2
+surface sphon Declare=Photons=1 Declare=Bounce=1 +wt2
 echo "$(sum sphnone) $(sum sphoff) $(sum sphon)" | awk '
     { d=$2-$1; if (d<0) d=-d; if (d>0.02*$1 || !($3>$2)) exit 1 }' ||
     { echo "$(sum sphnone) $(sum sphoff) $(sum sphon)"
@@ -160,17 +161,20 @@ for scale in '-0.1' '1.1' '<0,1.1,0>' 'rgb <0,-0.1,0>' '1e300*1e300' '' 'passes 
     "$POVRAY" +iinvalid.pov4 +w8 +h8 -d -p -f > invalid.log 2>&1 &&
         { echo "bounce_self: invalid share $scale was accepted" >&2; exit 1; }
 done
-for photons in 0 1; do
+for case in "0 1" "1 1" "1 0"; do
+    set -- $case
     "$POVRAY" +i"$SRCDIR/tests/render/bounce_self_photons.pov" +w$W +h$H +pr -a -d -p -v -gp +fp16 File_Gamma=1 \
-        Declare=Photons=$photons +wt2 +o"photons$photons.ppm" > "photons$photons.log" 2>&1 ||
-        { cat "photons$photons.log"; exit 1; }
-    tail -c $((6 * W * H)) "photons$photons.ppm" > "photons$photons.pixels"
+        Declare=Photons=$1 Declare=Self=$2 +wt2 +o"photons$1$2.ppm" > "photons$1$2.log" 2>&1 ||
+        { cat "photons$1$2.log"; exit 1; }
+    tail -c $((6 * W * H)) "photons$1$2.ppm" > "photons$1$2.pixels"
 done
-[ "$(sum photons1)" -gt "$(sum photons0)" ] ||
-    { echo "bounce_self: self off removed original emission returning through photons" >&2; exit 1; }
+[ "$(sum photons11)" -gt "$(sum photons01)" ] ||
+    { echo "bounce_self: a volume light's light returning through photons was lost" >&2; exit 1; }
+[ "$(sum photons10)" -lt "$(sum photons11)" ] ||
+    { echo "bounce_self: self off left a volume light's returning photons in its own media" >&2; exit 1; }
 for mode in 1 2; do
     "$POVRAY" +i"$SRCDIR/tests/render/bounce_self_photons.pov" +w$W +h$H +pr -a -d -p -v -gp +fp16 File_Gamma=1 \
-        Declare=PhotonFile=$mode +wt2 +o"saved$mode.ppm" > "saved$mode.log" 2>&1 ||
+        Declare=PhotonFile=$mode Declare=Self=0.5 +wt2 +o"saved$mode.ppm" > "saved$mode.log" 2>&1 ||
         { cat "saved$mode.log"; exit 1; }
     tail -c $((6 * W * H)) "saved$mode.ppm" > "saved$mode.pixels"
 done

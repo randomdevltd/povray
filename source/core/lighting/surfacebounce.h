@@ -165,6 +165,32 @@ private:
     std::vector<MathColour> radiance;
 };
 
+/// The shaded colour per node, toward the side each node faces and, on an open surface, toward the other.
+class SurfaceShadedField final : public SurfaceBounceRadiance, private SurfaceNodeGuide
+{
+public:
+    SurfaceShadedField(std::shared_ptr<const SurfaceNodeIndex> index, std::vector<MathColour> front, std::vector<MathColour> back,
+        std::vector<float> power, const MathColour& integral) :
+        SurfaceNodeGuide(std::move(index), std::move(power), integral), front(std::move(front)), back(std::move(back))
+    {
+        if (this->front.size() != this->index->Size() || (!this->back.empty() && this->back.size() != this->front.size()))
+            throw std::invalid_argument("Surface shaded field requires one colour per node and side");
+    }
+    MathColour IntegratedRadiance() const override { return integral; }
+    void AccumulateGuide(SurfaceAngularGuide& guide, double scale = 1.0) const override { Guide(guide, scale); }
+    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData*) const override
+    {
+        const double cosine = dot(normal, outgoing);
+        const std::vector<MathColour>& side = cosine > 0.0 ? front : back;
+        if (!(cosine != 0.0) || side.empty()) return MathColour();
+        SurfaceNodeIndex::Weights weights;
+        index->Interpolate(hit.IPoint, normal, weights);
+        return Blend(weights, [&](std::uint32_t node) -> const MathColour& { return side[node]; });
+    }
+private:
+    std::vector<MathColour> front, back;
+};
+
 /// The brilliance of every diffuse finish an object's materials can show, sorted.
 inline std::vector<double> SurfaceDiffuseClasses(ConstObjectPtr object)
 {
@@ -241,6 +267,56 @@ public:
 private:
     std::shared_ptr<const SurfaceBounceRadiance> field;
     MathColour tint;
+};
+
+/// A surface light's own emission scaled per channel: what its own object receives of it under `self`.
+class TintedSurfaceEmitter final : public Emitter
+{
+public:
+    TintedSurfaceEmitter(std::shared_ptr<const Emitter> primary, const MathColour& tint) :
+        primary(std::move(primary)), tint(tint), intensity(this->primary->Intensity() * tint) {}
+    bool IsSurface() const override { return true; }
+    void ResolveGeometry() const override { primary->ResolveGeometry(); }
+    void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { primary->AccumulateSurfaceGuide(target); }
+    const Vector3d& Centre() const override { return primary->Centre(); }
+    double Radius() const override { return primary->Radius(); }
+    double Reach(const Vector3d& from) const override { return primary->Reach(from); }
+    const MathColour& Intensity() const override { return intensity; }
+    MathColour SurfaceRadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
+    {
+        return primary->SurfaceRadianceAt(hit, normal, outgoing, td) * tint;
+    }
+    EmitterSample Sample(double s, std::uint64_t key, TraceThreadData* td = nullptr) const override
+    {
+        EmitterSample sample = primary->Sample(s, key, td);
+        sample.weight *= tint;
+        return sample;
+    }
+    bool SampleToward(const Vector3d& from, const EmitterDraw& draw, TraceThreadData* td, EmitterSample& sample) const override
+    {
+        if (!primary->SampleToward(from, draw, td, sample)) return false;
+        sample.weight *= tint;
+        return !sample.weight.IsZero();
+    }
+    MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const override
+    {
+        return primary->PhotonEmissionWeight(sample, outgoing) * tint;
+    }
+    MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing, TraceThreadData* td) const override
+    {
+        return primary->PhotonEmissionWeight(sample, outgoing, td) * tint;
+    }
+    double PhotonDirectionWeight(const EmitterSample& sample, const Vector3d& outgoing) const override
+    {
+        return primary->PhotonDirectionWeight(sample, outgoing);
+    }
+    Vector3d Direction(const EmitterSample& sample, double u, double v, double& pdf) const override
+    {
+        return primary->Direction(sample, u, v, pdf);
+    }
+private:
+    std::shared_ptr<const Emitter> primary;
+    MathColour tint, intensity;
 };
 
 class BouncedSurfaceEmitter final : public Emitter

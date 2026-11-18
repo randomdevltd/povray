@@ -617,6 +617,9 @@ EXTRA_DIST = \\
   tools/bench/check-finite-bounds.sh tools/bench/check-halfspace-bounds.sh \\
   tests/source/finite_bounds.cpp tests/source/finite_geometry_bounds.cpp \\
   tests/source/halfspace_bounds.cpp \\
+  tools/bench/check-surface-boxes.sh tests/source/surface_boxes.cpp \\
+  tools/bench/check-box-classes.sh tests/source/box_classes.cpp \\
+  tools/bench/check-surface-cells.sh tests/source/surface_cells.cpp \\
   povray.ini.in changes.txt revision.txt
 
 # Additional files to clean with 'make distclean'.
@@ -635,6 +638,9 @@ check-quick: all
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-halfspace-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/halfspace-bounds"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-finite-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/finite-bounds"
+	+sh "\$(top_srcdir)/tools/bench/check-surface-boxes.sh" "\$(top_builddir)" "\$(top_builddir)/tests/surface-boxes"
+	+sh "\$(top_srcdir)/tools/bench/check-box-classes.sh" "\$(top_builddir)" "\$(top_builddir)/tests/box-classes"
+	+sh "\$(top_srcdir)/tools/bench/check-surface-cells.sh" "\$(top_builddir)" "\$(top_builddir)/tests/surface-cells"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/distribution/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/distribution/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -672,14 +678,20 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_internal_hosts.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_coincident_seams.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cell_face.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_far_groups.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/sphere_sweep_cubic_roots.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/revolved_solid_roots.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/buried_walk_roots.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_volume_self.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_translucency_zero.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cavity_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_crease_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_concave_step.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_single_seam.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_boundaries.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_ballistic.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_body_density.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_union_methods.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/photon_hidden_target.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/photon_only.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/photon_ring_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -724,11 +736,15 @@ check-quick: all
 	./worker_pool_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/mesh_pool_stop.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o mesh_pool_stop_test
 	./mesh_pool_stop_test
+	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_preparation.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o surface_preparation_test
+	./surface_preparation_test
+	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_map.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o surface_map_test
+	./surface_map_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/subsurface_help.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o subsurface_help_test
 	./subsurface_help_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/subsurface_memory.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o subsurface_memory_test
 	./subsurface_memory_test
-	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test subsurface_help_test subsurface_memory_test
+	rm -f surface_preparation_test surface_map_test bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test subsurface_help_test subsurface_memory_test
 	mkdir -p \$(top_builddir)/tests/subsurface-internal-sweep
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_sweep.cpp" \\
@@ -739,6 +755,11 @@ check-quick: all
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/sphere_sweep_oracle.cpp" \\
 	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/sphere-sweep-oracle/sphere_sweep_oracle.o" \\
 	  PREPARED_BINARY="\$(abs_top_builddir)/tests/sphere-sweep-oracle/sphere_sweep_oracle_test"
+	mkdir -p \$(top_builddir)/tests/buried-walk-roots
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
+	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/buried_walk_roots.cpp" \\
+	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/buried-walk-roots/buried_walk_roots.o" \\
+	  PREPARED_BINARY="\$(abs_top_builddir)/tests/buried-walk-roots/buried_walk_roots_test"
 	mkdir -p \$(top_builddir)/tests/subsurface-internal-boundary
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_boundary.cpp" \\
@@ -768,6 +789,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/trace_limit.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_legacy_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/domain_cells.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/surface_domain_cells.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/deleted_media_syntax.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/surface_part_accuracy.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_transport.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -802,6 +824,7 @@ check-heavy: check-quick
 	sh \$(top_srcdir)/tests/render/media_refraction.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/refraction_detail.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/bounce_self.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/bounce_passes.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 
 # Install scripts in povlibdir.
 nobase_povlib_SCRIPTS = `echo $scriptfiles`

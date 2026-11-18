@@ -72,6 +72,11 @@ class RenderStatistics;
 
 int Solve_Polynomial (int n, const DBL *c, DBL *r, int sturm, DBL epsilon, RenderStatistics& stats);
 
+/// Every real root of c[0] x^n + ... + c[n], ascending, each to the rounding of the polynomial's own value: for a
+/// precise boundary query, whatever the size of the shape or of its coefficients. Only exactly zero leading
+/// coefficients lower the order.
+int Solve_Polynomial_Precise (int n, const DBL *c, DBL *r, RenderStatistics& stats);
+
 /// @}
 ///
 //##############################################################################

@@ -41,6 +41,8 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <string>
 
 // POV-Ray header files (base module)
@@ -144,6 +146,9 @@ std::string& ObjectDebugHelper::SimpleDesc(std::string& result)
 
 static bool Ray_Enters_Object_BBox(ConstObjectPtr object, const Ray& ray)
 {
+    // a float box against a float origin can shut out a precise query starting a rounding inside one of its faces
+    if (ray.PreciseRoots())
+        return true;
     const Vector3d tmp(1.0 / ray.GetDirection()[X], 1.0 / ray.GetDirection()[Y], 1.0 / ray.GetDirection()[Z]);
     const BBoxVector3d invdir(tmp);
     const BBoxDirection variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
@@ -392,6 +397,7 @@ void Translate_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM
     if (Object->surfaceLight && Object->surfaceLight->pigment)
         Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
+    Compose_Transforms(&Object->surfaceCopy.since, Trans);
     Object->Translate(Vector, Trans);
 }
 
@@ -453,6 +459,7 @@ void Rotate_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM *T
     if (Object->surfaceLight && Object->surfaceLight->pigment)
         Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
+    Compose_Transforms(&Object->surfaceCopy.since, Trans);
     Object->Rotate(Vector, Trans);
 }
 
@@ -512,6 +519,7 @@ void Scale_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM *Tr
     if (Object->surfaceLight && Object->surfaceLight->pigment)
         Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
+    Compose_Transforms(&Object->surfaceCopy.since, Trans);
     Object->Scale(Vector, Trans);
 }
 
@@ -573,6 +581,7 @@ void Transform_Object (ObjectPtr Object, const TRANSFORM *Trans)
     if (Object->surfaceLight && Object->surfaceLight->pigment)
         Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
+    Compose_Transforms(&Object->surfaceCopy.since, Trans);
     Object->Transform(Trans);
 }
 
@@ -604,6 +613,13 @@ void Transform_Object (ObjectPtr Object, const TRANSFORM *Trans)
 *
 ******************************************************************************/
 
+// Lineages change while copies are made on several threads at once.
+static std::mutex& Lineage_Mutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
 ObjectPtr Copy_Object (ObjectPtr Old)
 {
     ObjectPtr New;
@@ -612,6 +628,23 @@ ObjectPtr Copy_Object (ObjectPtr Old)
         return nullptr;
 
     New = Old->Copy();
+    // a copy is the same geometry as its original: both join (or are already in) one lineage
+    {
+        std::lock_guard<std::mutex> lock(Lineage_Mutex());
+        if (Old->surfaceCopy.lineage == nullptr)
+        {
+            const auto lineage = std::make_shared<SurfaceLineage>();
+            MIdentity(Old->surfaceCopy.since.matrix);
+            MIdentity(Old->surfaceCopy.since.inverse);
+            Old->surfaceCopy.ordinal = lineage->made++;
+            lineage->live[Old->surfaceCopy.ordinal] = Old;
+            // published last, for a map reading it without the lock
+            std::atomic_store(&Old->surfaceCopy.lineage, lineage);
+        }
+        New->surfaceCopy = Old->surfaceCopy;
+        New->surfaceCopy.ordinal = New->surfaceCopy.lineage->made++;
+        New->surfaceCopy.lineage->live[New->surfaceCopy.ordinal] = New;
+    }
 
     /*
      * The following copying of OBJECT_FIELDS is redundant if Copy
@@ -627,6 +660,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Flags   = Old->Flags & ~FRAME_TARGET_FLAG;
     New->tags = Old->tags;
     New->inheritTags = Old->inheritTags;
+    New->subsurfaceDomainCells = Old->subsurfaceDomainCells;
     New->photonTargetGroup = Old->photonTargetGroup;
     New->surfaceLight = Old->surfaceLight ? std::make_shared<MediaLight>(*Old->surfaceLight) : nullptr;
 
@@ -751,6 +785,9 @@ void Destroy_Object(ObjectPtr Object)
         if (DestroyClip)
             Destroy_Object(Object->Clip);
 
+        // an intersection whose copies classify with its children hands them over first
+        if (CSGIntersection *intersection = dynamic_cast<CSGIntersection *>(Object))
+            intersection->Release_Cells();
         if (dynamic_cast<CompoundObject *>(Object) != nullptr)
             Destroy_Object ((dynamic_cast<CompoundObject *> (Object))->children);
 
@@ -758,9 +795,39 @@ void Destroy_Object(ObjectPtr Object)
     }
 }
 
+static void Leave_Lineage(ObjectPtr object, bool inside)
+{
+    SurfaceCopy& copy = object->surfaceCopy;
+    {
+        std::lock_guard<std::mutex> lock(Lineage_Mutex());
+        if (copy.lineage != nullptr)
+        {
+            auto at = copy.lineage->live.find(copy.ordinal);
+            if ((at != copy.lineage->live.end()) && (at->second == object))
+                copy.lineage->live.erase(at);
+        }
+        std::atomic_store(&copy.lineage, std::shared_ptr<SurfaceLineage>());
+    }
+    if (CompoundObject *compound = inside ? dynamic_cast<CompoundObject *>(object) : nullptr)
+        for (ObjectPtr child : compound->children)
+            Leave_Lineage(child, true);
+}
+
 ObjectBase::~ObjectBase()
 {
     Destroy_Transform(Trans);
+    Leave_Lineage(this, false);
+}
+
+void Leave_Lineage(ObjectPtr object)
+{
+    Leave_Lineage(object, true);
+}
+
+ObjectPtr First_Surface_Copy(const SurfaceLineage& lineage)
+{
+    std::lock_guard<std::mutex> lock(Lineage_Mutex());
+    return static_cast<ObjectPtr>(const_cast<void*>(lineage.live.begin()->second));
 }
 
 
@@ -837,6 +904,141 @@ ObjectPtr CompoundObject::Invert()
 bool CompoundObject::ReturnsAllRoots() const
 {
     return std::all_of(children.begin(), children.end(), [](ConstObjectPtr child) { return child->ReturnsAllRoots(); });
+}
+
+BoxClass ObjectBase::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    return Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+BoxClass Classify_Object(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld)
+{
+    // a clip keeps only the hits and inside points inside it
+    BoxClass result = object->Classify_Box(lo, hi, toWorld);
+    for (ConstObjectPtr clip : object->Clip)
+    {
+        if (result == BoxClass::Outside)
+            break;
+        const BoxClass c = Classify_Object(clip, lo, hi, toWorld);
+        if (c == BoxClass::Outside)
+            return BoxClass::Outside;
+        if (c != BoxClass::Inside)
+            result = BoxClass::Unknown;
+    }
+    return result;
+}
+
+bool Has_Box_Test(ConstObjectPtr object)
+{
+    return object->Has_Box_Test() || std::any_of(object->Clip.begin(), object->Clip.end(), [](ConstObjectPtr c) { return Has_Box_Test(c); });
+}
+
+bool SurfaceQuery::Bounded() const
+{
+    for (int a = X; a <= Z; ++a)
+        if (!std::isfinite(low[a]) || !std::isfinite(high[a]))
+            return false;
+    return true;
+}
+
+double SurfaceQuery::Fineness() const
+{
+    if (fineness > 0.0)
+        return fineness;
+    return Bounded() ? std::max(high[X] - low[X], std::max(high[Y] - low[Y], high[Z] - low[Z])) : HUGE_VAL;
+}
+
+bool ObjectBase::Surface_Extent(double, Vector3d& low, Vector3d& high) const
+{
+    Make_min_max_from_BBox(low, high, BBox);
+    return true;
+}
+
+void ObjectBase::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery&) const
+{
+    SurfaceBox box;
+    box.box = BBox;
+    box.piece = firstPiece;
+    visitor.Visit(box);
+}
+
+std::uint32_t CompoundObject::Surface_Leaves() const
+{
+    std::uint32_t count = 0;
+    for (ConstObjectPtr child : children)
+        count += child->Surface_Leaves();
+    return count;
+}
+
+bool CompoundObject::Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool, std::uint32_t& piece,
+                                       std::uint32_t& leaf) const
+{
+    // the children are parts of this object's piece
+    for (ConstObjectPtr child : children)
+    {
+        std::uint32_t childPiece = piece, childLeaf = leaf;
+        if (child->Find_Surface_Leaf(leafObject, point, false, childPiece, childLeaf))
+        {
+            leaf = childLeaf;
+            return true;
+        }
+        leaf += child->Surface_Leaves();
+    }
+    return false;
+}
+
+ObjectPtr CompoundObject::Surface_Leaf(std::uint32_t leaf)
+{
+    for (ObjectPtr child : children)
+    {
+        const std::uint32_t count = child->Surface_Leaves();
+        if (leaf < count)
+            return child->Surface_Leaf(leaf);
+        leaf -= count;
+    }
+    return nullptr;
+}
+
+bool Surface_Part(ConstObjectPtr object, const Intersection& hit, std::uint32_t& piece, std::uint32_t& leaf)
+{
+    // a portal stamps itself on the hits of its window
+    if ((hit.Csg != nullptr) && Test_Flag(hit.Csg, PORTAL_FLAG))
+        return false;
+    piece = leaf = 0;
+    if (object->Find_Surface_Leaf(hit.Object, hit.IPoint, true, piece, leaf))
+        return true;
+    // a hit past its child's padded box: a point that is not finite asks every child
+    piece = leaf = 0;
+    return object->Find_Surface_Leaf(hit.Object, Vector3d(std::numeric_limits<double>::quiet_NaN()), true, piece, leaf);
+}
+
+void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& high, std::vector<SurfaceBox>& out, double fineness)
+{
+    class Within final : public SurfaceBoxVisitor
+    {
+        public:
+            Within(const Vector3d& l, const Vector3d& h, std::vector<SurfaceBox>& o) : low(l), high(h), out(o) {}
+            bool Enter(const Vector3d& a, const Vector3d& b) override
+            {
+                return (a.x() <= high.x()) && (a.y() <= high.y()) && (a.z() <= high.z()) &&
+                       (b.x() >= low.x()) && (b.y() >= low.y()) && (b.z() >= low.z());
+            }
+            void Visit(const SurfaceBox& box) override
+            {
+                Vector3d a, b;
+                Make_min_max_from_BBox(a, b, box.box);
+                if (Enter(a, b))
+                    out.push_back(box);
+            }
+        private:
+            const Vector3d low, high;
+            std::vector<SurfaceBox>& out;
+    } within(low, high, out);
+    SurfaceQuery query;
+    query.low = low;
+    query.high = high;
+    query.fineness = fineness;
+    object->Visit_Surface_Boxes(within, 0, query);
 }
 
 bool ObjectBase::Intersect_BBox(BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, BBoxScalar maxd) const

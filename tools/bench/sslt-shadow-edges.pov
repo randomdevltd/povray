@@ -4,7 +4,6 @@
 #ifndef (Diffuse) #declare Diffuse = 74; #end
 #ifndef (Single) #declare Single = 21; #end
 #ifndef (Method) #declare Method = 1; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (Subsurface) #declare Subsurface = 1; #end
 #ifndef (Shape) #declare Shape = 0; #end
 #ifndef (Mfp) #declare Mfp = 0.2; #end
@@ -12,7 +11,7 @@
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 10
-  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing } #end
+  #if (Subsurface) subsurface { samples Diffuse, Single method Method } #end
 }
 
 camera { perspective location <0, 2.3, -4.3> look_at <0, 0.25, 0.2> angle 46 right x * 4 / 3 }

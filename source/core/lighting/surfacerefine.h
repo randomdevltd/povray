@@ -2,773 +2,646 @@
 #define POVRAY_CORE_LIGHTING_SURFACEREFINE_H
 
 #include "core/configcore.h"
-#include "core/lighting/bounceincident.h"
 #include "core/lighting/bounceorders.h"
-#include "core/lighting/subsurfaceboundary.h"
 #include "core/lighting/surfacebounce.h"
-#include "core/math/randomsequence.h"
-#include "core/scene/scenedata.h"
+#include "core/lighting/surfacemap.h"
+#include "core/render/trace.h"
 #include "core/support/preparationprogress.h"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <deque>
 #include <functional>
-#include <memory>
-#include <numeric>
+#include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
-
-// A debug build may set a level that every node is split to, ignoring the budget, to render references.
-#ifndef POV_SURFACE_BOUNCE_UNIFORM
-#define POV_SURFACE_BOUNCE_UNIFORM 0
-#endif
 
 namespace pov
 {
 namespace surface_refine
 {
 
-// Every length below is a ratio of the baseline spacing, which follows the scene's total bounce area.
-constexpr std::size_t kBaseline = 4096;      // level 0 nodes over the whole scene's bounce area
-constexpr unsigned kLevels = 6;              // the finest spacing is the baseline's over 2^kLevels
-constexpr double kTolerance = 0.1;           // relative error of local irradiance that splits a node
-constexpr unsigned kFirstDraws = 4;          // draws a node starts with, the node itself first
-constexpr unsigned kTrusted = 8;             // fewest draws whose spread is trusted as the node's error
-constexpr unsigned kMostNodeDraws = 64;      // draws a node may grow to while its verdict or value is uncertain
-constexpr double kNeededDraws = 4.0;         // most draws over those its own variance needs to resolve the tolerance
-constexpr unsigned kChildDraws = 16;         // surface draws about a split node that may become its children
-constexpr unsigned kAreaDraws = 64;          // surface draws about a split node that share its area among it and them
-constexpr double kCoverStep = 1.0e-6;        // distance, over its part's radius, within which another surface seals a point
-constexpr double kPacking = 0.68;            // nodes per squared spacing of a maximal Poisson disc set
-constexpr double kFacing = 0.5;              // least cosine between normals of one sheet
-constexpr std::size_t kProbe = 256;          // first area draws of a part
-constexpr std::size_t kDrawsPerSeed = 8;     // area draws per expected level 0 node
-constexpr std::size_t kMostDraws = std::size_t(1) << 22;
-constexpr std::size_t kChunk = 65536;
+using surface_map::Coords;
+using surface_map::Map;
 
-/// The opaque solids that may seal a part's surface, and the part: a point is buried where another surface passes within
-/// a vanishing distance along every probe line through it, sealed where no ray reaches, whatever either encloses.
-struct Cover final
-{
-    std::vector<ObjectPtr> solids;
-    ObjectPtr owner = nullptr;
-    double radius = 0.0;
-    bool Buried(const Vector3d& point, const Vector3d& normal, TraceThreadData* td) const
-    {
-        Vector3d t1, t2;
-        SurfaceGeometrySampler::TangentFrame(normal, t1, t2);
-        const Vector3d probes[] = {normal, normal + t1, normal - t1, normal + t2, normal - t2};
-        for (const Vector3d& probe : probes)
-            if (Surfaces(point, probe.normalized(), td) < 2) return false;
-        return true;
-    }
-    // Distinct surfaces the line through `point` along unit `direction` crosses within the vanishing distance; each
-    // probe starts a part's radius back, clear of any absolute intersection tolerance.
-    std::size_t Surfaces(const Vector3d& point, const Vector3d& direction, TraceThreadData* td) const
-    {
-        const double step = kCoverStep * radius;
-        TraceTicket ticket(1, 0.0);
-        Ray ray(ticket, point - direction * radius, direction);
-        IStack stack(td->stackPool);
-        std::vector<std::pair<ConstObjectPtr, double>> hits;
-        auto cross = [&](ObjectPtr object)
-        {
-            for (int a = X; a <= Z; ++a)
-            {
-                const double low = object->BBox.lowerLeft[a], high = low + object->BBox.size[a];
-                // Single-precision boxes may round inward by a few units in the last place.
-                const double margin = step + std::ldexp(std::fabs(low) + std::fabs(high) + std::fabs(point[a]), -20);
-                if (point[a] < low - margin || point[a] > high + margin) return;
-            }
-            object->All_Intersections(ray, stack, td);
-            for (; !stack->empty(); stack->pop())
-                if (std::fabs(stack->top().Depth - radius) <= step)
-                    hits.emplace_back(stack->top().Object, stack->top().Depth);
-        };
-        cross(owner);
-        for (ObjectPtr solid : solids) cross(solid);
-        std::sort(hits.begin(), hits.end());
-        return std::unique(hits.begin(), hits.end()) - hits.begin();
-    }
-};
-
-/// One bounce target's surface, over every order: its area draws, level 0 nodes and their areas.
+/// One surface bounce light: its map, whose points are the light's points, and the points it may shade.
 struct Part final
 {
     ObjectPtr owner = nullptr;
-    std::shared_ptr<const SurfaceGeometrySampler> sampler;
-    std::vector<double> classes;
-    Cover cover;
-    double area = 0.0;
-    std::size_t draws = 0;
-    std::vector<SurfaceGeometrySample> pool;
-    std::vector<std::size_t> seeds;
-    std::vector<double> seedAreas;
-    std::size_t NodeBytes(bool subsurface) const
-    {
-        return sizeof(Vector3d) + 4 * sizeof(float) + 1 + 2 * classes.size() * sizeof(MathColour) + sizeof(float) +
-               (subsurface ? sizeof(MathColour) + sizeof(float) : 0);
-    }
+    surface_map::Instance map;
+    bool inside = false;                         // seen from inside too: an open surface, or one holding a light
+    std::size_t budget = 0;
+    unsigned directions = 0;                     // view directions each point's view-dependent light is averaged over
+    bool keepHits = false;                       // later passes shade the same points again
+    bool internal = false;                       // exports only the light of volume emitters it holds, carried out from inside
 };
 
-struct Node final
+/// The light's points, each shaded once: where, facing which way, the area each stands for, and what each exports.
+struct Layout final
 {
-    Intersection hit;
-    Vector3d normal;
-    double area = 0.0;
-    unsigned level = 0;
-    std::uint32_t part = 0;
-    std::uint64_t key = 0;
-    unsigned draws = 0, samples = 0;
-    std::vector<MathColour> sums;
-    MathColour entry;
-    double eta = 1.0;
-    double sum = 0.0, square = 0.0, near = 0.0, nearWeight = 0.0;
-    double half[2][2][3] = {};
-    void Reset()
-    {
-        draws = samples = 0;
-        sums.assign(sums.size(), MathColour());
-        entry = MathColour();
-        eta = 1.0;
-        sum = square = near = nearWeight = 0.0;
-        std::fill(&half[0][0][0], &half[0][0][0] + 12, 0.0);
-    }
-    double Mean() const { return samples ? sum / samples : 0.0; }
-    double Error() const
-    {
-        if (samples < 2) return HUGE_VAL;
-        const double mean = Mean();
-        return std::sqrt(std::max(0.0, (square - samples * mean * mean) / (samples - 1)) / samples);
-    }
+    std::vector<Vector3d> points, normals;
+    std::vector<double> spacings, areas;
+    std::vector<MathColour> front, back;
+    std::vector<Intersection> hits;              // kept only for later passes
+    std::vector<std::uint64_t> ids;
 };
 
-/// What one order's refinement leaves for each part: its field, and its nodes for the subsurface bridge.
+/// The light's field over its points, and what placing them did; no points when its map found none.
 struct Result final
 {
+    Layout layout;
     std::shared_ptr<const SurfaceNodeIndex> index;
-    std::shared_ptr<const SurfaceBounceRadiance> diffuse;
-    std::vector<SurfaceBounceNode> nodes;
-    std::vector<MathColour> entry;
-    std::vector<double> etas, areas;
+    std::size_t points = 0;
+    std::vector<std::size_t> levels;             // points per finest cube level, from the coarsest holding any
+    std::string report;
 };
 
-// Standard errors an error must also exceed: the two-sided 99.9% Student t quantile for the estimate's degrees of freedom,
-// strict because every node of a scene is tested.
-inline double Confidence(double freedom)
+/// The field of one pass: each point's front and back light over the placed points.
+inline std::shared_ptr<const SurfaceShadedField> Field(const Result& result, const std::vector<MathColour>& fronts,
+                                                       const std::vector<MathColour>& backs)
 {
-    static const double table[] = {636.62, 31.599, 12.924, 8.610, 6.869, 5.959, 5.408, 5.041, 4.781, 4.587};
-    if (!(freedom >= 1.0)) return HUGE_VAL;
-    if (freedom < 10.5) return table[int(freedom + 0.5) - 1];
-    const double z = 3.290527;
-    return z + (z * z * z + z) / (4.0 * freedom) + (5.0 * std::pow(z, 5) + 16.0 * z * z * z + 3.0 * z) / (96.0 * freedom * freedom);
-}
-
-inline double Radical(std::uint64_t n, unsigned base)
-{
-    double result = 0.0, place = 1.0 / base;
-    while (n) { result += (n % base) * place; n /= base; place /= base; }
-    return result;
-}
-
-// Draw `index` of a node's rotated Halton sequence on the unit disc, by the concentric map.
-inline void DiscPoint(std::uint64_t key, std::uint64_t index, double& x, double& y)
-{
-    double u = Radical(index + 1, 2) + Draw(key, kDrawEmitter, 0), v = Radical(index + 1, 3) + Draw(key, kDrawEmitter, 1);
-    u = 2.0 * (u - std::floor(u)) - 1.0;
-    v = 2.0 * (v - std::floor(v)) - 1.0;
-    if (u == 0.0 && v == 0.0) { x = y = 0.0; return; }
-    double r, phi;
-    if (std::fabs(u) > std::fabs(v)) { r = u; phi = M_PI / 4.0 * v / u; }
-    else { r = v; phi = M_PI / 2.0 - M_PI / 4.0 * u / v; }
-    x = r * std::cos(phi);
-    y = r * std::sin(phi);
-}
-
-// The rotation taking unit `from` onto unit `to`, applied to `v`.
-inline Vector3d Rotate(const Vector3d& v, const Vector3d& from, const Vector3d& to)
-{
-    const double c = dot(from, to);
-    const Vector3d k = cross(from, to);
-    return v * c + cross(k, v) + k * (dot(k, v) / (1.0 + c));
-}
-
-/// Spatial hash of a part's nodes at one spacing, for the Poisson disc test among one sheet.
-class Grid final
-{
-public:
-    explicit Grid(double cell) : cell(cell) {}
-    void Insert(const Vector3d& point, std::size_t node) { cells[Key(point, 0, 0, 0)].push_back(node); }
-    template<class At>
-    bool Near(const Vector3d& point, const Vector3d& normal, double radius, const At& at) const
+    const auto& source = result.index->Source();
+    std::vector<MathColour> front(source.size()), back(source.size());
+    std::vector<float> weights(source.size());
+    MathColour integral;
+    bool open = false;
+    for (std::size_t t = 0; t < source.size(); ++t)
     {
-        for (int dx = -1; dx <= 1; ++dx)
-            for (int dy = -1; dy <= 1; ++dy)
-                for (int dz = -1; dz <= 1; ++dz)
+        const double area = result.layout.areas[source[t]];
+        front[t] = fronts[source[t]];
+        back[t] = backs[source[t]];
+        open = open || !back[t].IsZero();
+        weights[t] = float((front[t] + back[t]).Greyscale() * area);
+        integral += (front[t] + back[t]) * float(area);
+    }
+    if (!open) back.clear();
+    return std::make_shared<const SurfaceShadedField>(result.index, std::move(front), std::move(back), std::move(weights), integral);
+}
+
+inline std::uint64_t Bits(double value)
+{
+    std::uint64_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+/// Places one light's points and shades each once. Selected pieces start as the lattice cubes of their own
+/// box's size, read at the coarsest level, no coarser than the cubes, at which the piece shows a point. Then the single highest ranked cell is split,
+/// again and again, until the next split would shade past the light's budget of points: its eight children are read one level finer, their
+/// new points shaded, and the cell's own points kept, each in the child holding it. A child ranks by its parent's points,
+/// which bound it, each standing for the area a point of the parent's read stands for: by its error in exported power,
+/// how much they disagree with their mean plus their power's own counting error (power over the root of their count, the
+/// count being Poisson); then by their power; then by the power of those in it. So no cell's own read decides whether it
+/// is split. A leaf's area is its own read's estimate,
+/// unbiased by Cauchy-Crofton whatever was split, and every point in it, its own or kept from above, takes an equal share.
+/// The children of a cell holding no points are not split, nor is a cell where the map's coordinates no longer resolve
+/// the next level, so the splitting ends with the budget, or with the surface found.
+template<class Workers>
+Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shaders, const std::function<void()>& cooperate,
+             std::size_t units)
+{
+    Map& map = *part.map;
+    const surface_map::Instance& view = part.map;
+
+    // A shaded point, stored once: where it is in the map's frame (to give it to a child), where on this copy, its light.
+    struct Point final
+    {
+        Vector3d frame, at, normal;
+        double jacobian = 1.0;                   // this copy's area change at the point
+        MathColour front, back;
+        std::uint64_t id = 0;
+        Intersection hit;
+        double Value() const { return (front + back).Greyscale(); }
+    };
+    // A cell: one piece's surface in one lattice cube, read at line level `read`; its points are its own read's, then those
+    // its ancestors read inside it.
+    struct Cell final
+    {
+        std::uint32_t piece = 0;
+        int level = 0, read = 0;
+        Coords at{};
+        double area = 0.0;                       // its own read's estimate of the piece's area in its cube
+        double weight = 0.0;                     // the area a point of its read stands for, found or not
+        double inclusion = 1.0;                  // inverse probability of selecting this piece
+        std::vector<std::uint32_t> points;
+        std::size_t own = 0;
+        double rank = 0.0, power = 0.0, local = 0.0; // from its parent's points (local: those in it); a start cell's own
+        bool ranked = false;                     // its parent held points
+        std::uint64_t key = 0;
+        bool split = false;
+        double Share() const { return points.empty() ? 0.0 : area / double(points.size()); }
+    };
+    // A split's outcome before it is committed: its children, each with its own new points and the parent's it holds.
+    struct Child final
+    {
+        Cell cell;
+        std::vector<Point> fresh;
+    };
+    struct Split final
+    {
+        std::vector<Child> children;
+        std::size_t traced = 0;
+    };
+
+    std::deque<Point> store;
+    std::deque<Cell> cells;
+    // Where each piece's surface can be: one box per piece.
+    std::vector<SurfaceBox> boxes;
+    map.Boxes(boxes);
+    std::map<std::uint32_t, std::pair<Vector3d, Vector3d>> pieceBoxes;
+    for (const SurfaceBox& box : boxes)
+    {
+        Vector3d lo, hi;
+        Make_min_max_from_BBox(lo, hi, box.box);
+        const auto known = pieceBoxes.emplace(box.piece, std::make_pair(lo, hi));
+        for (int a = X; !known.second && a <= Z; ++a)
+        {
+            known.first->second.first[a] = std::min(known.first->second.first[a], lo[a]);
+            known.first->second.second[a] = std::max(known.first->second.second[a], hi[a]);
+        }
+    }
+    std::size_t shaded = 0, advanced = 0;
+    auto progress = [&]()
+    {
+        const std::size_t target = part.budget ? std::min(units, units * shaded / part.budget) : units;
+        if (target > advanced) { AdvancePreparation(workers.td->preparationProgress, target - advanced); advanced = target; }
+    };
+    auto keyOf = [](std::uint32_t piece, int level, const Coords& at)
+    {
+        std::uint64_t key = BounceOrderMix(BounceOrderMix(std::uint64_t(piece)) ^ std::uint64_t(std::int64_t(level)));
+        for (std::int64_t a : at) key = BounceOrderMix(key ^ std::uint64_t(a));
+        return key;
+    };
+    // The piece's part of a read; a piece has one surface box, so one part at most.
+    auto partOf = [](const Map::Points& points, std::uint32_t piece) -> const Map::Part*
+    {
+        const Map::Part* found = nullptr;
+        for (const Map::Part& p : points.parts)
+            if (p.region->Piece() == piece)
+            {
+                if (found) throw std::logic_error("Surface bounce found two surface boxes of one piece in one cube");
+                found = &p;
+            }
+        return found;
+    };
+    // The records of a piece's part, shaded once each, front and (seen from inside too) back.
+    auto shade = [&](const Map::Part& p, std::size_t worker, std::vector<Point>& out)
+    {
+        Trace* const shader = shaders[worker];
+        TraceThreadData* const td = workers.Thread(worker);
+        std::vector<Intersection> hits;
+        view.Hits(p, td, hits);
+        std::size_t n = 0;
+        for (const Map::Chunk* chunk : p.chunks)
+            for (std::size_t i = 0; i < chunk->records.size(); ++i, ++n)
+            {
+                // a root the map could not find again (it has warned) stands for no area
+                if (hits[n].Object == nullptr) continue;
+                const surface_map::Record& r = chunk->records[i];
+                Point point;
+                point.frame = Map::Position(p, r);
+                point.at = view.Position(p, r);
+                point.normal = view.Normal(r);
+                point.jacobian = view.Weight(p, r) / p.weight;
+                point.id = Map::Id(p, *chunk, i);
+                const ConstObjectPtr host = part.internal ? part.owner : nullptr;
+                point.front = shader->BounceExport(hits[n], point.normal, point.id, part.directions, host);
+                if (part.inside)
+                    point.back = shader->BounceExport(hits[n], -point.normal, BounceOrderMix(point.id), part.directions, host);
+                if (part.keepHits) point.hit = hits[n];
+                out.push_back(std::move(point));
+            }
+    };
+    auto lines = [](const Map::Part& p)
+    {
+        std::uint64_t count = 0;
+        for (const Map::Chunk* chunk : p.chunks) count += chunk->Lines();
+        return count;
+    };
+    // The mean value of a cell's points, which share its area equally.
+    auto meanOf = [&](const Cell& c)
+    {
+        double sum = 0.0;
+        for (std::uint32_t i : c.points) sum += store[i].Value();
+        return c.points.empty() ? 0.0 : sum / double(c.points.size());
+    };
+
+    // A cell's split, read and shaded entirely by one worker, so it is a function of the cell alone.
+    auto split = [&](const Cell& from, std::size_t worker, Split& out)
+    {
+        TraceThreadData* const td = workers.Thread(worker);
+        const double side = map.Spacing(from.level + 1);
+        std::vector<std::vector<std::uint32_t>> inherited(8);
+        for (std::uint32_t i : from.points)
+        {
+            int o = 0;
+            for (int a = X; a <= Z; ++a)
+            {
+                const std::int64_t k = std::int64_t(std::floor((store[i].frame[a] - map.Origin()[a]) / side));
+                o |= int(std::min<std::int64_t>(1, std::max<std::int64_t>(0, k - 2 * from.at[a]))) << a;
+            }
+            inherited[o].push_back(i);
+        }
+        const double mean = meanOf(from), share = from.weight;
+        for (int o = 0; o < 8; ++o)
+        {
+            Child child;
+            Cell& c = child.cell;
+            c.piece = from.piece;
+            c.inclusion = from.inclusion;
+            c.level = from.level + 1;
+            c.read = from.read + 1;
+            c.at = {2 * from.at[X] + (o & 1), 2 * from.at[Y] + ((o >> 1) & 1), 2 * from.at[Z] + (o >> 2)};
+            c.key = keyOf(c.piece, c.level, c.at);
+            // the parent's points bound it, and those in it estimate it
+            c.ranked = !from.points.empty();
+            for (std::uint32_t i : from.points)
+            {
+                c.rank += share * store[i].jacobian * std::fabs(store[i].Value() - mean);
+                c.power += share * store[i].jacobian * store[i].Value();
+            }
+            if (c.ranked) c.rank += c.power / std::sqrt(double(from.points.size()));
+            for (std::uint32_t i : inherited[o])
+                c.local += share * store[i].jacobian * store[i].Value();
+            c.weight = from.weight;
+            // a cube the piece's box does not meet holds none of it, so it is not read
+            const auto box = pieceBoxes.find(c.piece);
+            bool meets = box != pieceBoxes.end();
+            for (int a = X; meets && a <= Z; ++a)
+            {
+                const double lo = map.Origin()[a] + map.Spacing(c.level) * double(c.at[a]), hi = lo + map.Spacing(c.level);
+                meets = lo <= box->second.second[a] && hi >= box->second.first[a];
+            }
+            if (!meets && inherited[o].empty())
+                continue;
+            const Map::Points points = meets ? map.Read(c.level, c.at, c.read, td) : Map::Points();
+            const Map::Part* p = partOf(points, c.piece);
+            if (p != nullptr)
+            {
+                c.weight = p->weight * c.inclusion;
+                out.traced += lines(*p);
+                shade(*p, worker, child.fresh);
+                for (const Point& point : child.fresh) c.area += point.jacobian * c.weight;
+            }
+            c.own = child.fresh.size();
+            c.points = inherited[o];
+            // a cube the piece's box does not meet holds none of it; one it meets is kept even when its read found none
+            if (p != nullptr || !c.points.empty()) out.children.push_back(std::move(child));
+        }
+    };
+
+    struct Entry final
+    {
+        double rank, power, local;
+        std::uint64_t key;
+        Cell* cell;
+        // The most disagreeing first; then the most power; then the most of it inside; then the lower key, piece, level and
+        // coordinates.
+        bool operator<(const Entry& o) const
+        {
+            if (rank != o.rank) return rank > o.rank;
+            if (power != o.power) return power > o.power;
+            if (local != o.local) return local > o.local;
+            if (key != o.key) return key < o.key;
+            if (cell->piece != o.cell->piece) return cell->piece < o.cell->piece;
+            if (cell->level != o.cell->level) return cell->level < o.cell->level;
+            return cell->at < o.cell->at;
+        }
+    };
+    std::set<Entry> queue;
+    std::size_t splits = 0, finished = 0, traced = 0;
+    // A committed cell joins the queue while it can be split: its parent held points and the next level resolves in it.
+    auto offer = [&](Cell* c)
+    {
+        if (c->ranked && map.Resolves(c->level, c->at, c->read + 1))
+            queue.insert(Entry{c->rank, c->power, c->local, c->key, c});
+        else
+            ++finished;
+    };
+    auto commit = [&](Child& child) -> Cell*
+    {
+        Cell c = std::move(child.cell);
+        std::vector<std::uint32_t> points;
+        for (Point& p : child.fresh) { points.push_back(std::uint32_t(store.size())); store.push_back(std::move(p)); }
+        shaded += child.fresh.size();
+        points.insert(points.end(), c.points.begin(), c.points.end());
+        c.points = std::move(points);
+        cells.push_back(std::move(c));
+        return &cells.back();
+    };
+
+    // The start: selected pieces share the light's budget, searching their own cubes until a read finds points,
+    // its lines reach the piece's quota, or coordinates stop resolving; retained records preserve the read's area.
+    workers.Step("start");
+    std::vector<int> starts;
+    std::size_t missing = 0;
+    {
+        struct Piece final { std::uint32_t piece; int level; std::vector<Coords> cubes; std::size_t budget = 0; double inclusion = 1.0; };
+        std::vector<Piece> pieces;
+        for (const auto& box : pieceBoxes)
+        {
+            const Vector3d& lo = box.second.first;
+            const Vector3d& hi = box.second.second;
+            const double extent = std::max({hi[X] - lo[X], hi[Y] - lo[Y], hi[Z] - lo[Z]});
+            // the finest cubes no smaller than the box: it meets at most two along each axis
+            int level = extent > 0.0 ? map.LevelFor(extent) : 0;
+            if (extent > 0.0 && map.Spacing(level) < extent) --level;
+            level = std::max(level, 0);
+            Coords low, high;
+            const std::int64_t last = (level < 62) ? (std::int64_t(1) << level) - 1 : std::numeric_limits<std::int64_t>::max();
+            for (int a = X; a <= Z; ++a)
+            {
+                const auto index = [&](double v)
                 {
-                    const auto found = cells.find(Key(point, dx, dy, dz));
-                    if (found == cells.end()) continue;
-                    for (std::size_t node : found->second)
+                    const double k = std::floor((v - map.Origin()[a]) / map.Spacing(level));
+                    return std::int64_t(std::min(double(last), std::max(0.0, k)));
+                };
+                low[a] = index(lo[a]);
+                high[a] = index(hi[a]);
+            }
+            Piece piece{box.first, level, {}};
+            for (std::int64_t x = low[X]; x <= high[X]; ++x)
+                for (std::int64_t y = low[Y]; y <= high[Y]; ++y)
+                    for (std::int64_t z = low[Z]; z <= high[Z]; ++z)
+                        piece.cubes.push_back({x, y, z});
+            pieces.push_back(std::move(piece));
+        }
+        const std::size_t selected = std::min(part.budget, pieces.size());
+        for (std::size_t i = 0; i < selected; ++i)
+        {
+            const std::size_t lo = i * pieces.size() / selected, hi = (i + 1) * pieces.size() / selected;
+            const std::uint64_t key = keyOf(pieces[lo].piece, pieces[lo].level, pieces[lo].cubes.front());
+            Piece& piece = pieces[lo + BounceOrderMix(key) % (hi - lo)];
+            piece.budget = part.budget / selected + (i < part.budget % selected);
+            piece.inclusion = double(hi - lo);
+        }
+        // One scrambled representative per stratum spreads seeds across pieces without favouring their ordering.
+        struct Found final { int read = -1; std::vector<Child> children; };
+        std::vector<Found> found(pieces.size());
+        workers.For(pieces.size(), cooperate, [&](std::size_t index, std::size_t worker)
+        {
+            workers[worker].Watch(part.owner);
+            const Piece& piece = pieces[index];
+            if (piece.budget == 0) return;
+            TraceThreadData* const td = workers.Thread(worker);
+            for (int read = piece.level; ; ++read)
+            {
+                std::uint64_t probed = 0;
+                bool resolves = false, any = false;
+                std::vector<std::pair<Coords, const Map::Part*>> parts;
+                std::vector<Map::Points> reads;
+                reads.reserve(piece.cubes.size());
+                for (const Coords& k : piece.cubes)
+                {
+                    reads.push_back(map.Read(piece.level, k, read, td));
+                    resolves = resolves || reads.back().found != surface_map::Found::kPrecision;
+                    if (const Map::Part* p = partOf(reads.back(), piece.piece))
                     {
-                        Vector3d p, n;
-                        at(node, p, n);
-                        if ((p - point).lengthSqr() < radius * radius && dot(n, normal) > kFacing) return true;
+                        probed += lines(*p);
+                        std::size_t records = 0;
+                        for (const Map::Chunk* chunk : p->chunks) records += chunk->records.size();
+                        any = any || records > 0;
+                        parts.emplace_back(k, p);
                     }
                 }
-        return false;
-    }
-private:
-    std::uint64_t Key(const Vector3d& point, int dx, int dy, int dz) const
-    {
-        std::uint64_t key = 0;
-        const int offset[3] = {dx, dy, dz};
-        for (int a = 0; a < 3; ++a)
-            key = BounceOrderMix(key ^ std::uint64_t(std::int64_t(std::floor(point[a] / cell)) + offset[a]));
-        return key;
-    }
-    double cell;
-    std::unordered_map<std::uint64_t, std::vector<std::size_t>> cells;
-};
-
-/// Draws each part's surface by its area, sets the scene's baseline spacing from the total, and picks level 0 nodes as a
-/// Poisson disc set of the draws, each sheet apart; returns the baseline spacing.
-template<class Workers>
-double Seed(std::vector<Part>& parts, Workers& workers, std::size_t baseline, const std::function<void()>& cooperate)
-{
-    auto drawChunk = [&](Part& part, std::size_t first, std::size_t last, std::uint64_t partKey)
-    {
-        std::vector<SurfaceGeometrySample> chunk(last - first);
-        std::vector<char> hit(last - first, 0);
-        workers.For(last - first, cooperate, [&](std::size_t i, std::size_t worker)
-        {
-            TraceTicket ticket(1, 0.0);
-            Ray ray(ticket);
-            const std::uint64_t key = DeriveKey(partKey, kDrawEmitter, first + i);
-            TraceThreadData* const td = workers.Thread(worker);
-            hit[i] = part.sampler->SampleArea(ray, td, Radical(first + i + 1, 2), Draw(key, kDrawEmitter, 0),
-                                              Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), chunk[i]) &&
-                     !part.cover.Buried(chunk[i].intersection.IPoint, chunk[i].normal, td);
-        }, 0);
-        for (std::size_t i = 0; i < chunk.size(); ++i)
-            if (hit[i])
-            {
-                part.area += chunk[i].areaWeight;
-                part.pool.push_back(std::move(chunk[i]));
-            }
-        part.draws = last;
-    };
-    auto partKey = [](std::size_t p) { return BounceOrderSeed(UINT64_C(0x7365656473757266), p, 0, 0); };
-    for (std::size_t p = 0; p < parts.size(); ++p)
-    {
-        Part& part = parts[p];
-        drawChunk(part, 0, kProbe, partKey(p));
-        for (std::size_t last = kChunk; part.pool.empty() && last <= kChunk * 4; last += kChunk)
-            drawChunk(part, part.draws, last, partKey(p));
-        if (part.pool.empty())
-            throw std::runtime_error("Surface bounce preparation found no surface samples");
-    }
-    // The spacing follows the scene's area as every draw so far estimates it; parts draw on until each has enough per node.
-    double spacing = 0.0;
-    for (bool more = true; more;)
-    {
-        double total = 0.0;
-        for (const Part& part : parts) total += part.area / part.draws;
-        spacing = std::sqrt(kPacking * total / double(baseline));
-        more = false;
-        for (std::size_t p = 0; p < parts.size(); ++p)
-        {
-            Part& part = parts[p];
-            const double expected = std::max(1.0, kPacking * part.area / part.draws / (spacing * spacing));
-            const double rate = double(part.pool.size()) / part.draws;
-            const std::size_t wanted = std::min<std::size_t>(kMostDraws, std::size_t(std::ceil(kDrawsPerSeed * expected / rate)));
-            more = more || part.draws < wanted;
-            while (part.draws < wanted)
-                drawChunk(part, part.draws, std::min(wanted, part.draws + kChunk), partKey(p));
-        }
-    }
-    for (std::size_t p = 0; p < parts.size(); ++p)
-    {
-        Part& part = parts[p];
-        Grid grid(spacing);
-        auto at = [&](std::size_t i, Vector3d& point, Vector3d& normal)
-        {
-            point = part.pool[part.seeds[i]].intersection.IPoint;
-            normal = part.pool[part.seeds[i]].normal;
-        };
-        for (std::size_t i = 0; i < part.pool.size(); ++i)
-        {
-            const SurfaceGeometrySample& draw = part.pool[i];
-            if (grid.Near(draw.intersection.IPoint, draw.normal, spacing, at)) continue;
-            grid.Insert(draw.intersection.IPoint, part.seeds.size());
-            part.seeds.push_back(i);
-        }
-        std::vector<Vector3d> points, normals;
-        for (std::size_t seed : part.seeds)
-        {
-            points.push_back(part.pool[seed].intersection.IPoint);
-            normals.push_back(part.pool[seed].normal);
-        }
-        const SurfaceNodeIndex index(points, normals, std::vector<double>(points.size(), spacing));
-        part.seedAreas.assign(part.seeds.size(), 0.0);
-        std::vector<std::size_t> owner(part.pool.size());
-        workers.For(part.pool.size(), cooperate, [&](std::size_t i, std::size_t)
-        {
-            owner[i] = index.Source()[index.Nearest(part.pool[i].intersection.IPoint, part.pool[i].normal)];
-        }, 0);
-        for (std::size_t i = 0; i < part.pool.size(); ++i)
-            part.seedAreas[owner[i]] += part.pool[i].areaWeight / part.draws;
-        part.area /= part.draws;
-    }
-    return spacing;
-}
-
-/// Refines one order's surface bounce fields over every part at once.
-template<class Workers>
-class Order final
-{
-public:
-    Order(Workers& workers, std::vector<Part>& parts, const std::vector<std::size_t>& active,
-          const std::vector<Sources>& sources, unsigned order, double baseline,
-          std::size_t allowance, const std::vector<Trace*>& entries, const std::function<void()>& cooperate, std::size_t units) :
-        workers(workers), parts(parts), active(active), sources(sources), order(order), baseline(baseline),
-        allowance(allowance), subsurface(!entries.empty()), entries(entries), cooperate(cooperate), units(units)
-    {
-    }
-
-    std::vector<Result> Run(const std::string& step)
-    {
-        for (std::size_t a = 0; a < active.size(); ++a)
-        {
-            const Part& part = parts[active[a]];
-            for (std::size_t s = 0; s < part.seeds.size(); ++s)
-            {
-                Node node;
-                node.hit = part.pool[part.seeds[s]].intersection;
-                node.normal = part.pool[part.seeds[s]].normal;
-                node.area = part.seedAreas[s];
-                node.part = std::uint32_t(a);
-                node.key = BounceOrderSeed(UINT64_C(0x6e6f646573757266), active[a], s, 0);
-                node.sums.assign(2 * part.classes.size(), MathColour());
-                bytes += part.NodeBytes(subsurface);
-                nodes.push_back(std::move(node));
-            }
-        }
-        std::vector<std::size_t> fresh(nodes.size());
-        std::iota(fresh.begin(), fresh.end(), std::size_t(0));
-        std::size_t remaining = units;
-        for (level = 0;; ++level)
-        {
-            workers.Step(step + " l" + std::to_string(level) + " n" + std::to_string(nodes.size()));
-            const std::size_t share = level == kLevels ? remaining : remaining / 2;
-            remaining -= share;
-            Measure(fresh, share);
-            Index();
-            std::vector<Verdict> verdicts(nodes.size());
-            for (;;)
-            {
-                std::vector<std::size_t> again;
-                workers.For(fresh.size(), cooperate, [&](std::size_t i, std::size_t)
+                if (parts.empty()) return;
+                if (any)
                 {
-                    verdicts[fresh[i]] = Decide(fresh[i]);
-                }, 0);
-                for (std::size_t i : fresh)
-                    if (verdicts[i].resample) again.push_back(i);
-                if (again.empty()) break;
-                Measure(again, 0, true);
-            }
-            if (level == kLevels) break;
-            std::vector<std::size_t> split;
-            for (std::size_t i : fresh)
-                if (verdicts[i].split)
-                {
-                    split.push_back(i);
-                    for (int c = 0; c < 3; ++c) reasons[c] += (verdicts[i].why >> c) & 1;
+                    found[index].read = read;
+                    std::size_t records = 0;
+                    double area = 0.0;
+                    for (const auto& kp : parts)
+                        for (const Map::Chunk* chunk : kp.second->chunks)
+                            for (const auto& record : chunk->records)
+                            {
+                                ++records;
+                                area += view.Weight(*kp.second, record);
+                            }
+                    const std::size_t retain = std::min(records, piece.budget);
+                    std::vector<std::size_t> representatives;
+                    const std::uint64_t key = keyOf(piece.piece, piece.level, piece.cubes.front());
+                    if (records > retain)
+                    {
+                        const std::size_t offset = BounceOrderMix(key) % records;
+                        for (std::size_t i = 0; i < retain; ++i)
+                        {
+                            const std::size_t lo = i * records / retain, hi = (i + 1) * records / retain;
+                            representatives.push_back((offset + lo + BounceOrderMix(key ^ BounceOrderMix(i)) % (hi - lo)) % records);
+                        }
+                        std::sort(representatives.begin(), representatives.end());
+                    }
+                    std::size_t ordinal = 0, next = 0;
+                    for (const auto& kp : parts)
+                    {
+                        Child child;
+                        Cell& c = child.cell;
+                        c.piece = piece.piece;
+                        c.inclusion = piece.inclusion;
+                        c.level = piece.level;
+                        c.read = read;
+                        c.at = kp.first;
+                        c.key = keyOf(c.piece, c.level, c.at);
+                        if (records <= retain)
+                        {
+                            c.weight = kp.second->weight;
+                            shade(*kp.second, worker, child.fresh);
+                            for (const Point& point : child.fresh) c.area += point.jacobian * c.weight;
+                            c.own = child.fresh.size();
+                            if (c.own > 0) found[index].children.push_back(std::move(child));
+                            continue;
+                        }
+                        Map::Part subset = *kp.second;
+                        subset.chunks.clear();
+                        std::deque<Map::Chunk> chunks;
+                        std::size_t count = 0, kept = 0;
+                        for (const Map::Chunk* chunk : kp.second->chunks)
+                        {
+                            chunks.emplace_back();
+                            Map::Chunk& copy = chunks.back();
+                            copy.SameLinesAs(*chunk);
+                            for (const auto& record : chunk->records)
+                            {
+                                ++count;
+                                if (next < retain && ordinal == representatives[next])
+                                {
+                                    copy.records.push_back(record);
+                                    ++kept;
+                                    ++next;
+                                }
+                                ++ordinal;
+                            }
+                            subset.chunks.push_back(&copy);
+                        }
+                        if (kept == 0) continue;
+                        subset.weight *= double(count) / double(kept);
+                        c.weight = subset.weight;
+                        shade(subset, worker, child.fresh);
+                        for (const Point& point : child.fresh) c.area += point.jacobian * subset.weight;
+                        c.own = child.fresh.size();
+                        if (c.own > 0) found[index].children.push_back(std::move(child));
+                    }
+                    double retainedArea = 0.0;
+                    for (const Child& child : found[index].children) retainedArea += child.cell.area;
+                    if (retainedArea > 0.0)
+                        for (Child& child : found[index].children)
+                        {
+                            child.cell.area *= piece.inclusion * area / retainedArea;
+                            child.cell.weight *= piece.inclusion * area / retainedArea;
+                        }
+                    return;
                 }
-            fresh = Split(split, verdicts);
-            if (fresh.empty())
+                if (!resolves || probed >= piece.budget) return;
+            }
+        }, 0);
+        for (std::size_t i = 0; i < pieces.size(); ++i)
+        {
+            if (found[i].read < 0) { ++missing; continue; }
+            starts.push_back(found[i].read - pieces[i].level);
+            // a start cell has no parent: its own points rank it
+            for (Child& child : found[i].children)
             {
-                AdvancePreparation(workers.td->preparationProgress, remaining);
+                Cell* const c = commit(child);
+                const double mean = meanOf(*c), share = c->weight;
+                for (std::uint32_t k : c->points)
+                {
+                    c->rank += share * store[k].jacobian * std::fabs(store[k].Value() - mean);
+                    c->power += share * store[k].jacobian * store[k].Value();
+                }
+                c->rank += c->power / std::sqrt(double(c->points.size()));
+                c->local = c->power;
+                c->ranked = true;
+                offer(c);
+            }
+        }
+    }
+    const std::size_t looked = shaded;
+    progress();
+
+    // The loop: the highest ranked cell is split and committed, its children ranked from their points and queued. The next
+    // highest cells are split ahead, one per worker, and held until the sequence reaches them, so the committed sequence is
+    // the one-at-a-time sequence on any thread count; held splits it never reaches are discarded.
+    workers.Step("splits");
+    std::map<const Cell*, Split> held;
+    std::size_t discarded = 0, wasted = 0;
+    bool full = false;
+    while (!full && shaded < part.budget && !queue.empty())
+    {
+        // Splits run ahead only while the ones before them may leave budget: a split reads its cube at four times its
+        // density (a surface is two-dimensional, each level halves the spacing), so it is expected to shade about four
+        // times its own read's points. This only schedules work; what is committed does not depend on it.
+        std::vector<const Cell*> ahead;
+        std::size_t expected = 0;
+        for (auto it = queue.begin(); it != queue.end() && ahead.size() < workers.Count(); ++it)
+        {
+            if (!ahead.empty() && shaded + expected >= part.budget) break;
+            expected += 4 * it->cell->own;
+            if (held.find(it->cell) == held.end()) ahead.push_back(it->cell);
+        }
+        if (!ahead.empty())
+        {
+            std::vector<Split> done(ahead.size());
+            workers.For(ahead.size(), cooperate, [&](std::size_t i, std::size_t worker)
+            {
+                workers[worker].Watch(part.owner);
+                split(*ahead[i], worker, done[i]);
+            }, 0);
+            for (std::size_t i = 0; i < ahead.size(); ++i) held.emplace(ahead[i], std::move(done[i]));
+        }
+        while (shaded < part.budget && !queue.empty())
+        {
+            const auto top = queue.begin();
+            const auto ready = held.find(top->cell);
+            if (ready == held.end()) break;
+            // the budget bounds the points: the split that would pass it is not taken, and placement ends there
+            std::size_t fresh = 0;
+            for (const Child& child : ready->second.children) fresh += child.fresh.size();
+            if (shaded + fresh > part.budget)
+            {
+                full = true;
                 break;
             }
+            queue.erase(top);
+            ++splits;
+            traced += ready->second.traced;
+            const_cast<Cell*>(ready->first)->split = true;
+            for (Child& child : ready->second.children) offer(commit(child));
+            held.erase(ready);
         }
-        return Finish();
+        progress();
     }
-
-    std::size_t NodeCount() const { return nodes.size(); }
-    std::vector<std::size_t> LevelCounts() const
+    for (const auto& h : held)
     {
-        std::vector<std::size_t> counts(level + 1, 0);
-        for (const Node& node : nodes) ++counts[std::min(node.level, level)];
-        return counts;
+        ++discarded;
+        for (const Child& child : h.second.children) wasted += child.fresh.size();
     }
-    std::size_t Bytes() const { return bytes; }
-    unsigned Levels() const { return level + 1; }
-    bool Bound() const { return bound; }
-    /// How many splits each criterion asked for: between nodes, within a node, close hits.
-    const std::size_t* Reasons() const { return reasons; }
+    AdvancePreparation(workers.td->preparationProgress, units > advanced ? units - advanced : 0);
 
-private:
-    struct Verdict final { bool split = false, resample = false; double priority = 0.0; unsigned why = 0; };
-
-    double Spacing(unsigned l) const { return std::ldexp(baseline, -int(l)); }
-
-    void Measure(const std::vector<std::size_t>& which, std::size_t progress, bool more = false)
+    // Every point lies in one leaf and takes an equal share of its area.
+    std::vector<const Cell*> leaves;
+    for (const Cell& c : cells)
+        if (!c.split) leaves.push_back(&c);
+    std::sort(leaves.begin(), leaves.end(), [](const Cell* a, const Cell* b)
     {
-        workers.For(which.size(), cooperate, [&](std::size_t i, std::size_t worker)
-        {
-            Node& node = nodes[which[i]];
-            Sample(node, more ? std::min(2 * node.draws, kMostNodeDraws) : kFirstDraws, worker);
-        }, progress);
-    }
-
-    // Draw 0 is the node itself, the others points of its disc on its surface; a draw that finds none, or a buried one,
-    // is left out.
-    void Sample(Node& node, unsigned last, std::size_t worker)
+        if (a->level != b->level) return a->level < b->level;
+        if (a->at != b->at) return a->at < b->at;
+        return a->piece < b->piece;
+    });
+    Result result;
+    Layout& layout = result.layout;
+    double power = 0.0, area = 0.0;
+    std::uint64_t digest = BounceOrderMix(part.budget);
+    const int least = leaves.empty() ? 0 : leaves.front()->level;
+    for (const Cell* c : leaves)
     {
-        const Part& part = parts[active[node.part]];
-        TraceThreadData* const td = workers.Thread(worker);
-        const double radius = 0.5 * Spacing(node.level);
-        const unsigned first = node.draws;
-        for (unsigned j = first; j < last; ++j)
+        if (result.levels.size() <= std::size_t(c->level - least)) result.levels.resize(std::size_t(c->level - least) + 1, 0);
+        result.levels[std::size_t(c->level - least)] += c->points.size();
+        const double h = map.Spacing(c->read) * view.Stretch(), a = c->Share();
+        for (std::uint32_t i : c->points)
         {
-            double x = 0.0, y = 0.0;
-            SurfaceGeometrySample origin;
-            if (j > 0)
-            {
-                DiscPoint(node.key, j - 1, x, y);
-                TraceTicket ticket(1, 0.0);
-                Ray ray(ticket);
-                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, radius, x, y, ray, td, origin) ||
-                    part.cover.Buried(origin.intersection.IPoint, origin.normal, td))
-                    continue;
-            }
-            const Intersection& at = j > 0 ? origin.intersection : node.hit;
-            const Vector3d& normal = j > 0 ? origin.normal : node.normal;
-            const Sources& gathered = sources[node.part];
-            auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, gathered.lights, 1,
-                                               BounceOrderSeed(node.key, order, j, 0), &at, &normal, 0.0,
-                                               gathered.scales.empty() ? nullptr : &gathered.scales);
-            if (subsurface)
-            {
-                node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{at, normal, 0.0}, beams, 0, node.eta);
-                node.eta = SubsurfaceBoundary::Quantise(node.eta);
-            }
-            double scalar = 0.0;
-            for (auto& beam : beams)
-            {
-                beam.direction = Rotate(beam.direction, normal, node.normal);
-                const double cosine = -dot(node.normal, beam.direction), magnitude = std::fabs(cosine);
-                for (std::size_t c = 0; c < part.classes.size(); ++c)
-                    node.sums[2 * c + (cosine < 0.0 ? 1 : 0)] += beam.angularWeight * std::pow(magnitude, part.classes[c]);
-                const double g = beam.angularWeight.Greyscale() * magnitude;
-                scalar += g;
-                node.nearWeight += g;
-                node.near += g / beam.distance;
-            }
-            node.sum += scalar;
-            node.square += scalar * scalar;
-            ++node.samples;
-            const double coordinate[2] = {x, y};
-            for (int a = 0; j > 0 && a < 2; ++a)
-            {
-                double* h = node.half[a][coordinate[a] < 0.0 ? 0 : 1];
-                h[0] += 1.0;
-                h[1] += scalar;
-                h[2] += scalar * scalar;
-            }
+            const Point& p = store[i];
+            layout.points.push_back(p.at);
+            layout.normals.push_back(p.normal);
+            layout.spacings.push_back(h);
+            layout.areas.push_back(a);
+            layout.front.push_back(p.front);
+            layout.back.push_back(p.back);
+            layout.ids.push_back(p.id);
+            if (part.keepHits) layout.hits.push_back(p.hit);
+            power += p.Value() * a;
+            area += a;
+            for (int ax = X; ax <= Z; ++ax) digest = BounceOrderMix(digest ^ Bits(p.at[ax]));
+            digest = BounceOrderMix(digest ^ Bits(a) ^ Bits(p.Value()));
         }
-        node.draws = last;
     }
-
-    void Index()
+    int lowStart = 0, highStart = 0;
+    if (!starts.empty())
     {
-        indices.assign(active.size(), nullptr);
-        members.assign(active.size(), {});
-        position.assign(nodes.size(), 0);
-        for (std::size_t i = 0; i < nodes.size(); ++i) members[nodes[i].part].push_back(i);
-        for (std::size_t p = 0; p < active.size(); ++p)
-        {
-            std::vector<Vector3d> points, normals;
-            std::vector<double> spacings;
-            for (std::size_t i : members[p])
-            {
-                points.push_back(nodes[i].hit.IPoint);
-                normals.push_back(nodes[i].normal);
-                spacings.push_back(Spacing(nodes[i].level));
-            }
-            indices[p] = std::make_shared<const SurfaceNodeIndex>(points, normals, spacings);
-            const auto& source = indices[p]->Source();
-            for (std::size_t t = 0; t < source.size(); ++t) position[members[p][source[t]]] = t;
-        }
+        lowStart = *std::min_element(starts.begin(), starts.end());
+        highStart = *std::max_element(starts.begin(), starts.end());
     }
-
-    std::size_t At(std::uint32_t part, std::size_t tree) const { return members[part][indices[part]->Source()[tree]]; }
-
-    Verdict Decide(std::size_t i) const
-    {
-        const Node& node = nodes[i];
-        const SurfaceNodeIndex& index = *indices[node.part];
-        const double mean = node.Mean(), error = node.Error(), spacing = Spacing(node.level);
-        SurfaceNodeIndex::Weights weights;
-        index.Interpolate(node.hit.IPoint, node.normal, weights, position[i]);
-        double predicted = weights.count ? 0.0 : mean, predictedError2 = 0.0;
-        Vector3d t1, t2;
-        SurfaceGeometrySampler::TangentFrame(node.normal, t1, t2);
-        bool unknown = !std::isfinite(error);
-        double freedom = node.samples - 1.0;
-        double low = HUGE_VAL, high = -HUGE_VAL;
-        double xx = 0.0, xy = 0.0, yy = 0.0, xd = 0.0, yd = 0.0, sx = 0.0, sy = 0.0, mxx = 0.0, mxy = 0.0, myy = 0.0;
-        for (unsigned k = 0; k < weights.count; ++k)
-        {
-            const Node& other = nodes[At(node.part, weights.node[k])];
-            const double w = weights.kernel[k], value = other.Mean(), e = other.Error(), linear = weights.weight[k];
-            predicted += linear * value;
-            if (linear != 0.0)
-            {
-                predictedError2 += linear * linear * e * e;
-                freedom = std::min(freedom, other.samples - 1.0);
-            }
-            if (w > 0.0)
-            {
-                low = std::min(low, value);
-                high = std::max(high, value);
-            }
-            const Vector3d delta = other.hit.IPoint - node.hit.IPoint;
-            const double dx = dot(delta, t1), dy = dot(delta, t2), dd = value - mean;
-            xx += w * dx * dx; xy += w * dx * dy; yy += w * dy * dy; xd += w * dx * dd; yd += w * dy * dd;
-            sx += w * dx; sy += w * dy;
-            if (std::isfinite(e)) { mxx += w * w * e * e * dx * dx; mxy += w * w * e * e * dx * dy; myy += w * w * e * e * dy * dy; }
-            else unknown = true;
-        }
-        if (low <= high) predicted = std::max(low, std::min(high, predicted));
-        Verdict verdict;
-        const double reference = std::max(mean, predicted);
-        if (!(reference > 0.0) && !POV_SURFACE_BOUNCE_UNIFORM) return verdict;
-        const double between = std::fabs(mean - predicted), betweenError = std::sqrt(error * error + predictedError2);
-        const double determinant = xx * yy - xy * xy;
-        // The neighbours' least squares gradient and its variance, from their errors and the node's own; neighbours along
-        // one line leave it unknown, and the within test then has nothing to compare against.
-        double gradient[2] = {0.0, 0.0}, gradientError2[2] = {0.0, 0.0};
-        const bool spanned = determinant > 1.0e-9 * (xx + yy) * (xx + yy);
-        if (spanned)
-        {
-            gradient[0] = (yy * xd - xy * yd) / determinant;
-            gradient[1] = (xx * yd - xy * xd) / determinant;
-            const double inverse[2][2] = {{yy / determinant, -xy / determinant}, {-xy / determinant, xx / determinant}};
-            const double m[2][2] = {{mxx, mxy}, {mxy, myy}}, shared[2] = {inverse[0][0] * sx + inverse[0][1] * sy,
-                                                                         inverse[1][0] * sx + inverse[1][1] * sy};
-            for (int a = 0; a < 2; ++a)
-                gradientError2[a] = inverse[a][0] * (m[0][0] * inverse[0][a] + m[0][1] * inverse[1][a]) +
-                                    inverse[a][1] * (m[1][0] * inverse[0][a] + m[1][1] * inverse[1][a]) +
-                                    (unknown ? 0.0 : error * error * shared[a] * shared[a]);
-            if (unknown) gradientError2[0] = gradientError2[1] = HUGE_VAL;
-        }
-        // Half discs of radius spacing / 2 have centroids 4r / 3pi either side.
-        const double separation = 4.0 * spacing / (3.0 * M_PI);
-        double within = 0.0, withinError = HUGE_VAL, withinFreedom = 0.0;
-        for (int a = 0; spanned && a < 2; ++a)
-        {
-            const double* lo = node.half[a][0];
-            const double* hi = node.half[a][1];
-            if (!(lo[0] > 0.0 && hi[0] > 0.0)) continue;
-            const double residual = std::fabs(hi[1] / hi[0] - lo[1] / lo[0] - gradient[a] * separation);
-            const double e2 = HalfError2(lo) + HalfError2(hi) + separation * separation * gradientError2[a];
-            const double freedom = std::min(lo[0], hi[0]) - 1.0;
-            if (residual - Confidence(freedom) * std::sqrt(e2) > within - Confidence(withinFreedom) * withinError)
-            {
-                within = residual;
-                withinError = std::sqrt(e2);
-                withinFreedom = freedom;
-            }
-        }
-        const bool betweenLarge = between > kTolerance * reference, betweenSure = between > Confidence(freedom) * betweenError;
-        const bool withinLarge = within > kTolerance * reference, withinSure = within > Confidence(withinFreedom) * withinError;
-        const bool close = node.near > 0.0 && 2.0 * node.nearWeight / node.near < spacing;
-        verdict.split = (betweenLarge && betweenSure) || (withinLarge && withinSure) || close;
-        verdict.why = (betweenLarge && betweenSure ? 1 : 0) | (withinLarge && withinSure ? 2 : 0) | (close ? 4 : 0);
-        const bool known = node.samples >= kTrusted && error <= kTolerance * reference;
-        // The draws that resolve a difference of the tolerance, at the variance seen so far, bound how far a node grows.
-        const double resolve = Confidence(HUGE_VAL) * error / (kTolerance * reference);
-        const double needed = resolve * resolve * node.samples;
-        const bool grow = node.draws < kMostNodeDraws && !(node.draws >= kNeededDraws * needed && node.samples >= kTrusted);
-#if POV_SURFACE_BOUNCE_UNIFORM
-        verdict.split = node.level < POV_SURFACE_BOUNCE_UNIFORM;
-        verdict.resample = !verdict.split && grow && !known;
-        verdict.priority = 1.0;
-        return verdict;
-#endif
-        // Draws grow while a verdict is in doubt or the node's own value is not yet known to the tolerance.
-        verdict.resample = !verdict.split && grow &&
-                           ((betweenLarge && !betweenSure) || (withinLarge && !withinSure) || !known);
-        verdict.priority = std::max({betweenLarge && betweenSure ? between : 0.0, withinLarge && withinSure ? within : 0.0,
-                                     close ? mean : 0.0}) * node.area;
-        return verdict;
-    }
-
-    static double HalfError2(const double* h)
-    {
-        if (h[0] < 2.0) return HUGE_VAL;
-        const double mean = h[1] / h[0];
-        return std::max(0.0, (h[2] - h[0] * mean * mean) / (h[0] - 1.0)) / h[0];
-    }
-
-    // Children of the split nodes, drawn about each within its own cell, kept as a Poisson disc set at half its spacing,
-    // the most error per byte first while the budget lasts; each parent's area goes to it and its children by draws.
-    std::vector<std::size_t> Split(std::vector<std::size_t> split, const std::vector<Verdict>& verdicts)
-    {
-        std::sort(split.begin(), split.end(), [&](std::size_t a, std::size_t b)
-        {
-            const double pa = verdicts[a].priority / parts[active[nodes[a].part]].NodeBytes(subsurface);
-            const double pb = verdicts[b].priority / parts[active[nodes[b].part]].NodeBytes(subsurface);
-            return pa > pb || (pa == pb && a < b);
-        });
-        std::vector<std::vector<SurfaceGeometrySample>> draws(split.size());
-        std::vector<std::size_t> candidates(split.size(), 0);
-        workers.For(split.size(), cooperate, [&](std::size_t k, std::size_t worker)
-        {
-            const Node& node = nodes[split[k]];
-            const Part& part = parts[active[node.part]];
-            TraceThreadData* const td = workers.Thread(worker);
-            const std::uint64_t key = DeriveKey(node.key, kDrawEmitter, UINT64_C(0x6368696c64));
-            for (unsigned j = 0; j < kAreaDraws; ++j)
-            {
-                if (j == kChildDraws) candidates[k] = draws[k].size();
-                double x, y;
-                DiscPoint(key, j, x, y);
-                TraceTicket ticket(1, 0.0);
-                Ray ray(ticket);
-                SurfaceGeometrySample draw;
-                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, Spacing(node.level), x, y, ray, td, draw) ||
-                    part.cover.Buried(draw.intersection.IPoint, draw.normal, td))
-                    continue;
-                if (indices[node.part]->Nearest(draw.intersection.IPoint, draw.normal) == position[split[k]])
-                    draws[k].push_back(std::move(draw));
-            }
-        }, 0);
-        std::vector<Grid> grids;
-        const double radius = Spacing(level + 1);
-        for (std::size_t p = 0; p < active.size(); ++p)
-        {
-            grids.emplace_back(radius);
-            for (std::size_t i : members[p]) grids.back().Insert(nodes[i].hit.IPoint, i);
-        }
-        auto at = [&](std::size_t i, Vector3d& point, Vector3d& normal) { point = nodes[i].hit.IPoint; normal = nodes[i].normal; };
-        std::vector<std::size_t> children;
-        for (std::size_t k = 0; k < split.size(); ++k)
-        {
-            const std::size_t parent = split[k];
-            const std::uint32_t partIndex = nodes[parent].part;
-            const Part& part = parts[active[partIndex]];
-            const std::size_t first = nodes.size();
-            for (std::size_t j = 0; j < candidates[k]; ++j)
-            {
-                const SurfaceGeometrySample& draw = draws[k][j];
-                if (grids[partIndex].Near(draw.intersection.IPoint, draw.normal, radius, at)) continue;
-                if (bytes + part.NodeBytes(subsurface) > allowance && !POV_SURFACE_BOUNCE_UNIFORM)
-                {
-                    bound = true;
-                    break;
-                }
-                Node child;
-                child.hit = draw.intersection;
-                child.normal = draw.normal;
-                child.level = level + 1;
-                child.part = partIndex;
-                child.key = BounceOrderMix(nodes[parent].key ^ BounceOrderMix(j + 1));
-                child.sums.assign(2 * part.classes.size(), MathColour());
-                bytes += part.NodeBytes(subsurface);
-                grids[partIndex].Insert(child.hit.IPoint, nodes.size());
-                nodes.push_back(std::move(child));
-                children.push_back(nodes.size() - 1);
-            }
-            if (nodes.size() > first)
-            {
-                std::vector<double> counts(nodes.size() - first + 1, 0.0);
-                for (const SurfaceGeometrySample& draw : draws[k])
-                {
-                    std::size_t best = 0;
-                    double distance = (nodes[parent].hit.IPoint - draw.intersection.IPoint).lengthSqr();
-                    for (std::size_t c = first; c < nodes.size(); ++c)
-                    {
-                        const double d = (nodes[c].hit.IPoint - draw.intersection.IPoint).lengthSqr();
-                        if (d < distance) { distance = d; best = c - first + 1; }
-                    }
-                    counts[best] += 1.0;
-                }
-                const double total = std::accumulate(counts.begin(), counts.end(), 0.0), area = nodes[parent].area;
-                nodes[parent].area = area * counts[0] / total;
-                for (std::size_t c = first; c < nodes.size(); ++c) nodes[c].area = area * counts[c - first + 1] / total;
-            }
-            // The parent stays as a node of the finer level, measured afresh over its smaller disc.
-            Node& kept = nodes[parent];
-            kept.level = level + 1;
-            kept.key = BounceOrderMix(kept.key ^ UINT64_C(0x706172656e74));
-            kept.Reset();
-            children.push_back(parent);
-            if (bound) break;
-        }
-        return children;
-    }
-
-    std::vector<Result> Finish()
-    {
-        std::vector<Result> results(active.size());
-        for (std::size_t p = 0; p < active.size(); ++p)
-        {
-            const Part& part = parts[active[p]];
-            Result& result = results[p];
-            result.index = indices[p];
-            const auto& source = result.index->Source();
-            const std::size_t count = source.size(), stride = 2 * part.classes.size();
-            std::vector<MathColour> irradiance(count * stride);
-            std::vector<float> power(count);
-            std::vector<MathColour> exitance(count);
-            workers.For(count, cooperate, [&](std::size_t t, std::size_t worker)
-            {
-                const Node& node = nodes[members[p][source[t]]];
-                const double scale = 1.0 / node.samples;
-                for (std::size_t j = 0; j < stride; ++j) irradiance[t * stride + j] = node.sums[j] * scale;
-                exitance[t] = SurfaceIrradianceField::Exitance(node.hit, node.normal, part.classes, &irradiance[t * stride],
-                                                               workers.Thread(worker));
-                power[t] = float(exitance[t].Greyscale() * node.area);
-            }, 0);
-            MathColour integral;
-            for (std::size_t t = 0; t < count; ++t) integral += exitance[t] * nodes[members[p][source[t]]].area;
-            result.diffuse = std::make_shared<const SurfaceIrradianceField>(result.index, part.classes, std::move(irradiance),
-                                                                            std::move(power), integral);
-            if (!subsurface) continue;
-            for (std::size_t i : members[p])
-            {
-                const Node& node = nodes[i];
-                result.nodes.push_back(SurfaceBounceNode{node.hit, node.normal, node.area});
-                result.entry.push_back(node.entry / float(node.samples));
-                result.etas.push_back(node.eta);
-                result.areas.push_back(node.area);
-            }
-        }
-        return results;
-    }
-
-    Workers& workers;
-    std::vector<Part>& parts;
-    const std::vector<std::size_t>& active;
-    const std::vector<Sources>& sources;
-    unsigned order;
-    double baseline;
-    std::size_t allowance, bytes = 0, reasons[3] = {0, 0, 0};
-    bool subsurface, bound = false;
-    const std::vector<Trace*>& entries;
-    const std::function<void()>& cooperate;
-    std::size_t units;
-    unsigned level = 0;
-    std::vector<Node> nodes;
-    std::vector<std::shared_ptr<const SurfaceNodeIndex>> indices;
-    std::vector<std::vector<std::size_t>> members;
-    std::vector<std::size_t> position;
-};
+    char line[640];
+    std::snprintf(line, sizeof(line),
+                  "option B: %lu pieces, %lu found no point within the budget's count of lines; %lu points at the start "
+                  "(read %d..%d levels finer than each piece's cubes); %lu splits, %lu cells finished; "
+                  "%lu points of %lu, %lu shaded in splits held past the budget, discarded; %lu lines read in splits; "
+                  "finest levels %d..%d; points stand for area %.6g, exported power %.6g; digest %016llx",
+                  static_cast<unsigned long>(pieceBoxes.size()), static_cast<unsigned long>(missing), static_cast<unsigned long>(looked),
+                  lowStart, highStart, static_cast<unsigned long>(splits), static_cast<unsigned long>(finished),
+                  static_cast<unsigned long>(shaded), static_cast<unsigned long>(part.budget), static_cast<unsigned long>(wasted),
+                  static_cast<unsigned long>(traced), least, least + int(result.levels.size()) - 1, area, power,
+                  static_cast<unsigned long long>(digest));
+    (void)discarded;
+    result.report = line;
+    result.points = layout.points.size();
+    if (layout.points.empty())
+        return result;
+    result.index = std::make_shared<const SurfaceNodeIndex>(layout.points, layout.normals, layout.spacings);
+    return result;
+}
 
 } // namespace surface_refine
 } // namespace pov

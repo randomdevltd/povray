@@ -201,7 +201,7 @@ void PhotonEstimationTask::EstimatePhotonsForObjectAndLight(ObjectPtr Object, Li
     if(!Object) return;
 
     ShootingDirection shootingDirection(Light,Object);
-    shootingDirection.compute();
+    shootingDirection.compute(combo.target->Ph_Density*GetSceneData()->photonSettings.surfaceSeparation);
 
     /* calculate the spacial separation (spread) */
     renderDataPtr->photonSpread = combo.target->Ph_Density*GetSceneData()->photonSettings.surfaceSeparation;

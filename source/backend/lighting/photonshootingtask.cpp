@@ -54,7 +54,6 @@
 #include "core/render/ray.h"
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
-#include "core/shape/sphere.h"
 #include "core/support/octree.h"
 #include "core/support/statistics.h"
 
@@ -208,29 +207,27 @@ class SurfaceLightEmitter final : public Emitter
         const LightSource& light;
 };
 
-/// The boxes of a target's union members, recursively, a sphere's own bounds, and any other object's box.
-void TargetBounds(ConstObjectPtr object, double weight, std::uint32_t target, std::vector<PhotonAimBound>& bounds)
+/// A target's surface boxes as aiming bounds, with their spheres; a box with no extent aims at nothing.
+class TargetBounds final : public SurfaceBoxVisitor
 {
-    if (const auto* csg = dynamic_cast<const CSGUnion*>(object))
-    {
-        for (ConstObjectPtr child : csg->children)
-            TargetBounds(child, weight, target, bounds);
-        return;
-    }
-    if (Vector3d(object->BBox.size).lengthSqr() <= 0.0)
-        return;
-    const Vector3d low(object->BBox.lowerLeft);
-    bounds.push_back({low, low + Vector3d(object->BBox.size), weight, target});
-    if (const auto* sphere = dynamic_cast<const Sphere*>(object))
-        if (sphere->Spherical())
+    public:
+        TargetBounds(double w, std::uint32_t t, std::vector<PhotonAimBound>& b) : weight(w), target(t), bounds(b) {}
+        void Visit(const SurfaceBox& piece) override
         {
-            bounds.back().sphereCentre = sphere->Center;
-            bounds.back().sphereRadius = sphere->Radius;
+            if (Vector3d(piece.box.size).lengthSqr() <= 0.0)
+                return;
+            const Vector3d low(piece.box.lowerLeft);
+            bounds.push_back({low, low + Vector3d(piece.box.size), weight, target, piece.sphereCentre, piece.sphereRadius});
         }
-}
+    private:
+        const double weight;
+        const std::uint32_t target;
+        std::vector<PhotonAimBound>& bounds;
+};
 
+/// The light's targets and, if asked, their bounds, each target's at its fineness (none listed: the coarsest).
 void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets,
-                        std::vector<PhotonAimBound>* bounds)
+                        std::vector<PhotonAimBound>* bounds, const std::vector<double>* fineness = nullptr)
 {
     for (ObjectPtr object : objects)
     {
@@ -257,11 +254,87 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
                 known = targets.end() - 1;
             }
             if (bounds)
-                TargetBounds(object, known->weight, std::uint32_t(known - targets.begin()), *bounds);
+            {
+                const std::uint32_t index = std::uint32_t(known - targets.begin());
+                TargetBounds aim(known->weight, index, *bounds);
+                SurfaceQuery query;
+                query.fineness = (fineness && index < fineness->size()) ? (*fineness)[index] : 0.0;
+                object->Visit_Surface_Boxes(aim, 0, query);
+            }
         }
         else if (object->Type & IS_COMPOUND_OBJECT)
-            ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets, bounds);
+            ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets, bounds, fineness);
     }
+}
+
+bool SameBounds(const std::vector<PhotonAimBound>& a, const std::vector<PhotonAimBound>& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t k = 0; k < a.size(); ++k)
+    {
+        if ((a[k].target != b[k].target) || (a[k].weight != b[k].weight))
+            return false;
+        for (int d = X; d <= Z; ++d)
+            if ((a[k].low[d] != b[k].low[d]) || (a[k].high[d] != b[k].high[d]))
+                return false;
+    }
+    return true;
+}
+
+void BuildDomain(PhotonAimDomain& domain, const LightSource* light, const std::vector<PhotonAimBound>& bounds)
+{
+    PhotonAimBound gate;
+    const PhotonAimBound* aperture = nullptr;
+    if (light->Projected_Through_Object)
+    {
+        const auto& box = light->Projected_Through_Object->BBox;
+        gate = {Vector3d(box.lowerLeft), Vector3d(box.lowerLeft) + Vector3d(box.size), 1.0, 0};
+        aperture = &gate;
+    }
+    if (light->Parallel)
+        domain.BuildPlane(light->Center, light->Direction, bounds, aperture, light->Light_Type == CYLINDER_SOURCE ? light->Falloff : 0.0);
+    else
+    {
+        const SurfaceLightEmitter surface(*light);
+        const Emitter& emitter = light->emitter ? *light->emitter : surface;
+        const bool spot = light->Light_Type == SPOT_SOURCE;
+        domain.BuildCap(emitter.Centre(), emitter.Radius(), bounds, aperture, spot ? &light->Direction : nullptr,
+                        spot && light->Radius > 0.0 ? light->Falloff : 0.0);
+    }
+}
+
+/// Each target's fineness: one raster cell of the domain where the target is (a plane's cell side; a cap's cell angle
+/// times the target's distance from the light).
+std::vector<double> DomainFineness(const PhotonAimDomain& domain, size_t count, const std::vector<PhotonAimBound>& bounds)
+{
+    std::vector<double> fineness(count, 0.0);
+    if (domain.Empty())
+        return fineness;
+    if (domain.parallel)
+    {
+        const double side = std::min(domain.du, domain.dv) / PhotonAimDomain::cells;
+        std::fill(fineness.begin(), fineness.end(), side);
+        return fineness;
+    }
+    std::vector<Vector3d> low(count, Vector3d(HUGE_VAL)), high(count, Vector3d(-HUGE_VAL));
+    for (const PhotonAimBound& b : bounds)
+        if (b.target < count)
+        {
+            low[b.target] = Vector3d(std::min(low[b.target][X], b.low[X]), std::min(low[b.target][Y], b.low[Y]), std::min(low[b.target][Z], b.low[Z]));
+            high[b.target] = Vector3d(std::max(high[b.target][X], b.high[X]), std::max(high[b.target][Y], b.high[Y]), std::max(high[b.target][Z], b.high[Z]));
+        }
+    for (size_t k = 0; k < count; ++k)
+    {
+        if (!(low[k][X] <= high[k][X]))
+            continue;
+        const Vector3d centre = (low[k] + high[k]) * 0.5, delta = centre - domain.centre;
+        const double distance = delta.length();
+        double angle;
+        if ((distance > 0.0) && domain.CellAngle(delta / distance, angle))
+            fineness[k] = angle * distance;
+    }
+    return fineness;
 }
 
 bool ProgressiveLight(const LightSource* light)
@@ -282,31 +355,29 @@ void PrepareProgressiveAiming(SceneData& scene, const std::vector<PreparedSetId>
         {
             if (!ProgressiveLight(light))
                 continue;
+            // the bounds are asked at the fineness of the domain they give, until they stop changing
             std::vector<ProgressiveTarget> targets;
-            std::vector<PhotonAimBound> bounds;
-            ProgressiveTargets(set.objects, light, targets, &bounds);
+            std::vector<PhotonAimBound> bounds, previous;
+            std::vector<double> fineness;
+            PhotonAimDomain domain;
+            for (bool first = true; ; first = false)
+            {
+                targets.clear();
+                bounds.clear();
+                ProgressiveTargets(set.objects, light, targets, &bounds, &fineness);
+                if (targets.empty() || (!first && SameBounds(bounds, previous)))
+                    break;
+                BuildDomain(domain, light, bounds);
+                previous = bounds;
+                // never coarser than before, so the bounds only tighten and the loop ends
+                const std::vector<double> next = DomainFineness(domain, targets.size(), bounds);
+                fineness.resize(next.size(), 0.0);
+                for (size_t k = 0; k < next.size(); ++k)
+                    fineness[k] = (fineness[k] > 0.0) ? std::min(fineness[k], next[k] > 0.0 ? next[k] : fineness[k]) : next[k];
+            }
             if (targets.empty())
                 continue;
-            set.progressiveAiming.push_back({light, PhotonAimDomain()});
-            auto& domain = set.progressiveAiming.back().domain;
-            PhotonAimBound gate;
-            const PhotonAimBound* aperture = nullptr;
-            if (light->Projected_Through_Object)
-            {
-                const auto& box = light->Projected_Through_Object->BBox;
-                gate = {Vector3d(box.lowerLeft), Vector3d(box.lowerLeft) + Vector3d(box.size), 1.0, 0};
-                aperture = &gate;
-            }
-            if (light->Parallel)
-                domain.BuildPlane(light->Center, light->Direction, bounds, aperture, light->Light_Type == CYLINDER_SOURCE ? light->Falloff : 0.0);
-            else
-            {
-                const SurfaceLightEmitter surface(*light);
-                const Emitter& emitter = light->emitter ? *light->emitter : surface;
-                const bool spot = light->Light_Type == SPOT_SOURCE;
-                domain.BuildCap(emitter.Centre(), emitter.Radius(), bounds, aperture, spot ? &light->Direction : nullptr,
-                                spot && light->Radius > 0.0 ? light->Falloff : 0.0);
-            }
+            set.progressiveAiming.push_back({light, std::move(domain)});
         }
     }
 }
@@ -554,7 +625,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
 
         // FIXME: should copy from previously computed shootingdirection
         ShootingDirection shootingDirection(combo.light,combo.target);
-        shootingDirection.compute();
+        shootingDirection.compute(combo.target->Ph_Density*GetSceneData()->photonSettings.surfaceSeparation);
 
         minphi = -M_PI + dphi*Draw(thetaKey, kDrawPhoton, 0)*0.5;
         maxphi = M_PI - dphi/2 + (minphi+M_PI);

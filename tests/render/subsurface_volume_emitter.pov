@@ -7,13 +7,12 @@
 #ifndef (Samples) #declare Samples = 256; #end
 #ifndef (SingleSamples) #declare SingleSamples = 32; #end
 #ifndef (ReuseViews) #declare ReuseViews = 0; #end
-#ifndef (CloudSpacing) #declare CloudSpacing = 0.3; #end
 #declare Height = (NearSource ? 1.2 : 20);
 #declare Radius = (NearSource ? 0.3 : 0.02);
 #declare Intensity = pi * 0.15 * Height * Height;
 global_settings {
   assumed_gamma 1 max_trace_level 8 mm_per_unit 1
-  subsurface { method 2 samples Samples, SingleSamples spacing CloudSpacing }
+  subsurface { method 2 samples Samples, SingleSamples }
   #if (Photons) photons { method 2 quality PhotonQuality } #end
 }
 #for (View, 0, ReuseViews)

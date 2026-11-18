@@ -153,7 +153,7 @@ struct MediaLight final
 {
     PIGMENT *pigment = nullptr;     ///< the light's own colour or pattern; null for solid white
     unsigned bouncePasses = 0;
-    MathColour bounceSelf = MathColour(1.0);        ///< how much of the bounced light lights the media that bounced it: 1 all, 0 none
+    MathColour selfShare = MathColour(1.0);         ///< `self`: how much of its light its own object or media receive: 1 all, 0 none
     bool useEmission = false;      ///< use the owning interior's combined emission as the input field
     double brightness = 1.0;        ///< a plain multiplier of the input when no unit follows
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
@@ -162,7 +162,8 @@ struct MediaLight final
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
     int samples = 64;               ///< emitter draws per receiver point
-    double domainCells = 0.0;       ///< interior only: domain_cells for its prepared source domain; 0 = the scene's light default
+    double domainCells = 0.0;       ///< source lattice cells (volume) or surface nodes; 0 = the corresponding scene default
+    unsigned bounceDirections = 0;  ///< surface bounce: view directions each point's view-dependent light is averaged over
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;
@@ -172,9 +173,10 @@ struct MediaLight final
     MediaLight(const MediaLight& source);          ///< deep-copies the pigment
     ~MediaLight();                                 ///< destroys the pigment
     MediaLight& operator=(const MediaLight&) = delete;
-    /// No pigment or emission input: the block only re-emits bounced light, with brightness as its multiplier.
+    /// A bounce block takes no pigment or emission input: it only re-emits what its object shows.
     bool BounceOnly() const { return bouncePasses > 0 && pigment == nullptr && !useEmission; }
-    double BounceGain() const { return BounceOnly() ? brightness : 1.0; }
+    /// A bounce light's plain multiplier, applied at every pass; 1 when a unit states its brightness instead.
+    double BounceGain() const { return (lumens >= 0.0 || nits) ? 1.0 : brightness; }
 };
 
 }

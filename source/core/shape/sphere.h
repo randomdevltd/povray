@@ -85,6 +85,8 @@ class Sphere final : public ObjectBase
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool ReturnsAllRoots() const override { return true; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
+        virtual bool Has_Box_Test() const override { return true; }
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
         virtual void UVCoord(Vector2d&, const Intersection *) const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
@@ -92,6 +94,8 @@ class Sphere final : public ObjectBase
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;
         virtual void Transform(const TRANSFORM *) override;
         virtual void Compute_BBox() override;
+        /// A sphere's piece carries the sphere itself, which holds it more tightly than its box.
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query = SurfaceQuery()) const override;
         virtual bool Intersect_BBox(BBoxDirection, const BBoxVector3d&, const BBoxVector3d&, BBoxScalar) const override;
 
         static bool Intersect(const BasicRay& ray, const Vector3d& Center, DBL Radius2, DBL *Depth1, DBL  *Depth2);

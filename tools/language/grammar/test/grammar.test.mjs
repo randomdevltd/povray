@@ -51,7 +51,7 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['texture', 'pigment', 'interior', 'light', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
     assert.ok(blocks.union.items.includes('sphere'));
     for (const w of ['photons', 'attenuation', 'emission', 'bounce']) assert.ok(blocks.light.items.includes(w), `light item '${w}'`);
-    assert.deepEqual(blocks.bounce.items, ['passes', 'self']);
+    assert.deepEqual(blocks.bounce.items, ['passes', 'self', 'view_directions']);
     for (const w of ['shadows', 'method']) assert.ok(!blocks.light.items.includes(w), `invalid light item '${w}'`);
     for (const w of ['function', 'detail', 'auto']) assert.ok(blocks.refraction.items.includes(w), `refraction item '${w}'`);
     for (const w of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(w), `invalid refraction item '${w}'`);
@@ -109,4 +109,13 @@ test('generators are stable: regenerating changes nothing', () => {
     for (const script of ['extract.mjs', 'blocks.mjs', 'render.mjs'])
         execFileSync(process.execPath, [join(here, script)], { cwd: here });
     for (const p of paths) assert.equal(read(p), before[p], `${p} regenerated differently`);
+});
+
+test('light defaults keep their contextual cell count inside their light block', () => {
+    const { blocks } = JSON.parse(read('tools/language/grammar/blocks.json'));
+    assert.ok(blocks.default.items.includes('interior'));
+    assert.ok(blocks.default.items.includes('light'));
+    assert.ok(!blocks.default.items.includes('domain_cells'));
+    assert.ok(blocks.interior.items.includes('light'));
+    assert.ok(blocks.light.items.includes('domain_cells'));
 });

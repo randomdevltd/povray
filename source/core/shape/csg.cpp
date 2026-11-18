@@ -41,10 +41,13 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <memory>
+#include <queue>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -54,6 +57,7 @@
 #include "core/bounding/boundingbox.h"
 #include "core/lighting/lightgroup.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/math/halfspacebounds.h"
 #include "core/render/ray.h"
 #include "core/lighting/lightsource.h"
@@ -77,6 +81,7 @@ using std::vector;
 
 static bool HalfspaceIntersectionBounds(const CSGIntersection& intersection, BoundingBox& bounds);
 static bool FiniteCSGBounds(const CSG& object, BoundingBox& bounds);
+static void Carry_Cells(CSG *object, const TRANSFORM *tr);
 
 static void RecomputeCSGBounds(CSG *object, const TRANSFORM *transform)
 {
@@ -198,6 +203,12 @@ class ChildBoxRay final
 
         explicit ChildBoxRay(const Ray& ray) : valid(true)
         {
+            const RayRootQuery *query = ray.GetRootQuery();
+            if ((query == nullptr) || !query->Segment(nearDepth, farDepth))
+            {
+                nearDepth = 0.0;
+                farDepth = HUGE_VAL;
+            }
             for (int d = X; d <= Z; ++d)
             {
                 origin[d] = ray.Origin[d];
@@ -207,23 +218,23 @@ class ChildBoxRay final
             }
         }
 
-        /// Whether the ray, forward of its origin, may cross the box.
+        /// Whether the ray, within its root query's segment or else forward of its origin, may cross the box.
         bool Hits(const CSGChildTree::Box& b) const
         {
-            DBL tn = -HUGE_VAL, tf = HUGE_VAL;
+            DBL tn = nearDepth, tf = farDepth;
             for (int d = X; d <= Z; ++d)
             {
                 const DBL t1 = (b.lo[d] - origin[d]) * inv[d], t2 = (b.hi[d] - origin[d]) * inv[d];
                 tn = max(tn, min(t1, t2));
                 tf = min(tf, max(t1, t2));
             }
-            return (tn <= tf) && (tf >= 0.0);
+            return tn <= tf;
         }
 
         bool valid;
 
     private:
-        DBL origin[3], inv[3];
+        DBL origin[3], inv[3], nearDepth, farDepth;
 };
 
 inline bool FinitePoint(const Vector3d& p)
@@ -714,6 +725,7 @@ void CSG::Translate(const Vector3d& Vector, const TRANSFORM *tr)
 
     childTree.reset();
     RecomputeCSGBounds(this, tr);
+    Carry_Cells(this, tr);
 }
 
 
@@ -752,6 +764,7 @@ void CSG::Rotate(const Vector3d& Vector, const TRANSFORM *tr)
 
     childTree.reset();
     RecomputeCSGBounds(this, tr);
+    Carry_Cells(this, tr);
 }
 
 
@@ -790,6 +803,7 @@ void CSG::Scale(const Vector3d& Vector, const TRANSFORM *tr)
 
     childTree.reset();
     RecomputeCSGBounds(this, tr);
+    Carry_Cells(this, tr);
 }
 
 
@@ -828,6 +842,7 @@ void CSG::Transform(const TRANSFORM *tr)
 
     childTree.reset();
     RecomputeCSGBounds(this, tr);
+    Carry_Cells(this, tr);
 }
 
 /*****************************************************************************
@@ -860,6 +875,7 @@ ObjectPtr CSGUnion::Invert()
     POV_SHAPE_ASSERT(p == this);
 
     CSGIntersection *New = new CSGIntersection(false, *this, true);
+    New->Begin_Cells();
     delete this;
     return (New);
 }
@@ -1017,6 +1033,7 @@ ObjectPtr CSGUnion::Copy()
     Destroy_Transform(New->Trans);
     *New = *this;
     New->childTree.reset();
+    New->surfaceIndex.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1039,6 +1056,7 @@ ObjectPtr CSGMerge::Copy()
     Destroy_Transform(New->Trans);
     *New = *this;
     New->childTree.reset();
+    New->surfaceIndex.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1061,6 +1079,7 @@ ObjectPtr CSGIntersection::Copy()
     Destroy_Transform(New->Trans);
     *New = *this;
     New->childTree.reset();
+    New->surfaceIndex.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1302,6 +1321,26 @@ void CSG::Compute_BBox()
 
 
 
+/// The first piece and leaf number of each child, the totals last. Only a union's members are pieces of their own.
+struct CSGSurfaceIndex final
+{
+    std::vector<std::uint32_t> piece, leaf;
+};
+
+static CSGSurfaceIndex Make_Surface_Index(const CSG& csg)
+{
+    const bool split = (dynamic_cast<const CSGUnion *>(&csg) != nullptr);
+    CSGSurfaceIndex index;
+    index.piece.assign(csg.children.size() + 1, 0);
+    index.leaf.assign(csg.children.size() + 1, 0);
+    for (size_t k = 0; k < csg.children.size(); ++k)
+    {
+        index.piece[k + 1] = index.piece[k] + (split ? csg.children[k]->Surface_Pieces() : 0);
+        index.leaf[k + 1] = index.leaf[k] + csg.children[k]->Surface_Leaves();
+    }
+    return index;
+}
+
 namespace
 {
 
@@ -1498,6 +1537,169 @@ void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_
         built += csg->Prepare_Child_Tree(minimum) ? 1 : 0;
 }
 
+BoxClass Classify_By_Certified_Box(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld)
+{
+    // the conditions the child trees take a child's box on (Prepare_Child_Tree)
+    if ((object->Type & LIGHT_SOURCE_OBJECT) || !Usable_Box(object->BBox) || !object->BBox.finiteInterior)
+        return BoxClass::Unknown;
+    box_class::Interval w[3];
+    box_class::Local_Box(lo, hi, toWorld, nullptr, w);
+    const CSGChildTree::Box padded = Padded_Box(object->BBox);
+    bool misses = false;
+    for (int d = X; d <= Z; ++d)
+        misses = misses || (w[d].high < padded.lo[d]) || (w[d].low > padded.hi[d]);
+    if (!misses)
+        return BoxClass::Unknown;
+    if (!Test_Flag(object, INVERTED_FLAG))
+        return BoxClass::Outside;
+    return (object->Clip.empty() && Honours_Inversion(object)) ? BoxClass::Inside : BoxClass::Unknown;
+}
+
+bool CSG::Has_Box_Test() const
+{
+    return std::any_of(children.begin(), children.end(), [](ConstObjectPtr c) { return pov::Has_Box_Test(c); });
+}
+
+BoxClass CSGUnion::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    bool outside = true, inside = false, unknown = false;
+    for (ConstObjectPtr child : children)
+    {
+        const BoxClass c = Classify_Object(child, lo, hi, toWorld);
+        outside = outside && (c == BoxClass::Outside);
+        inside = inside || (c == BoxClass::Inside);
+        unknown = unknown || (c == BoxClass::Unknown);
+        if (!outside && unknown)
+            break;
+    }
+    if (outside)
+        return BoxClass::Outside;
+    if (inside && !unknown)
+        return BoxClass::Inside;
+    return Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+BoxClass CSGMerge::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    bool outside = true;
+    for (ConstObjectPtr child : children)
+    {
+        const BoxClass c = Classify_Object(child, lo, hi, toWorld);
+        if (c == BoxClass::Inside)
+            return BoxClass::Inside;
+        outside = outside && (c == BoxClass::Outside);
+    }
+    return outside ? BoxClass::Outside : Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+BoxClass CSGIntersection::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    bool inside = true;
+    for (ConstObjectPtr child : children)
+    {
+        const BoxClass c = Classify_Object(child, lo, hi, toWorld);
+        if (c == BoxClass::Outside)
+            return BoxClass::Outside;
+        inside = inside && (c == BoxClass::Inside);
+    }
+    return inside ? BoxClass::Inside : Classify_By_Certified_Box(this, lo, hi, toWorld);
+}
+
+/// The CSG's surface index, made on first use: parsing pays nothing, and threads racing to make it make the same one.
+static std::shared_ptr<const CSGSurfaceIndex> Surface_Index(const CSG& csg)
+{
+    std::shared_ptr<const CSGSurfaceIndex> index = std::atomic_load(&csg.surfaceIndex);
+    if (index == nullptr)
+    {
+        index = std::make_shared<const CSGSurfaceIndex>(Make_Surface_Index(csg));
+        std::atomic_store(&csg.surfaceIndex, index);
+    }
+    return index;
+}
+
+std::uint32_t CSG::Surface_Leaves() const
+{
+    return Surface_Index(*this)->leaf.back();
+}
+
+bool CSG::Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool split, std::uint32_t& piece, std::uint32_t& leaf) const
+{
+    const std::shared_ptr<const CSGSurfaceIndex> held = Surface_Index(*this);
+    const CSGSurfaceIndex& index = *held;
+    split = split && (dynamic_cast<const CSGUnion *>(this) != nullptr);
+    const auto found = [&](std::uint32_t k)
+    {
+        std::uint32_t childPiece = piece + (split ? index.piece[k] : 0), childLeaf = leaf + index.leaf[k];
+        if (!children[k]->Find_Surface_Leaf(leafObject, point, split, childPiece, childLeaf))
+            return false;
+        piece = childPiece;
+        leaf = childLeaf;
+        return true;
+    };
+    // a hit lies in its child's padded box, so the tree names the candidates
+    const CSGChildTree *tree = childTree.get();
+    if ((tree != nullptr) && tree->ray.Built() && FinitePoint(point))
+    {
+        if (CSGChildTree::Visit(tree->ray, [&point](const CSGChildTree::Box& b) { return CSGChildTree::Contains(b, point); },
+                                [&](std::uint32_t k) { return CSGChildTree::Contains(tree->boxes[k], point) && found(k); }))
+            return true;
+        for (std::uint32_t k : tree->rayRest)
+            if (found(k))
+                return true;
+        return false;
+    }
+    for (std::uint32_t k = 0; k < std::uint32_t(children.size()); ++k)
+        if (found(k))
+            return true;
+    return false;
+}
+
+ObjectPtr CSG::Surface_Leaf(std::uint32_t leaf)
+{
+    const std::shared_ptr<const CSGSurfaceIndex> held = Surface_Index(*this);
+    const CSGSurfaceIndex& index = *held;
+    if (leaf >= index.leaf.back())
+        return nullptr;
+    // the last child numbered at or below the leaf; a child with no leaves shares its number with the next
+    const size_t k = size_t(std::upper_bound(index.leaf.begin(), index.leaf.end() - 1, leaf) - index.leaf.begin()) - 1;
+    return children[k]->Surface_Leaf(leaf - index.leaf[k]);
+}
+
+std::uint32_t CSGUnion::Surface_Pieces() const
+{
+    return Surface_Index(*this)->piece.back();
+}
+
+void CSGUnion::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query) const
+{
+    // a bounded_by object's stand-in box need not hold the members
+    if (Bound.empty() || BBox.finiteInterior)
+    {
+        Vector3d low, high;
+        Make_min_max_from_BBox(low, high, BBox);
+        if (!visitor.Enter(low, high))
+            return;
+    }
+    const std::shared_ptr<const CSGSurfaceIndex> held = Surface_Index(*this);
+    const CSGSurfaceIndex& index = *held;
+    const CSGChildTree *tree = childTree.get();
+    if ((tree == nullptr) || !tree->ray.Built())
+    {
+        for (size_t k = 0; k < children.size(); ++k)
+            children[k]->Visit_Surface_Boxes(visitor, firstPiece + index.piece[k], query);
+        return;
+    }
+    // the tree's padded boxes hold its members' boxes; the members it cannot hold always go; all in the children's order
+    std::vector<std::uint32_t> list(tree->rayRest);
+    CSGChildTree::Visit(tree->ray,
+                        [&visitor](const CSGChildTree::Box& b)
+                        { return visitor.Enter(Vector3d(b.lo[X], b.lo[Y], b.lo[Z]), Vector3d(b.hi[X], b.hi[Y], b.hi[Z])); },
+                        [&list](std::uint32_t k) { list.push_back(k); return false; });
+    std::sort(list.begin(), list.end());
+    for (std::uint32_t k : list)
+        children[k]->Visit_Surface_Boxes(visitor, firstPiece + index.piece[k], query);
+}
+
 /*****************************************************************************
 *
 * FUNCTION
@@ -1563,6 +1765,480 @@ void CSG::Determine_Textures(Intersection *isect, bool hitinside, WeightedTextur
                 textures[i].weight = weight;
         }
     }
+}
+
+
+/*****************************************************************************
+* Cells of an intersection or difference, refined on demand
+******************************************************************************/
+
+namespace
+{
+
+std::atomic<std::uint64_t> cellTests(0), cellNodes(0);
+
+struct CSGCellPair;
+
+/// One cell: its state, written once by whichever thread classifies it first, and its halves, made when a request needs them.
+struct CSGCellNode final
+{
+    enum : std::uint8_t { kUnclassified, kKept, kDropped, kNoSurface };
+    std::atomic<std::uint8_t> state{kUnclassified};
+    std::atomic<CSGCellPair *> halves{nullptr};
+    /// the children still unknown in this cell; null: its parent's
+    std::atomic<const std::vector<std::uint32_t> *> unknown{nullptr};
+    CSGCellNode() { cellNodes.fetch_add(1, std::memory_order_relaxed); }
+    ~CSGCellNode();
+};
+
+struct CSGCellPair final
+{
+    CSGCellNode half[2];
+};
+
+CSGCellNode::~CSGCellNode()
+{
+    delete halves.load(std::memory_order_relaxed);
+    delete unknown.load(std::memory_order_relaxed);
+    cellNodes.fetch_sub(1, std::memory_order_relaxed);
+}
+
+}
+
+/// The refinement an intersection and its copies share: the root cell in the build frame and the tree under it.
+struct CSGCells final
+{
+    Vector3d low, high;
+    /// whose children classify the cells, while it lives
+    const CSGIntersection *canonical = nullptr;
+    /// its children and its frame once it is gone
+    std::vector<ObjectPtr> held;
+    std::shared_ptr<const TRANSFORM> heldFrame;
+    /// every child: the root's unknown list
+    std::vector<std::uint32_t> all;
+    bool usable = true;
+    CSGCellNode root;
+
+    ~CSGCells()
+    {
+        for (ObjectPtr o : held)
+            Destroy_Object(o);
+    }
+    const std::vector<ObjectPtr>& Children() const { return (canonical != nullptr) ? canonical->children : held; }
+    const TRANSFORM *Frame() const { return (canonical != nullptr) ? canonical->sinceBuild.get() : heldFrame.get(); }
+};
+
+std::uint64_t CSG_Cell_Tests()
+{
+    return cellTests.load(std::memory_order_relaxed);
+}
+
+std::uint64_t CSG_Cell_Nodes()
+{
+    return cellNodes.load(std::memory_order_relaxed);
+}
+
+namespace
+{
+
+/// The world box of a build-frame cell under `frame`, within its parent's world box; false if nothing is left.
+bool World_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *frame, const Vector3d& plo, const Vector3d& phi,
+               Vector3d& wlo, Vector3d& whi)
+{
+    box_class::Interval w[3];
+    box_class::Local_Box(lo, hi, frame, nullptr, w);
+    for (int a = X; a <= Z; ++a)
+    {
+        wlo[a] = max(w[a].low, plo[a]);
+        whi[a] = min(w[a].high, phi[a]);
+        if (!(wlo[a] <= whi[a]))
+            return false;
+    }
+    return true;
+}
+
+double Largest_Side(const Vector3d& lo, const Vector3d& hi)
+{
+    return max(hi[X] - lo[X], max(hi[Y] - lo[Y], hi[Z] - lo[Z]));
+}
+
+double Area(const Vector3d& lo, const Vector3d& hi)
+{
+    const Vector3d d = hi - lo;
+    return 2.0 * (d[X] * d[Y] + d[Y] * d[Z] + d[Z] * d[X]);
+}
+
+/// The node's state, classifying it from the children still unknown at its parent the first time; `list` becomes its own.
+std::uint8_t Classify_Cell(const CSGCells& cells, CSGCellNode& node, const Vector3d& lo, const Vector3d& hi,
+                           const std::vector<std::uint32_t> *& list)
+{
+    std::uint8_t state = node.state.load(std::memory_order_acquire);
+    if (state == CSGCellNode::kUnclassified)
+    {
+        // a child inside the parent is inside every part of it, so only the unknown ones are asked
+        const std::vector<ObjectPtr>& kids = cells.Children();
+        std::vector<std::uint32_t> still;
+        state = CSGCellNode::kNoSurface;
+        for (std::uint32_t k : *list)
+        {
+            cellTests.fetch_add(1, std::memory_order_relaxed);
+            const BoxClass c = Classify_Object(kids[k], lo, hi, cells.Frame());
+            if (c == BoxClass::Outside)
+            {
+                state = CSGCellNode::kDropped;
+                break;
+            }
+            if (c == BoxClass::Unknown)
+                still.push_back(k);
+        }
+        if ((state != CSGCellNode::kDropped) && !still.empty())
+        {
+            state = CSGCellNode::kKept;
+            if (still.size() != list->size())
+            {
+                const std::vector<std::uint32_t> *mine = new std::vector<std::uint32_t>(std::move(still));
+                const std::vector<std::uint32_t> *expected = nullptr;
+                if (!node.unknown.compare_exchange_strong(expected, mine, std::memory_order_acq_rel))
+                    delete mine;
+            }
+        }
+        // every thread that classifies a node finds the same state and list
+        node.state.store(state, std::memory_order_release);
+    }
+    if (const std::vector<std::uint32_t> *own = node.unknown.load(std::memory_order_acquire))
+        list = own;
+    return state;
+}
+
+CSGCellPair *Halves(CSGCellNode& node)
+{
+    CSGCellPair *pair = node.halves.load(std::memory_order_acquire);
+    if (pair == nullptr)
+    {
+        CSGCellPair *mine = new CSGCellPair();
+        if (node.halves.compare_exchange_strong(pair, mine, std::memory_order_acq_rel))
+            pair = mine;
+        else
+            delete mine;
+    }
+    return pair;
+}
+
+/// A cell is cut at the middle of its widest build-frame side; false when the middle is not representable.
+bool Cut(const Vector3d& lo, const Vector3d& hi, int& axis, double& mid)
+{
+    axis = X;
+    for (int a = Y; a <= Z; ++a)
+        if (hi[a] - lo[a] > hi[axis] - lo[axis])
+            axis = a;
+    mid = 0.5 * (lo[axis] + hi[axis]);
+    return (lo[axis] < mid) && (mid < hi[axis]);
+}
+
+std::uint64_t Cell_Id(const CSGCellNode& node)
+{
+    return std::uint64_t(reinterpret_cast<std::uintptr_t>(&node));
+}
+
+struct CellBox final
+{
+    Vector3d lo, hi;
+    std::uint64_t cell;
+};
+
+/// One request's walk: down to its fineness, within its region, keeping the least-area cover when asked to.
+class CellWalk final
+{
+    public:
+        CellWalk(const CSGCells& c, const TRANSFORM *f, const SurfaceQuery& q, bool k) :
+            cells(c), frame(f), query(q), bounded(q.Bounded()), fineness(q.Fineness()), cover(k) {}
+
+        bool Go(CSGCellNode& node, const Vector3d& lo, const Vector3d& hi, const Vector3d& plo, const Vector3d& phi,
+                const std::vector<std::uint32_t> *list, Vector3d& elo, Vector3d& ehi, std::vector<CellBox>& boxes) const
+        {
+            Vector3d wlo, whi;
+            if (!World_Box(lo, hi, frame, plo, phi, wlo, whi))
+                return false;
+            if (bounded)
+                for (int a = X; a <= Z; ++a)
+                    if ((whi[a] < query.low[a]) || (wlo[a] > query.high[a]))
+                        return false;
+            if (Classify_Cell(cells, node, lo, hi, list) != CSGCellNode::kKept)
+                return false;
+            int axis;
+            double mid;
+            if ((Largest_Side(wlo, whi) <= fineness) || !Cut(lo, hi, axis, mid))
+            {
+                elo = wlo;
+                ehi = whi;
+                if (cover)
+                    boxes.push_back({wlo, whi, Cell_Id(node)});
+                return true;
+            }
+            CSGCellPair *pair = Halves(node);
+            Vector3d hi0 = hi, lo1 = lo;
+            hi0[axis] = mid;
+            lo1[axis] = mid;
+            const size_t first = boxes.size();
+            Vector3d alo, ahi, blo, bhi;
+            const bool a = Go(pair->half[0], lo, hi0, wlo, whi, list, alo, ahi, boxes);
+            const bool b = Go(pair->half[1], lo1, hi, wlo, whi, list, blo, bhi, boxes);
+            if (!a && !b)
+                return false;
+            elo = a ? (b ? min(alo, blo) : alo) : blo;
+            ehi = a ? (b ? max(ahi, bhi) : ahi) : bhi;
+            // the cover with the least total box area: this cell's enclosure or its halves' covers
+            if (cover && (boxes.size() - first > 1))
+            {
+                double sum = 0.0;
+                for (size_t k = first; k < boxes.size(); ++k)
+                    sum += Area(boxes[k].lo, boxes[k].hi);
+                if (Area(elo, ehi) <= sum)
+                {
+                    boxes.resize(first);
+                    boxes.push_back({elo, ehi, Cell_Id(node)});
+                }
+            }
+            return true;
+        }
+
+    private:
+        const CSGCells& cells;
+        const TRANSFORM *frame;
+        const SurfaceQuery& query;
+        const bool bounded;
+        const double fineness;
+        const bool cover;
+};
+
+}
+
+bool CSGIntersection::Refines() const
+{
+    return (cells != nullptr) && cells->usable && Bound.empty();
+}
+
+void CSGIntersection::Begin_Cells()
+{
+    cells.reset();
+    sinceBuild.reset();
+    // without a child that can answer more than its box, the cells cannot beat the box
+    if (!Has_Box_Test() || !Usable_Box(BBox) || !BBox.finiteInterior || Test_Flag(this, INVERTED_FLAG))
+        return;
+    std::shared_ptr<CSGCells> made = std::make_shared<CSGCells>();
+    Make_min_max_from_BBox(made->low, made->high, BBox);
+    made->canonical = this;
+    made->all.resize(children.size());
+    for (std::uint32_t k = 0; k < std::uint32_t(children.size()); ++k)
+        made->all[k] = k;
+    cells = std::move(made);
+}
+
+CSGIntersection::~CSGIntersection()
+{
+    Release_Cells();
+}
+
+void CSGIntersection::Release_Cells()
+{
+    // copies still share the cells: they keep this object's children and frame to classify with
+    if ((cells != nullptr) && (cells->canonical == this))
+    {
+        if (cells.use_count() > 1)
+        {
+            cells->usable = cells->usable && !children.empty();
+            cells->held.swap(children);
+            cells->heldFrame = sinceBuild;
+        }
+        cells->canonical = nullptr;
+    }
+}
+
+/// A transform after the build frame moves where the cells land, never the cells.
+static void Carry_Cells(CSG *object, const TRANSFORM *tr)
+{
+    CSGIntersection *intersection = dynamic_cast<CSGIntersection *>(object);
+    if ((intersection == nullptr) || (intersection->cells == nullptr))
+        return;
+    // the canonical object classifies in its own frame: moving it once cells exist would move them under its copies
+    if ((intersection->cells->canonical == intersection) &&
+        (intersection->cells->root.state.load(std::memory_order_acquire) != CSGCellNode::kUnclassified))
+    {
+        POV_SHAPE_ASSERT(false);
+        intersection->cells->usable = false;
+    }
+    std::shared_ptr<TRANSFORM> t = std::make_shared<TRANSFORM>();
+    if (intersection->sinceBuild != nullptr)
+        *t = *intersection->sinceBuild;
+    else
+    {
+        MIdentity(t->matrix);
+        MIdentity(t->inverse);
+    }
+    Compose_Transforms(t.get(), tr);
+    intersection->sinceBuild = std::move(t);
+}
+
+void CSGIntersection::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query) const
+{
+    const bool bounded = query.Bounded();
+    if (!Refines() || (!bounded && !(query.fineness > 0.0)))
+    {
+        ObjectBase::Visit_Surface_Boxes(visitor, firstPiece, query);
+        return;
+    }
+    Vector3d blo, bhi, elo, ehi;
+    Make_min_max_from_BBox(blo, bhi, BBox);
+    std::vector<CellBox> boxes;
+    const CellWalk walk(*cells, sinceBuild.get(), query, !bounded);
+    if (!walk.Go(cells->root, cells->low, cells->high, blo, bhi, &cells->all, elo, ehi, boxes))
+        return;
+    SurfaceBox out;
+    out.piece = firstPiece;
+    if (bounded)
+    {
+        // one box per piece and region: the enclosure of the cells meeting it
+        for (int a = X; a <= Z; ++a)
+        {
+            elo[a] = max(elo[a], query.low[a]);
+            ehi[a] = min(ehi[a], query.high[a]);
+            if (!(elo[a] <= ehi[a]))
+                return;
+        }
+        Make_BBox_from_min_max(out.box, elo, ehi);
+        visitor.Visit(out);
+        return;
+    }
+    for (const CellBox& b : boxes)
+    {
+        Make_BBox_from_min_max(out.box, b.lo, b.hi);
+        out.cell = b.cell;
+        visitor.Visit(out);
+    }
+}
+
+bool CSGIntersection::Surface_Extent(double fineness, Vector3d& low, Vector3d& high) const
+{
+    Make_min_max_from_BBox(low, high, BBox);
+    if (!Refines() || !(fineness > 0.0) || !std::isfinite(fineness))
+        return true;
+    struct Entry final
+    {
+        double key;
+        std::uint64_t order;
+        CSGCellNode *node;
+        Vector3d lo, hi, wlo, whi;
+        const std::vector<std::uint32_t> *list;
+        bool operator<(const Entry& e) const { return (key > e.key) || ((key == e.key) && (order > e.order)); }
+    };
+    const Vector3d blo = low, bhi = high;
+    // best first per face: only the cells that can hold the extreme face are cut
+    for (int axis = X; axis <= Z; ++axis)
+        for (int side = 0; side < 2; ++side)
+        {
+            const auto key = [axis, side](const Vector3d& wlo, const Vector3d& whi) { return (side == 0) ? wlo[axis] : -whi[axis]; };
+            std::priority_queue<Entry> queue;
+            std::uint64_t order = 0;
+            Entry root{0.0, order++, &cells->root, cells->low, cells->high, Vector3d(), Vector3d(), &cells->all};
+            if (!World_Box(root.lo, root.hi, sinceBuild.get(), blo, bhi, root.wlo, root.whi))
+                return false;
+            root.key = key(root.wlo, root.whi);
+            queue.push(root);
+            bool found = false;
+            while (!queue.empty())
+            {
+                Entry e = queue.top();
+                queue.pop();
+                if (Classify_Cell(*cells, *e.node, e.lo, e.hi, e.list) != CSGCellNode::kKept)
+                    continue;
+                int cut;
+                double mid;
+                if ((Largest_Side(e.wlo, e.whi) <= fineness) || !Cut(e.lo, e.hi, cut, mid))
+                {
+                    (side == 0) ? (low[axis] = e.wlo[axis]) : (high[axis] = e.whi[axis]);
+                    found = true;
+                    break;
+                }
+                CSGCellPair *pair = Halves(*e.node);
+                for (int h = 0; h < 2; ++h)
+                {
+                    Entry c{0.0, order++, &pair->half[h], e.lo, e.hi, Vector3d(), Vector3d(), e.list};
+                    (h == 0) ? (c.hi[cut] = mid) : (c.lo[cut] = mid);
+                    if (!World_Box(c.lo, c.hi, sinceBuild.get(), e.wlo, e.whi, c.wlo, c.whi))
+                        continue;
+                    c.key = key(c.wlo, c.whi);
+                    queue.push(c);
+                }
+            }
+            if (!found)
+                return false;
+        }
+    return true;
+}
+
+int CSGIntersection::Surface_Cell(const Vector3d& point, double fineness, const std::vector<SurfaceBox>& answer) const
+{
+    if (!Refines())
+        return answer.empty() ? -1 : 0;
+    // the point in the build frame, down the half-open cells to the one the answer covers
+    Vector3d p = point;
+    if (sinceBuild != nullptr)
+        MInvTransPoint(p, point, sinceBuild.get());
+    const CSGCellNode *node = &cells->root;
+    Vector3d lo = cells->low, hi = cells->high;
+    while (node != nullptr)
+    {
+        for (size_t k = 0; k < answer.size(); ++k)
+            if (answer[k].cell == Cell_Id(*node))
+                return int(k);
+        const CSGCellPair *pair = node->halves.load(std::memory_order_acquire);
+        int axis;
+        double mid;
+        if ((pair == nullptr) || !Cut(lo, hi, axis, mid))
+            break;
+        const int h = (p[axis] < mid) ? 0 : 1;
+        (h == 0) ? (hi[axis] = mid) : (lo[axis] = mid);
+        node = &pair->half[h];
+    }
+    // a point its own rounding put in a dropped cell: the first box holding it, widened by that rounding
+    for (size_t k = 0; k < answer.size(); ++k)
+    {
+        Vector3d a, b;
+        Make_min_max_from_BBox(a, b, answer[k].box);
+        bool holds = true;
+        for (int d = X; d <= Z; ++d)
+        {
+            const double slack = 4.0 * std::numeric_limits<double>::epsilon() * (std::fabs(point[d]) + std::fabs(a[d]) + std::fabs(b[d]));
+            holds = holds && (point[d] >= a[d] - slack) && (point[d] <= b[d] + slack);
+        }
+        if (holds)
+            return int(k);
+    }
+    (void)fineness;
+    return -1;
+}
+
+bool CSGUnion::Surface_Extent(double fineness, Vector3d& low, Vector3d& high) const
+{
+    Vector3d blo, bhi;
+    Make_min_max_from_BBox(blo, bhi, BBox);
+    low = Vector3d(HUGE_VAL);
+    high = Vector3d(-HUGE_VAL);
+    bool any = false;
+    for (ConstObjectPtr child : children)
+    {
+        Vector3d a, b;
+        if ((child->Type & LIGHT_SOURCE_OBJECT) || !child->Surface_Extent(fineness, a, b))
+            continue;
+        low = min(low, a);
+        high = max(high, b);
+        any = true;
+    }
+    if (!any)
+        return false;
+    low = max(low, blo);
+    high = min(high, bhi);
+    return (low[X] <= high[X]) && (low[Y] <= high[Y]) && (low[Z] <= high[Z]);
 }
 
 }

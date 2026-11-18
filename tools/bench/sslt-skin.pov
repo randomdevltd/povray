@@ -8,8 +8,7 @@
 #ifndef (Diffuse) #declare Diffuse = 60; #end
 #ifndef (Method) #declare Method = 1; #end
 #ifndef (Flat) #declare Flat = 0; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
-global_settings { assumed_gamma 1.0 mm_per_unit 40 #if (Sub) subsurface { samples Diffuse, 12 method Method spacing Spacing } #end }
+global_settings { assumed_gamma 1.0 mm_per_unit 40 #if (Sub) subsurface { samples Diffuse, 12 method Method } #end }
 #declare Flesh = <0.9, 0.45, 0.35>;
 #ifndef (Dark) #declare Dark = <0.16, 0.09, 0.06>; #end
 #declare Mfp = <3, 1.2, 0.6>;

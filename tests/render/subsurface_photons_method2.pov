@@ -4,15 +4,15 @@
 #ifndef (Photons) #declare Photons = 2; #end
 #ifndef (PhotonOnly) #declare PhotonOnly = 1; #end
 #ifndef (Case) #declare Case = 0; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (SubsurfaceMemory) #declare SubsurfaceMemory = 64; #end
+#ifndef (Cells) #declare Cells = 0; #end
 #ifndef (PhotonMemory) #declare PhotonMemory = 2; #end
 #ifndef (CloseUp) #declare CloseUp = 0; #end
 global_settings {
   assumed_gamma 1
   max_trace_level 8
   mm_per_unit 10
-  subsurface { samples 12, 4 method 2 spacing Spacing memory SubsurfaceMemory }
+  subsurface { samples 12, 4 method 2 memory SubsurfaceMemory }
   #switch (Photons)
     #case (1) photons { count 200000 } #break
     #case (2) photons { method 2 quality 0.25 memory PhotonMemory } #break
@@ -39,6 +39,7 @@ camera {
   box { <-1.5, -0.4, -1.5>, <0.3, 0, 1.5> }
   box { <0.3, -0.4, -1.5>, <1.5, 0, 1.5> #if (Case = 1) photons { collect off } #end }
   material { Skin }
+  #if (Cells > 0) subsurface { domain_cells Cells } #end
 }
 
 #if (Case = 2)

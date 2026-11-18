@@ -172,7 +172,6 @@ class Media::FastCache final
         bool fieldReady = false;
         bool constantDensity = false;
         MathColour constantValue = MathColour(1.0);
-        std::shared_ptr<const PreparedGridLayout> layout;
         bool published = false;
         unsigned failureReason = kFastField;
         std::string failure = "The density pattern or coefficients cannot be prepared; check for unsupported patterns or negative/non-finite values.";
@@ -450,17 +449,9 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
     if (prepared)
         fieldReady = TakePrepared();
-    if (fieldReady && layout)
-        step = cellWidth;
     bool sameBounds = fieldReady;
     for (int axis = 0; axis < 3; axis++)
         sameBounds = sameBounds && (low[axis] == lo[axis]) && (size[axis] == extent[axis]);
-    if (media.fastCache && media.fastCache.get() == this)
-    {
-        const auto layout = PrepareInteriorFieldLayout(container, td);
-        if (layout)
-            sameBounds = sameBounds && nx == int(layout->counts[X]) && ny == int(layout->counts[Y]) && nz == int(layout->counts[Z]);
-    }
     if (!sameBounds)
     {
         step = media.FastResolution;
@@ -489,11 +480,13 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         char detail[512];
         DBL needed;
         const DBL limit = media.PreparedCellLimit();
-        // the width domain_cells asked for to get this grid, not the layout's cell width it was built on
+        // the width domain_cells asked for, not the coarsened width the grid was built at
         CoarseGridDetail(detail, sizeof(detail), "density grid", coarseStep, coarseCells, limit,
                          FitGridStep(size, coarseStep, limit, needed));
         WarnFastMedia(td, media, kFastCoarse, detail, container);
     }
+    if (td->mediaMessages)
+        td->mediaMessages->Info("Prepared density grid: %d x %d x %d; medium at %s.", nx, ny, nz, media.where.c_str());
     if (cooperate)
         cooperate();
     published = true;
@@ -534,15 +527,13 @@ bool Media::FastCache::SizeGrid(const Media& media, const BoundingBox& bounds, D
         failure = "The density grid has no usable cell size; check the container's bounds and the media resolution.";
         return false;
     }
-    nx = layout ? int(layout->counts[X]) : int(sx);
-    ny = layout ? int(layout->counts[Y]) : int(sy);
-    nz = layout ? int(layout->counts[Z]) : int(sz);
+    nx = int(sx);
+    ny = int(sy);
+    nz = int(sz);
     cell = Vector3d(size[X] / nx, size[Y] / ny, size[Z] / nz);
     density.resize(size_t(nx) * ny * nz);
     effect = 0.0;
     cellWidth = std::max(cell[X], std::max(cell[Y], cell[Z]));
-    if (layout)
-        step = cellWidth;
     return true;
 }
 
@@ -774,7 +765,7 @@ bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, cons
     return true;
 }
 
-RefractionSpec::RefractionSpec(const RefractionSpec& source) : detail(source.detail),
+RefractionSpec::RefractionSpec(const RefractionSpec& source) : detail(source.detail), domainCells(source.domainCells),
     transform(Copy_Transform(source.transform))
 {
     for (const auto function : source.functions)
@@ -951,6 +942,9 @@ static Vector3d ContainerSize(ObjectPtr object)
     return high - low;
 }
 
+// The refraction field's grid follows its own settings only: cells half its detail wide, or at detail auto its
+// domain_cells spread over the container, capped at twice its domain_cells like every other grid. Media grids and an
+// interior light's lattice are sized from their own counts and never share this layout.
 std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr owner, TraceThreadData *td)
 {
     if (!owner || !owner->interior)
@@ -958,7 +952,8 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
     Vector3d low, high;
     Make_min_max_from_BBox(low, high, owner->BBox);
     const Vector3d size = high - low;
-    const bool bounded = UsablePreparedContainer(owner);
+    const bool refracting = owner->interior->refraction && !owner->interior->refraction->functions.empty();
+    const bool bounded = refracting && UsablePreparedContainer(owner);
     std::shared_ptr<InteriorField> existing;
     for (const auto& field : owner->interior->fields)
         if (field->owner == owner)
@@ -975,46 +970,28 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
             field->lights.clear();
             break;
         }
-    const auto scene = td->GetSceneData();
-    DBL requested = HUGE_VAL;
-    DBL limit = scene->PreparedCellLimit();
-    bool needed = owner->interior->light != nullptr;
-    if (needed)
-    {
-        const DBL cells = LightDomainCells(owner->interior->light.get(), *scene);
-        requested = DomainCellWidth(owner, cells);
-        limit = std::max(limit, 2.0 * cells);
-    }
-    if (owner->interior->refraction && !owner->interior->refraction->functions.empty())
-    {
-        needed = true;
-        const DBL detail = owner->interior->refraction->detail;
-        requested = std::min(requested, detail > 0.0 ? detail * 0.5 : DomainCellWidth(owner, scene->domainCells));
-    }
-    // a constant medium owns no grid, so its step sets the layout only when nothing that varies does
-    DBL constantStep = HUGE_VAL;
+    // the record exists for every interior with a light, refraction or method 4 medium; only refraction has a layout
+    bool needed = refracting || (owner->interior->light != nullptr);
     for (const Media& medium : owner->interior->media)
-    {
-        if (medium.Sample_Method != 4)
-            continue;
-        needed = true;
-        const DBL step = DomainCellWidth(owner, medium.domainCells);
-        limit = std::max(limit, medium.PreparedCellLimit());
-        DBL& target = ConstantDensity(medium) ? constantStep : requested;
-        if (step > 0.0)
-            target = std::min(target, step);
-    }
-    if (!(requested < HUGE_VAL))
-        requested = constantStep;
+        needed = needed || (medium.Sample_Method == 4);
     if (!needed)
         return nullptr;
     std::shared_ptr<const PreparedGridLayout> layout;
     if (bounded)
     {
+        const RefractionSpec& spec = *owner->interior->refraction;
+        const DBL cells = spec.domainCells > 0.0 ? spec.domainCells : td->GetSceneData()->refractionDomainCells;
+        const DBL requested = spec.detail > 0.0 ? spec.detail * 0.5 : DomainCellWidth(owner, cells);
         if (!(requested > 0.0) || !IsFiniteNumber(requested))
-            throw POV_EXCEPTION_STRING("Prepared interior grid has no usable sampling step.");
+            throw POV_EXCEPTION_STRING("Prepared refraction grid has no usable sampling step.");
         DBL neededCells = 0.0;
-        const DBL step = FitGridStep(size, requested, limit, neededCells);
+        const DBL step = FitGridStep(size, requested, 2.0 * cells, neededCells);
+        if ((step != requested) && td->mediaMessages)
+            td->mediaMessages->Warning(kWarningGeneral,
+                "The refraction grid at its %s width %.6g needs %.0f cells, above the limit of %.0f (twice its "
+                "domain_cells), so it is built at %.6g instead. Set the refraction domain_cells to at least %.0f to "
+                "avoid this coarsening.", spec.detail > 0.0 ? "detail" : "domain_cells", requested, neededCells,
+                2.0 * cells, step, std::ceil(0.5 * neededCells));
         std::array<size_t, 3> counts;
         for (int axis = 0; axis < 3; axis++)
             counts[axis] = size_t(std::max(1.0, std::ceil(size[axis] / step)));
@@ -1100,8 +1077,6 @@ void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const st
     }
     if (!fastCache || (fastCache->container != owner))
         throw POV_EXCEPTION_STRING("Prepared spatial field has no valid placement binding.");
-    if (owner)
-        fastCache->layout = PrepareInteriorFieldLayout(owner, td);
     fastCache->Finalize(*this, td, cooperate);
     if (Sample_Method == 4)
     {
@@ -1641,6 +1616,9 @@ static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const Refrac
             td->Stats() += helper->Stats();
         const DBL step = std::max(layout->size[X] / layout->counts[X],
             std::max(layout->size[Y] / layout->counts[Y], layout->size[Z] / layout->counts[Z]));
+        if (td->mediaMessages)
+            td->mediaMessages->Info("Prepared refraction grid: %u x %u x %u.", unsigned(layout->counts[X]),
+                                    unsigned(layout->counts[Y]), unsigned(layout->counts[Z]));
         entries.push_back({layout, std::make_shared<const PreparedScalarGrid>(layout, std::move(values)), step});
     }
     if (entries.empty())
@@ -1703,7 +1681,7 @@ void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::func
 {
     if (owner == nullptr || owner->interior == nullptr)
         return;
-    const auto sharedLayout = PrepareInteriorFieldLayout(owner, td);
+    PrepareInteriorFieldLayout(owner, td);
     ValidateNativePreparedPhotonSources(owner, td);
     for (Media& medium : owner->interior->media)
         medium.FinalizePreparedField(owner, td, cooperate);
@@ -1883,9 +1861,9 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    bouncePasses(source.bouncePasses), bounceSelf(source.bounceSelf), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
+    bouncePasses(source.bouncePasses), selfShare(source.selfShare), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
-    samples(source.samples), domainCells(source.domainCells),
+    samples(source.samples), domainCells(source.domainCells), bounceDirections(source.bounceDirections),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
     photonOptions(source.photonOptions), where(source.where)

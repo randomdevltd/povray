@@ -75,6 +75,8 @@ struct RayRootQuery
     virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
     virtual bool AllRoots() const { return false; }
     virtual bool PreciseBoundary() const { return false; }
+    /// The depths outside which no root is wanted, so a child tree may skip boxes the segment misses.
+    virtual bool Segment(double& nearDepth, double& farDepth) const { return false; }
 };
 
 /// The root query active on one ray of a ticket; a copy of a ticket has none, and assigning a ticket keeps it.
@@ -213,6 +215,9 @@ class Ray final : public BasicRay
             return slot.ray != this || !slot.query || slot.query->Admit(slot.owner ? slot.owner : object, depth);
         }
         const RayRootQuery* GetRootQuery() const { return ticket.rootQuery.ray == this ? ticket.rootQuery.query : nullptr; }
+        /// Whether this ray's root query asks for every crossing at full precision: it places its own start, so no
+        /// depth is too near to be a crossing, and no root may be left at a solver's absolute tolerance.
+        bool PreciseRoots() const { return GetRootQuery() && GetRootQuery()->PreciseBoundary(); }
         ConstObjectPtr GetRootOwner() const { return ticket.rootQuery.ray == this ? ticket.rootQuery.owner : nullptr; }
         void SetRootQuery(const RayRootQuery* query) const { ticket.rootQuery.Set(this, query, nullptr); }
         void SetRootOwner(ConstObjectPtr owner) const { if (ticket.rootQuery.ray == this) ticket.rootQuery.owner = owner; }

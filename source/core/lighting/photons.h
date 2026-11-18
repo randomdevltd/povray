@@ -378,7 +378,8 @@ class ShootingDirection final
         DBL dist;                      /* distance from light to center of bounding sphere */
         DBL rad;                       /* radius of bounding sphere */
 
-        void compute();
+        /// Aims at the target's surface as far as its photon spacing resolves it (0: its bounding box).
+        void compute(DBL spacing = 0.0);
         void recomputeForAreaLight(Ray& ray, int area_x, int area_y);
     };
 

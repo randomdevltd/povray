@@ -65,6 +65,7 @@
 #include "core/lighting/photons.h"
 #include "core/lighting/radiosity.h"
 #include "core/lighting/subsurface.h"
+#include "core/lighting/surfacemapstats.h"
 #include "core/math/matrix.h"
 #include "core/shape/box.h"
 #include "core/shape/cone.h"
@@ -912,7 +913,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     // a failure in an early entry must not be cleared by AppendTask while later entries are still queued
     const auto queuing = renderTasks.Hold();
 
-    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceMemory, viewData.sceneData->subsurfaceSpacing);
+    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceMemory);
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
     {
         // each view of the scene starts from the settings parsing left, which this one narrows below
@@ -1654,13 +1655,29 @@ void View::GetStatistics(POVMS_Object& renderStats)
         {
             SubsurfaceCloudStatistics cloud = viewData.subsurfaceCache->Statistics();
             const char *held = (viewData.sceneData->subsurfaceMemory >= 1.0) ? "against the cap" : "held";
-            messages.Info("Method 2 point cloud at spacing %g: %.1f MB %s, peak %.1f MB with rows being cast; %.0f cells, %.0f "
+            messages.Info("Method 2 point cloud: %.1f MB %s (%.1f MB of it surface maps), peak %.1f MB with rows being cast; %.0f cells, %.0f "
                           "points built, %.0f read; cells and points whose step the pixel set %.0f, %.0f, the diffusion %.0f, %.0f, the "
-                          "object's size %.0f, %.0f, the finest floor %.0f, %.0f.",
-                          cloud.spacing, cloud.chargedBytes / 1048576.0, held, cloud.peakBytes / 1048576.0, cloud.cells, cloud.points, cloud.read,
+                          "object's size %.0f, %.0f, the finest floor %.0f, %.0f, the object's domain_cells on the surface map %.0f, %.0f; digest %016llx.",
+                          cloud.chargedBytes / 1048576.0, held, cloud.mapBytes / 1048576.0, cloud.peakBytes / 1048576.0, cloud.cells, cloud.points, cloud.read,
                           cloud.termCells[kStepPixel], cloud.termPoints[kStepPixel], cloud.termCells[kStepDiffusion],
                           cloud.termPoints[kStepDiffusion], cloud.termCells[kStepObject], cloud.termPoints[kStepObject],
-                          cloud.termCells[kStepFinest], cloud.termPoints[kStepFinest]);
+                          cloud.termCells[kStepFinest], cloud.termPoints[kStepFinest], cloud.termCells[kStepMap], cloud.termPoints[kStepMap],
+                          (unsigned long long)cloud.digest);
+            if (viewData.sceneData->surfaceMaps)
+            {
+                std::size_t mapCells, traced, found, maps;
+                std::uint64_t digest;
+                surface_map::Levels levels;
+                surface_map::Totals(*viewData.sceneData->surfaceMaps, mapCells, traced, found, digest, &levels, &maps);
+                messages.Info("Surface maps: %zu maps, %zu chunks built, %zu lines traced, %zu points found; digest %016llx; chunks/lines "
+                              "by level%s.", maps, mapCells, traced, found, (unsigned long long)digest, surface_map::LevelsText(levels).c_str());
+                auto per = [](double bytes, double count) { return (count > 0.0) ? bytes / count : 0.0; };
+                messages.Info("Method 2 bytes a point: %.4g MB held over %.0f cloud points built is %.0f B a point (%.0f B without the "
+                              "surface maps); %.4g MB of surface maps over %zu map points found is %.0f B a point.",
+                              cloud.chargedBytes / 1048576.0, cloud.points, per(cloud.chargedBytes, cloud.points),
+                              per(cloud.chargedBytes - cloud.mapBytes, cloud.points), cloud.mapBytes / 1048576.0, found,
+                              per(cloud.mapBytes, double(found)));
+            }
             messages.Info("Method 2 tables: %.0f boundaries and %.0f layer tables built, %.0f dropped for the %g MB cap, peak %.2f MB alive.",
                           cloud.boundaries, cloud.layers, cloud.evicted, kSubsurfaceTablesMB, cloud.tablesPeakBytes / 1048576.0);
             const char *reasons[kUnservedReasons] = {
@@ -1668,10 +1685,19 @@ void View::GetStatistics(POVMS_Object& renderStats)
                 "its part has a light the object's other parts were not found to have",
                 "the diffusion's reach is not finite",
                 "its cells lie too far from the origin to be numbered",
+                "its surface map found no surface on it at any level",
+                "",
             };
+            for (const auto& object : viewData.subsurfaceCache->Budgets())
+                messages.Info("Method 2 on the %s: area %.4g, domain_cells %.0f, points %.4g apart (surface map level %d).",
+                              object.description.c_str(), object.area, object.budget, object.spacing, object.level);
             for (const auto& object : viewData.subsurfaceCache->Unserved())
-                messages.Warning(kWarningGeneral, "Subsurface method 2 left %.0f shading points of the %s without diffuse subsurface light, "
-                                 "as %s.", double(object.count), object.description.c_str(), reasons[object.reason]);
+                if (object.reason == kUnservedFarPoints)
+                    messages.Warning(kWarningGeneral, "Subsurface method 2 found no surface map point beyond one point's area of %.0f "
+                                     "shading points of the %s; each was lit as its exit point.", double(object.count), object.description.c_str());
+                else
+                    messages.Warning(kWarningGeneral, "Subsurface method 2 left %.0f shading points of the %s without diffuse subsurface light, "
+                                     "as %s.", double(object.count), object.description.c_str(), reasons[object.reason]);
         }
     }
 

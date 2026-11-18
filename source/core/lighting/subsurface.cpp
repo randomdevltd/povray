@@ -49,6 +49,7 @@
 #include "base/mathutil.h"
 
 // POV-Ray header files (core module)
+#include "core/lighting/bounceorders.h"
 #include "core/lighting/photons.h"
 #include "core/math/simd.h"
 
@@ -295,8 +296,8 @@ void SubsurfaceBoundary::BuildLayer(int step, int k, float *rows) const
         double tau = exp2(0.25 * (k + part)), z = std::min(1.0, 0.5 * tau), scatter = -expm1(-tau), period = 2.0 * (tau + dipole.zb);
         int images = (dipole.sigma * period > 0.0) ? std::min(64, int(ceil(12.0 / (dipole.sigma * period)))) : 64;
         float *near = rows + part * 2 * kBeamColumns, *far = near + kLayerFar;
-        double rdRatio = 1.0, discRatio = 1.0, farRatio = 1.0;
-        double sums[3][4];
+        double rdRatio = 1.0, discRatio = 1.0, farRatio = 1.0, farDiscRatio = 1.0;
+        double sums[4][4];
         for (int c = 0; c < kBeamColumns; c++)
         {
             double xSqr = ldexp(1.0 + (c % 4) / 4.0, kBeamFirstOctave + c / 4), x = sqrt(xSqr);
@@ -310,27 +311,32 @@ void SubsurfaceBoundary::BuildLayer(int step, int k, float *rows) const
                     lanes[l] = ldexp(1.0 + (column % 4) / 4.0, kBeamFirstOctave + column / 4);
                 }
                 const LayerLanes xs = LayerLanes::load(lanes), xl = simd::sqrt(xs);
-                LayerLanes rd(0.0), disc(0.0), through(0.0);
+                LayerLanes rd(0.0), disc(0.0), through(0.0), throughDisc(0.0);
                 for (int i = -images; i <= images; i++)
                 {
                     double real = i * period + z, image = i * period - z - dipole.zb;
                     rd = rd + (LayerRd(dipole, xs, real, 1.0) + LayerRd(dipole, xs, image, -1.0));
                     disc = disc + (LayerDisc(dipole, xl, real, 1.0) + LayerDisc(dipole, xl, image, -1.0));
                     through = through + (LayerRd(dipole, xs, tau - real, 1.0) + LayerRd(dipole, xs, tau - image, -1.0));
+                    throughDisc = throughDisc + (LayerDisc(dipole, xl, tau - real, 1.0) + LayerDisc(dipole, xl, tau - image, -1.0));
                 }
                 rd.store(sums[0]);
                 disc.store(sums[1]);
                 through.store(sums[2]);
+                throughDisc.store(sums[3]);
             }
-            double rd = sums[0][c % 4], disc = sums[1][c % 4], through = sums[2][c % 4];
+            double rd = sums[0][c % 4], disc = sums[1][c % 4], through = sums[2][c % 4], throughDisc = sums[3][c % 4];
             double rdDipole = dipole.Rd(xSqr), discDipole = dipole.Disc(x), farDipole = dipole.Rd(xSqr + Sqr(tau));
+            // the far face's disc integral over the dipole's at the straight distance through the layer
+            double farDiscDipole = dipole.Disc(sqrt(xSqr + Sqr(tau))) - dipole.Disc(tau);
             rdRatio = (rdDipole > 0.0) ? std::max(0.0, scatter * rd / rdDipole) : rdRatio;
             discRatio = (discDipole > 0.0) ? std::max(0.0, scatter * disc / discDipole) : discRatio;
             farRatio = (farDipole > 0.0) ? std::max(0.0, scatter * through / farDipole) : farRatio;
+            farDiscRatio = (farDiscDipole > 0.0) ? std::max(0.0, scatter * throughDisc / farDiscDipole) : farDiscRatio;
             near[2 * c] = float(rdRatio);
             near[2 * c + 1] = float(discRatio);
             far[2 * c] = float(farRatio);
-            far[2 * c + 1] = float(farRatio);
+            far[2 * c + 1] = float(farDiscRatio);
         }
     }
 }
@@ -505,10 +511,28 @@ std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey
     return slot;
 }
 
-SubsurfaceCache::SubsurfaceCache(double capMB, double spacing) :
-    cap(capMB >= 1.0 ? size_t(capMB * 1048576.0) : std::numeric_limits<size_t>::max()),
-    spacing(spacing)
+SubsurfaceCache::SubsurfaceCache(double capMB) :
+    cap(capMB >= 1.0 ? size_t(capMB * 1048576.0) : std::numeric_limits<size_t>::max())
 {}
+
+void SubsurfaceCache::ChargeMap(const void *map, size_t bytes)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        size_t& known = mapBytes[map];
+        if (bytes <= known)
+            return;
+        charged += bytes - known;
+        known = bytes;
+        peak = std::max(peak, charged + staged);
+        if ((charged > cap) && (refused == 0))
+        {
+            refused = charged;
+            refusedAt = progress;
+        }
+    }
+    CheckCap();
+}
 
 void SubsurfaceCache::Charge(SubsurfaceCell& cell)
 {
@@ -692,6 +716,22 @@ std::vector<SubsurfaceCache::UnservedObject> SubsurfaceCache::Unserved() const
     return list;
 }
 
+void SubsurfaceCache::ReportBudget(const void *object, const BudgetObject& budget)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    budgets.emplace(object, budget);
+}
+
+std::vector<SubsurfaceCache::BudgetObject> SubsurfaceCache::Budgets() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<BudgetObject> list;
+    for (const auto& entry : budgets)
+        list.push_back(entry.second);
+    std::sort(list.begin(), list.end(), [](const BudgetObject& a, const BudgetObject& b) { return a.description < b.description; });
+    return list;
+}
+
 bool SubsurfaceCache::ClosedMesh(const void *mesh, const std::function<bool()>& compute)
 {
     std::lock_guard<std::mutex> lock(closedMeshesMutex);
@@ -712,15 +752,15 @@ void SubsurfaceCache::CheckCap() const
     }
     if (needed == 0)
         return;
-    // A cap or spacing that would hold what was built so far; cloud memory goes about as 1/spacing^2.
+    // Memory goes about as an object's domain_cells, its count of points.
     auto roundUp = [](double v) { double unit = std::pow(10.0, std::floor(std::log10(v)) - 1.0); return std::ceil(v / unit) * unit; };
     double neededMB = needed / 1048576.0, capMB = cap / 1048576.0;
-    double coarser = roundUp(spacing * std::sqrt(neededMB / capMB));
     char text[640];
-    std::snprintf(text, sizeof(text), "Subsurface clouds need at least %.4g MB at spacing %g after %.0f%% of the image, past their memory cap "
-                  "of %.4g MB, so the render stopped. Raise the cap above memory %g, or set spacing %g or more (about %.3g MB for "
-                  "what was built so far), in global_settings { subsurface { ... } }; the rest of the image will need more.",
-                  neededMB, spacing, 100.0 * at, capMB, roundUp(neededMB), coarser, neededMB * (spacing / coarser) * (spacing / coarser));
+    std::snprintf(text, sizeof(text), "Subsurface clouds and their surface maps need at least %.4g MB after %.0f%% of the image, past "
+                  "their memory cap of %.4g MB, so the render stopped. Raise the cap above memory %g in global_settings { subsurface "
+                  "{ ... } }, or give the objects fewer points with subsurface { domain_cells N } (about %.3g times fewer would hold "
+                  "what was built so far); the rest of the image will need more.",
+                  neededMB, 100.0 * at, capMB, roundUp(neededMB), neededMB / capMB);
     throw POV_EXCEPTION(kOutOfMemoryErr, text);
 }
 
@@ -753,7 +793,8 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
     std::vector<std::shared_ptr<SubsurfaceCell>> all;
     {
         std::lock_guard<std::mutex> lock(mutex);
-        stats.spacing = spacing;
+        for (const auto& map : mapBytes)
+            stats.mapBytes += double(map.second);
         stats.peakBytes = double(peak);
         stats.chargedBytes = double(charged);
         all.reserve(cells.size());
@@ -778,6 +819,17 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
             stats.read += double(cell->PointsRead());
             stats.termCells[cell->term] += 1.0;
             stats.termPoints[cell->term] += points;
+            std::uint64_t digest = 0;
+            for (const SubsurfacePoint& p : cell->points)
+            {
+                std::uint64_t bits[6] = {};
+                static_assert(sizeof(p.irradiance) <= 2 * sizeof(std::uint64_t), "a point's light fits two words");
+                std::memcpy(bits, &p.position, sizeof(p.position));
+                std::memcpy(&bits[3], &p.area, sizeof(p.area));
+                std::memcpy(&bits[4], p.irradiance, sizeof(p.irradiance));
+                for (std::uint64_t b : bits) digest = BounceOrderMix(digest ^ b);
+            }
+            stats.digest ^= digest;
         }
     }
     return stats;

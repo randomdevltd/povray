@@ -11,7 +11,7 @@
 #ifndef (Offset) #declare Offset = 0; #end
 #ifndef (Gain) #declare Gain = 1; #end
 global_settings { assumed_gamma 1
-  #if (Case = 2 | Case = 4 | Case = 5 | Case = 6) subsurface { method 2 samples 16, 4 spacing 0.5 } #end
+  #if (Case = 2 | Case = 4 | Case = 5 | Case = 6) subsurface { method 2 samples 16, 4 } #end
 }
 #if (Case != 7) camera { location <0, 1.5, -3.2> look_at <0, 1, 0> angle 70 } #end
 background { rgb 0 }
@@ -26,7 +26,7 @@ background { rgb 0 }
   light_source { <0.6, 2.2, -0.8>, rgb 3 fade_distance 1 fade_power 2 }
   box { <-0.4, 2.48, -0.4>, <0.4, 2.5, 0.4>
     pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0.5 }
-    light { emission brightness 4 nits samples Samples bounce { passes Passes } }
+    light { brightness 4 nits samples Samples bounce { passes Passes } }
   }
   #declare Walls = array[6] {
     <0.8, 0.8, 0.8>, <0.9, 0.2, 0.2>, <0.2, 0.9, 0.2>, <0.8, 0.8, 0.8>, <0.2, 0.3, 0.9>, <0.9, 0.9, 0.3>

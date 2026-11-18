@@ -58,7 +58,7 @@ cmp passive.rgb native_passive.rgb
 render csg "$scene" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
 render native_csg "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
 cmp csg.rgb native_csg.rgb
-# a bounce-only block's brightness multiplies the light it re-emits
+# a bounce block's plain brightness multiplies the light it re-emits
 for gain in 0 1 2; do
     render "gain$gain" "$scene" Declare=Case=8 Declare=Bounce=2 Declare=Passive=1 Declare=Volume=1 Declare=Gain="$gain"
 done
@@ -161,11 +161,15 @@ reject zero_pigment_nits 'A light stated in nits or lumens requires an input of 
 reject zero_nits 'A surface light stated in nits requires an input of positive luminance' 'finish { emission 0 } light { emission brightness 1 nits }'
 reject zero_pattern_nits 'A surface light stated in nits requires an input of positive luminance' 'light { pigment { bozo color_map { [0 rgb 0] [1 rgb 0] } } brightness 1 nits }'
 reject zero_pattern_lumens 'A surface light stated in lumens requires an input of positive luminance' 'light { pigment { bozo color_map { [0 rgb 0] [1 rgb 0] } } brightness 1 lumens }'
-bounce_only='A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.'
-reject bounce_nits "$bounce_only" 'light { brightness 2 nits bounce }'
-reject bounce_lumens "$bounce_only" 'light { bounce { passes 2 } brightness 10 lumens }'
-reject volume_bounce_nits "$bounce_only" 'hollow interior { light { bounce brightness 2 nits } }'
-reject volume_bounce_lumens "$bounce_only" 'hollow interior { light { brightness 10 lumens bounce { passes 1 } } }'
+bounce_input='A bounce light block takes no pigment or emission: bounce re-emits what the object shows, its own emission included.'
+reject bounce_emission "$bounce_input" 'light { emission bounce }'
+reject bounce_passes_emission "$bounce_input" 'light { bounce { passes 2 } emission }'
+reject bounce_pigment "$bounce_input" 'light { pigment { rgb 1 } bounce { passes 1 } }'
+reject volume_bounce_emission "$bounce_input" 'hollow interior { light { emission bounce } }'
+reject volume_bounce_pigment "$bounce_input" 'hollow interior { light { bounce { passes 1 } pigment { rgb 1 } } }'
+volume_units='A volume bounce light takes a plain brightness multiplier; nits and lumens are for surface bounce and emitting lights.'
+reject volume_bounce_nits "$volume_units" 'hollow interior { light { bounce brightness 2 nits } }'
+reject volume_bounce_lumens "$volume_units" 'hollow interior { light { brightness 10 lumens bounce { passes 1 } } }'
 reject negative_colour 'requires finite nonnegative emitted colour' 'light { pigment { rgb <-1,0,0> } }'
 reject ray_context 'cannot depend on ray or camera context' 'light { pigment { aoi } }'
 reject scale_lumens_metres 'scale_lumens takes finite lumens and a positive finite number of metres per unit' 'light { brightness scale_lumens(8, 0) lumens }'
@@ -184,6 +188,11 @@ for language in pov pov4; do
 done
 { echo 'let passes = 3;'; echo 'sphere { 0,1 light { bounce { passes passes - 1 } } }'; } >bound.pov4
 "$POVRAY" +ibound.pov4 +w1 +h1 +wt1 +pr -f -d -p -v -gp >bound.log 2>&1 || { cat bound.log; exit 1; }
+# a surface bounce block takes nits and lumens, which rescale its field at each pass
+for units in 'brightness 2 nits bounce' 'bounce { passes 2 } brightness 10 lumens'; do
+    echo "sphere { 0,1 light { $units } }" >units.pov4
+    "$POVRAY" +iunits.pov4 +w1 +h1 +wt1 +pr -f -d -p -v -gp >units.log 2>&1 || { cat units.log; exit 1; }
+done
 for language in pov pov4; do
     echo 'plane { y,0 light {} }' >"infinite.$language"
     if "$POVRAY" +i"infinite.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"infinite.$language.log" 2>&1; then

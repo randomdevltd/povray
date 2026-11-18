@@ -83,15 +83,16 @@ public:
             preparedGuide.Add(point.point, point.power / draws, point.normal);
         integral /= draws;
         area /= draws;
+        // a bounce light casts no primary light: its units scale what it bounces, at each pass
         double preparedScale = settings->BounceOnly() ? 0.0 : settings->brightness;
-        if (settings->lumens >= 0.0)
+        if (!settings->BounceOnly() && settings->lumens >= 0.0)
         {
             const double power = M_PI * integral.Greyscale();
             if (settings->lumens > 0.0 && !(power > 0.0))
                 throw POV_EXCEPTION_STRING("A surface light stated in lumens requires an input of positive luminance.");
             preparedScale = settings->lumens == 0.0 ? 0.0 : settings->lumens / power;
         }
-        else if (settings->nits && settings->brightness > 0.0)
+        else if (!settings->BounceOnly() && settings->nits && settings->brightness > 0.0)
         {
             // the input's mean luminance over the surface, integral / area (exact when constant), becomes the stated nits
             const double mean = !(area > 0.0) ? 0.0 :

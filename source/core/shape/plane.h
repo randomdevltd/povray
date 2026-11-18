@@ -84,6 +84,8 @@ class Plane final : public ObjectBase
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool ReturnsAllRoots() const override { return true; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
+        virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
+        virtual bool Has_Box_Test() const override { return true; }
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
         // virtual void UVCoord(Vector2d&, const Intersection *) const override; // TODO FIXME - document that it uses the default (it does, right?) [trf]
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;

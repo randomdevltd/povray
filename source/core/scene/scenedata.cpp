@@ -437,12 +437,15 @@ SceneData::SceneData() :
     refractionAngle = 0.5;
     domainCells = 500000.0;
     lightDomainCells = 500000.0;
+    refractionDetail = 0.0;
+    refractionDomainCells = 500000.0;
+    surfaceDomainCells = 4096.0; // 2D node budget per surface light, independent of volume cells
+    surfaceBounceDirections = 8; // default chosen by render comparison: beyond 8 the image stops changing
     machinePhotonMemory = 0.0;
     dielectrics = false;
     anyOpaque = false;
     firstMediaPrecedence = UINT_MAX;
     subsurfaceErrorBound = 0.1;
-    subsurfaceSpacing = 1.0;
     subsurfaceMemory = kSubsurfaceUncappedMB;
 
     bspMaxDepth = 0;
@@ -462,6 +465,7 @@ SceneData::SceneData() :
 
 SceneData::~SceneData()
 {
+    surfaceMaps.reset(); // its maps sit in the objects' slots, so it goes while they are here
     preparedSets.clear();
     lightSources.clear();
     lightGroupLightSources.clear();

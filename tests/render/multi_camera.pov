@@ -13,7 +13,7 @@ global_settings {
   #if (Feature = 2) photons { count 6000 gather 10, 40 jitter 0.4 #if (PhotonFile) save_file "multi_camera_save.ph" #end } #end
   #if (Feature = 3) photons { method 2 quality 0.3 } #end
   #if (Feature = 4) mm_per_unit 10 subsurface { samples 8, 2 } #end
-  #if (Feature = 9) mm_per_unit 10 subsurface { samples 8, 2 spacing 0.5 } photons { method 2 quality 0.3 } #end
+  #if (Feature = 9) mm_per_unit 10 subsurface { samples 8, 2 } photons { method 2 quality 0.3 } #end
   #if (Feature = 6) photons { count 6000 gather 10, 40 radius 0.3, 1.5 } #end
   #if (Feature = 7) photons { count 6000 gather 10, 40 media 60 } #end
   #if (Feature = 8) photons { method 2 quality 0.3 } #end

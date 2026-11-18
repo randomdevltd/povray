@@ -47,6 +47,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
@@ -93,6 +94,8 @@ const DBL DEPTH_TOLERANCE = 1.0e-6;
 bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     Thread->Stats()[Ray_Sphere_Tests]++;
+    // a precise query places its own start, so no depth is too near to be a crossing
+    const DBL leastDepth = ray.PreciseRoots() ? 0.0 : DEPTH_TOLERANCE;
 
     if(Do_Ellipsoid)
     {
@@ -113,7 +116,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
         if(Intersect(New_Ray, Vector3d(0.0), 1.0, &Depth1, &Depth2))
         {
             Thread->Stats()[Ray_Sphere_Tests_Succeeded]++;
-            if((Depth1 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth1))
+            if((Depth1 > leastDepth) && IsFiniteIntersectionDepth(Depth1))
             {
                 IPoint = New_Ray.Evaluate(Depth1);
                 MTransPoint(IPoint, IPoint, Trans);
@@ -125,7 +128,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                 }
             }
 
-            if((Depth2 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth2))
+            if((Depth2 > leastDepth) && IsFiniteIntersectionDepth(Depth2))
             {
                 IPoint = New_Ray.Evaluate(Depth2);
                 MTransPoint(IPoint, IPoint, Trans);
@@ -151,7 +154,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
         if(Intersect(ray, Center, Sqr(Radius), &Depth1, &Depth2))
         {
             Thread->Stats()[Ray_Sphere_Tests_Succeeded]++;
-            if((Depth1 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth1))
+            if((Depth1 > leastDepth) && IsFiniteIntersectionDepth(Depth1))
             {
                 IPoint = ray.Evaluate(Depth1);
 
@@ -162,7 +165,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                 }
             }
 
-            if((Depth2 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth2))
+            if((Depth2 > leastDepth) && IsFiniteIntersectionDepth(Depth2))
             {
                 IPoint = ray.Evaluate(Depth2);
 
@@ -301,6 +304,29 @@ bool Sphere::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
         else
             return(OCSquared < Sqr(Radius));
     }
+}
+
+BoxClass Sphere::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // the squared distance from the centre as Inside computes it, against the same Sqr(Radius)
+    Interval p[3], d2;
+    if (Do_Ellipsoid)
+    {
+        Local_Box(lo, hi, toWorld, Trans, p);
+        d2 = LengthSqr(p);
+    }
+    else
+    {
+        Local_Box(lo, hi, toWorld, nullptr, p);
+        const Interval o[3] = {Interval(Center[X]) - p[X], Interval(Center[Y]) - p[Y], Interval(Center[Z]) - p[Z]};
+        d2 = LengthSqr(o);
+    }
+    const DBL r2 = Sqr(Radius);
+    const BoxClass c = (d2.low > r2) ? BoxClass::Outside : (d2.high < r2) ? BoxClass::Inside : BoxClass::Unknown;
+    if (c == BoxClass::Unknown)
+        return ObjectBase::Classify_Box(lo, hi, toWorld);
+    return Inverted_Class(c, Test_Flag(this, INVERTED_FLAG));
 }
 
 
@@ -643,6 +669,19 @@ void Sphere::Transform(const TRANSFORM *tr)
 *   Aug 1994 : Creation.
 *
 ******************************************************************************/
+
+void Sphere::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery&) const
+{
+    SurfaceBox box;
+    box.box = BBox;
+    box.piece = firstPiece;
+    if (Spherical())
+    {
+        box.sphereCentre = Center;
+        box.sphereRadius = Radius;
+    }
+    visitor.Visit(box);
+}
 
 void Sphere::Compute_BBox()
 {

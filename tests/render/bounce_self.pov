@@ -1,5 +1,5 @@
-// bounce_self.pov: a lit cloud with Bounce passes, Self 0 keeping its bounce off its own media, Emit a light of its
-// own; Scene 1 adds a second cloud and a floor, Mask 1 shows only the floor, flat.
+// bounce_self.pov: a lit cloud with Bounce passes, Self 0 keeping its bounce off its own media, Emit an emitting light
+// of its own instead (its Self share then scales that); Scene 1 adds a second cloud and a floor, Mask 1 shows only the floor, flat.
 #version 3.7;
 #ifndef (Bounce) #declare Bounce = 0; #end
 #ifndef (Self) #declare Self = 1; #end
@@ -27,7 +27,7 @@ background { rgb 0 }
         light {
           #if (Emit) pigment { rgb <1, 0.6, 0.3> } brightness 0.5 #end
           samples Samples
-          #if (Bounce > 0) bounce { passes Bounce self Self } #end
+          #if (Bounce > 0) bounce { passes Bounce self Self } #else self Self #end
         }
       #end
     }

@@ -62,7 +62,10 @@ class PreparedRefractionDefinition;
 
 struct RefractionSpec final
 {
+    /// the grid's cell width is half of this length; 0 is auto
     DBL detail = 0.0;
+    /// the cells detail auto spreads over the container, and half the grid's cap; set at parse from the default
+    DBL domainCells = 0.0;
     std::vector<GenericScalarFunctionPtr> functions;
     TRANSFORM *transform = nullptr;
     RefractionSpec() = default;
@@ -102,6 +105,7 @@ std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary
     std::shared_ptr<const PreparedSourceDistribution> proposal = nullptr);
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
 void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
+/// Records the interior's field and returns its refraction grid layout, sized from the refraction detail alone.
 std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr owner, TraceThreadData *td);
 /// The work units PrepareLightFields reports: interiors that may refract, then lights.
 std::size_t PreparedLightUnits(const SceneData& scene);

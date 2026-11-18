@@ -46,6 +46,7 @@
 
 // POV-Ray header files (core module)
 #include "core/math/matrix.h"
+#include "core/scene/boxclass.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
@@ -230,6 +231,21 @@ bool Plane::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     // A precise boundary query asks which side the point is on exactly, as the other shapes answer it.
     const DBL tolerance = ((Thread != nullptr) && Thread->preciseInside) ? 0.0 : EPSILON;
     return((Temp + Distance) < tolerance);
+}
+
+BoxClass Plane::Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const
+{
+    using namespace box_class;
+    // the plain test keeps EPSILON past the plane, the precise test none; inversion is in the normal and distance
+    Interval p[3];
+    Local_Box(lo, hi, toWorld, Trans, p);
+    const Interval v = p[X] * Interval(Normal_Vector[X]) + p[Y] * Interval(Normal_Vector[Y]) + p[Z] * Interval(Normal_Vector[Z]) +
+                       Interval(Distance);
+    if (v.low >= EPSILON)
+        return BoxClass::Outside;
+    if (v.high < 0.0)
+        return BoxClass::Inside;
+    return ObjectBase::Classify_Box(lo, hi, toWorld);
 }
 
 

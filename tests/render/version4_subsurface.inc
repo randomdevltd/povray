@@ -5,7 +5,6 @@ global_settings {
   mm_per_unit 10
   subsurface {
     samples 12, 4
-    spacing 0.5
     #if (Method > 0) method Method #end
   }
 }

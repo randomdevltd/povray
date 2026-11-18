@@ -607,13 +607,17 @@ class Parser final
         void Parse_Finish (FINISH **);
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
-        void Parse_Light_Bounce(MediaLight& light);
+        void Parse_Light_Bounce(MediaLight& light, bool surface, bool& haveSelf);
+        void Parse_Light_Self(MediaLight& light, bool& haveSelf);
+        /// view_directions N: a positive integer count of view directions
+        unsigned Parse_Bounce_Directions();
         double Parse_Light_Samples();
         /// domain_cells N: an integer cell count from 1 to 1000000000
         DBL Parse_Domain_Cells();
         void Parse_Light_Attenuation(MediaLight& light, bool surface);
         std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
         void Reject_Nested_Item(const char* block, const char* where);
+        DBL Parse_Refraction_Detail();
         void Parse_Interior_Refraction(Interior& interior);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
@@ -938,13 +942,13 @@ class Parser final
         void Link(ObjectPtr New_Object, std::vector<ObjectPtr>& Object_List_Root);
         void Link_To_Frame(ObjectPtr Object);
         void Prepare_Link(ObjectPtr Object);
-        bool Splits_Union(ObjectPtr Object, bool warn);
+        bool Splits_Union(ObjectPtr Object, bool warn, bool *subsurfaceBody = nullptr);
+        bool Subsurface_Members(ConstObjectPtr Object, const TEXTURE *inherited);
         void Split_Unions();
         void Split_Union(ObjectPtr Object);
         void Assign_Scene_Lights();
         void Check_Legacy_Transport();
         void Check_Subsurface_Light_Hosts();
-        void Warn_Unused_Media_Domain_Cells();
         /// Media lights made inside light groups, with their group, given out after the groups' own lights.
         std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);

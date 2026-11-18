@@ -105,6 +105,14 @@ public:
             result.weight[i] = result.kernel[i] * (1.0 - (u[i][0] - mean[0]) * g[0] - (u[i][1] - mean[1]) * g[1]);
     }
 
+    /// The interpolation distance from a query to a node of the given spacing; never below the plain distance squared.
+    static double Distance2(const Vector3d& point, const Vector3d& normal, const Vector3d& at, const Vector3d& n, double spacing)
+    {
+        const Vector3d delta = at - point;
+        const double across = dot(normal + n, delta);
+        return delta.lengthSqr() + 4.0 * spacing * spacing * (1.0 - dot(normal, n)) + 16.0 * across * across;
+    }
+
     /// The nearest node in the interpolation distance.
     std::size_t Nearest(const Vector3d& point, const Vector3d& normal) const
     {
@@ -173,11 +181,7 @@ private:
 
     double Distance2(const Vector3d& point, const Vector3d& normal, std::size_t i) const
     {
-        const Node& node = nodes[i];
-        const Vector3d delta = node.point - point;
-        const Vector3d n = Normal(i);
-        const double spacing = node.spacing, across = dot(normal + n, delta);
-        return delta.lengthSqr() + 4.0 * spacing * spacing * (1.0 - dot(normal, n)) + 16.0 * across * across;
+        return Distance2(point, normal, nodes[i].point, Normal(i), nodes[i].spacing);
     }
 
     void Search(const Vector3d& point, const Vector3d& normal, std::size_t lo, std::size_t hi, std::size_t exclude, Found& found) const

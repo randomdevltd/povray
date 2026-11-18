@@ -16,7 +16,7 @@ camera { location <0, 1.1, -2.6> * S look_at <0, 0.55, 0.4> * S angle 62 right x
 
 #macro Passive(Colour)
   texture { pigment { rgb Colour } finish { ambient 0 emission 0 diffuse 0.8 } }
-  light { emission bounce { passes Passes } samples Samples }
+  light { bounce { passes Passes } samples Samples }
 #end
 #macro Panel(Corner1, Corner2, Nits)
   box { Corner1, Corner2 pigment { rgb 1 } finish { ambient 0 emission Nits diffuse 0 }
@@ -27,7 +27,7 @@ camera { location <0, 1.1, -2.6> * S look_at <0, 0.55, 0.4> * S angle 62 right x
 box { <-1.5, -0.05, -1.5>, <1.5, 0, 1.5>
   #if (Case = 3)
     texture { pigment { checker rgb 0.9, rgb 0.1 scale 0.25 } finish { ambient 0 emission 0 diffuse 0.8 } }
-    light { emission bounce { passes Passes } samples Samples }
+    light { bounce { passes Passes } samples Samples }
   #else
     Passive(0.75)
   #end
@@ -35,7 +35,7 @@ box { <-1.5, -0.05, -1.5>, <1.5, 0, 1.5>
 box { <-1.5, 0, 1.5>, <1.5, 2, 1.55>
   #if (Case = 3)
     texture { pigment { checker rgb <0.9, 0.2, 0.1>, rgb 0.85 scale 0.2 } finish { ambient 0 emission 0 diffuse 0.8 } }
-    light { emission bounce { passes Passes } samples Samples }
+    light { bounce { passes Passes } samples Samples }
   #else
     Passive(0.75)
   #end

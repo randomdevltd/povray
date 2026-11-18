@@ -16,19 +16,19 @@ for case in 0 1 2 3 4 5; do
     render one$case Declare=Case=$case +wt1
     render four$case Declare=Case=$case +wt4
     cmp -s one$case.pixels four$case.pixels || { echo "bounce_adaptive: case $case differs on four threads" >&2; exit 1; }
-    grep 'Bounce o1:' one$case.log | sed 's/, [0-9.]*+[0-9.]*s//' > one$case.nodes
-    grep 'Bounce o1:' four$case.log | sed 's/, [0-9.]*+[0-9.]*s//' > four$case.nodes
+    grep 'Bounce o1:' one$case.log | sed 's/, [0-9.]*s$//' > one$case.nodes
+    grep 'Bounce o1:' four$case.log | sed 's/, [0-9.]*s$//' > four$case.nodes
     [ -s one$case.nodes ] && cmp -s one$case.nodes four$case.nodes ||
         { cat one$case.nodes four$case.nodes; echo "bounce_adaptive: case $case refines differently" >&2; exit 1; }
 done
 render passes2 Declare=Case=2 Declare=Passes=2 +wt3
 grep -q 'Bounce o2:' passes2.log || { cat passes2.log; echo "bounce_adaptive: no second order" >&2; exit 1; }
-# Means of the image's four quadrants, then the order's node count.
+# Means of the image's four quadrants, then the order's node count over its lights.
 blocks() {
     od -An -v -tu2 --endian=big -w6 "$1.pixels" | awk -v w=$W -v h=$H '{ i = NR - 1; b = (int(i % w * 2 / w)) + 2 * int(int(i / w) * 2 / h)
         s[b] += $1 + $2 + $3; n[b] += 3 } END { for (b = 0; b < 4; b++) printf "%.6f ", s[b] / n[b] / 65535; print "" }'
 }
-nodes() { sed -n 's/.*Bounce o1: \([0-9]*\) nodes.*/\1/p' "$1.log"; }
+nodes() { sed -n 's/.*Bounce o1: \([0-9]*\) nodes.*/\1/p' "$1.log" | awk '{ n += $1 } END { print n }'; }
 # a b tolerance [nodes]: every block of b within the relative tolerance of a's, and with `nodes` node counts within 3%.
 alike() {
     paste -d' ' "$1.blocks" "$2.blocks" | awk -v t=$3 -v na=${4:+$(nodes $1)} -v nb=$(nodes $2) '{ for (i = 1; i <= 4; i++)

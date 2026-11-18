@@ -6,7 +6,7 @@
 #ifndef (MediumCells) #declare MediumCells = 0; #end
 #ifndef (DefaultLightCells) #declare DefaultLightCells = 0; #end
 #if (Cells > 0) #default { media { domain_cells Cells } } #end
-#if (DefaultLightCells > 0) #default { light { domain_cells DefaultLightCells } } #end
+#if (DefaultLightCells > 0) #default { interior { light { domain_cells DefaultLightCells } } } #end
 global_settings { assumed_gamma 1 }
 camera { location <0, 2.5, -4> look_at <0, 0.3, 0> right x up y }
 background { rgb 0 }
