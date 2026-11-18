@@ -41,10 +41,12 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -1023,6 +1025,7 @@ ObjectPtr CSGUnion::Copy()
     Destroy_Transform(New->Trans);
     *New = *this;
     New->childTree.reset();
+    New->surfaceIndex.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1045,6 +1048,7 @@ ObjectPtr CSGMerge::Copy()
     Destroy_Transform(New->Trans);
     *New = *this;
     New->childTree.reset();
+    New->surfaceIndex.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1067,6 +1071,7 @@ ObjectPtr CSGIntersection::Copy()
     Destroy_Transform(New->Trans);
     *New = *this;
     New->childTree.reset();
+    New->surfaceIndex.reset();
 
     New->children.clear();
     New->children.reserve(children.size());
@@ -1308,6 +1313,26 @@ void CSG::Compute_BBox()
 
 
 
+/// The first piece and leaf number of each child, the totals last. Only a union's members are pieces of their own.
+struct CSGSurfaceIndex final
+{
+    std::vector<std::uint32_t> piece, leaf;
+};
+
+static CSGSurfaceIndex Make_Surface_Index(const CSG& csg)
+{
+    const bool split = (dynamic_cast<const CSGUnion *>(&csg) != nullptr);
+    CSGSurfaceIndex index;
+    index.piece.assign(csg.children.size() + 1, 0);
+    index.leaf.assign(csg.children.size() + 1, 0);
+    for (size_t k = 0; k < csg.children.size(); ++k)
+    {
+        index.piece[k + 1] = index.piece[k] + (split ? csg.children[k]->Surface_Pieces() : 0);
+        index.leaf[k + 1] = index.leaf[k] + csg.children[k]->Surface_Leaves();
+    }
+    return index;
+}
+
 namespace
 {
 
@@ -1502,6 +1527,101 @@ void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_
             Prepare_CSG_Child_Trees(child, minimum, visited, built);
     if (CSG *csg = dynamic_cast<CSG *>(object))
         built += csg->Prepare_Child_Tree(minimum) ? 1 : 0;
+}
+
+/// The CSG's surface index, made on first use: parsing pays nothing, and threads racing to make it make the same one.
+static std::shared_ptr<const CSGSurfaceIndex> Surface_Index(const CSG& csg)
+{
+    std::shared_ptr<const CSGSurfaceIndex> index = std::atomic_load(&csg.surfaceIndex);
+    if (index == nullptr)
+    {
+        index = std::make_shared<const CSGSurfaceIndex>(Make_Surface_Index(csg));
+        std::atomic_store(&csg.surfaceIndex, index);
+    }
+    return index;
+}
+
+std::uint32_t CSG::Surface_Leaves() const
+{
+    return Surface_Index(*this)->leaf.back();
+}
+
+bool CSG::Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool split, std::uint32_t& piece, std::uint32_t& leaf) const
+{
+    const std::shared_ptr<const CSGSurfaceIndex> held = Surface_Index(*this);
+    const CSGSurfaceIndex& index = *held;
+    split = split && (dynamic_cast<const CSGUnion *>(this) != nullptr);
+    const auto found = [&](std::uint32_t k)
+    {
+        std::uint32_t childPiece = piece + (split ? index.piece[k] : 0), childLeaf = leaf + index.leaf[k];
+        if (!children[k]->Find_Surface_Leaf(leafObject, point, split, childPiece, childLeaf))
+            return false;
+        piece = childPiece;
+        leaf = childLeaf;
+        return true;
+    };
+    // a hit lies in its child's padded box, so the tree names the candidates
+    const CSGChildTree *tree = childTree.get();
+    if ((tree != nullptr) && tree->ray.Built() && FinitePoint(point))
+    {
+        if (CSGChildTree::Visit(tree->ray, [&point](const CSGChildTree::Box& b) { return CSGChildTree::Contains(b, point); },
+                                [&](std::uint32_t k) { return CSGChildTree::Contains(tree->boxes[k], point) && found(k); }))
+            return true;
+        for (std::uint32_t k : tree->rayRest)
+            if (found(k))
+                return true;
+        return false;
+    }
+    for (std::uint32_t k = 0; k < std::uint32_t(children.size()); ++k)
+        if (found(k))
+            return true;
+    return false;
+}
+
+ObjectPtr CSG::Surface_Leaf(std::uint32_t leaf)
+{
+    const std::shared_ptr<const CSGSurfaceIndex> held = Surface_Index(*this);
+    const CSGSurfaceIndex& index = *held;
+    if (leaf >= index.leaf.back())
+        return nullptr;
+    // the last child numbered at or below the leaf; a child with no leaves shares its number with the next
+    const size_t k = size_t(std::upper_bound(index.leaf.begin(), index.leaf.end() - 1, leaf) - index.leaf.begin()) - 1;
+    return children[k]->Surface_Leaf(leaf - index.leaf[k]);
+}
+
+std::uint32_t CSGUnion::Surface_Pieces() const
+{
+    return Surface_Index(*this)->piece.back();
+}
+
+void CSGUnion::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const
+{
+    // a bounded_by object's stand-in box need not hold the members
+    if (Bound.empty() || BBox.finiteInterior)
+    {
+        Vector3d low, high;
+        Make_min_max_from_BBox(low, high, BBox);
+        if (!visitor.Enter(low, high))
+            return;
+    }
+    const std::shared_ptr<const CSGSurfaceIndex> held = Surface_Index(*this);
+    const CSGSurfaceIndex& index = *held;
+    const CSGChildTree *tree = childTree.get();
+    if ((tree == nullptr) || !tree->ray.Built())
+    {
+        for (size_t k = 0; k < children.size(); ++k)
+            children[k]->Visit_Surface_Boxes(visitor, firstPiece + index.piece[k]);
+        return;
+    }
+    // the tree's padded boxes hold its members' boxes; the members it cannot hold always go; all in the children's order
+    std::vector<std::uint32_t> list(tree->rayRest);
+    CSGChildTree::Visit(tree->ray,
+                        [&visitor](const CSGChildTree::Box& b)
+                        { return visitor.Enter(Vector3d(b.lo[X], b.lo[Y], b.lo[Z]), Vector3d(b.hi[X], b.hi[Y], b.hi[Z])); },
+                        [&list](std::uint32_t k) { list.push_back(k); return false; });
+    std::sort(list.begin(), list.end());
+    for (std::uint32_t k : list)
+        children[k]->Visit_Surface_Boxes(visitor, firstPiece + index.piece[k]);
 }
 
 /*****************************************************************************

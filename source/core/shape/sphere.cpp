@@ -644,6 +644,19 @@ void Sphere::Transform(const TRANSFORM *tr)
 *
 ******************************************************************************/
 
+void Sphere::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const
+{
+    SurfaceBox box;
+    box.box = BBox;
+    box.piece = firstPiece;
+    if (Spherical())
+    {
+        box.sphereCentre = Center;
+        box.sphereRadius = Radius;
+    }
+    visitor.Visit(box);
+}
+
 void Sphere::Compute_BBox()
 {
     if(Do_Ellipsoid)

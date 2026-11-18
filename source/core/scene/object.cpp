@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <limits>
 #include <string>
 
 // POV-Ray header files (base module)
@@ -837,6 +838,89 @@ ObjectPtr CompoundObject::Invert()
 bool CompoundObject::ReturnsAllRoots() const
 {
     return std::all_of(children.begin(), children.end(), [](ConstObjectPtr child) { return child->ReturnsAllRoots(); });
+}
+
+void ObjectBase::Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const
+{
+    SurfaceBox box;
+    box.box = BBox;
+    box.piece = firstPiece;
+    visitor.Visit(box);
+}
+
+std::uint32_t CompoundObject::Surface_Leaves() const
+{
+    std::uint32_t count = 0;
+    for (ConstObjectPtr child : children)
+        count += child->Surface_Leaves();
+    return count;
+}
+
+bool CompoundObject::Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool, std::uint32_t& piece,
+                                       std::uint32_t& leaf) const
+{
+    // the children are parts of this object's piece
+    for (ConstObjectPtr child : children)
+    {
+        std::uint32_t childPiece = piece, childLeaf = leaf;
+        if (child->Find_Surface_Leaf(leafObject, point, false, childPiece, childLeaf))
+        {
+            leaf = childLeaf;
+            return true;
+        }
+        leaf += child->Surface_Leaves();
+    }
+    return false;
+}
+
+ObjectPtr CompoundObject::Surface_Leaf(std::uint32_t leaf)
+{
+    for (ObjectPtr child : children)
+    {
+        const std::uint32_t count = child->Surface_Leaves();
+        if (leaf < count)
+            return child->Surface_Leaf(leaf);
+        leaf -= count;
+    }
+    return nullptr;
+}
+
+bool Surface_Part(ConstObjectPtr object, const Intersection& hit, std::uint32_t& piece, std::uint32_t& leaf)
+{
+    // a portal stamps itself on the hits of its window
+    if ((hit.Csg != nullptr) && Test_Flag(hit.Csg, PORTAL_FLAG))
+        return false;
+    piece = leaf = 0;
+    if (object->Find_Surface_Leaf(hit.Object, hit.IPoint, true, piece, leaf))
+        return true;
+    // a hit past its child's padded box: a point that is not finite asks every child
+    piece = leaf = 0;
+    return object->Find_Surface_Leaf(hit.Object, Vector3d(std::numeric_limits<double>::quiet_NaN()), true, piece, leaf);
+}
+
+void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& high, std::vector<SurfaceBox>& out)
+{
+    class Within final : public SurfaceBoxVisitor
+    {
+        public:
+            Within(const Vector3d& l, const Vector3d& h, std::vector<SurfaceBox>& o) : low(l), high(h), out(o) {}
+            bool Enter(const Vector3d& a, const Vector3d& b) override
+            {
+                return (a.x() <= high.x()) && (a.y() <= high.y()) && (a.z() <= high.z()) &&
+                       (b.x() >= low.x()) && (b.y() >= low.y()) && (b.z() >= low.z());
+            }
+            void Visit(const SurfaceBox& box) override
+            {
+                Vector3d a, b;
+                Make_min_max_from_BBox(a, b, box.box);
+                if (Enter(a, b))
+                    out.push_back(box);
+            }
+        private:
+            const Vector3d low, high;
+            std::vector<SurfaceBox>& out;
+    } within(low, high, out);
+    object->Visit_Surface_Boxes(within, 0);
 }
 
 bool ObjectBase::Intersect_BBox(BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, BBoxScalar maxd) const

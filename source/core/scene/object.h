@@ -43,6 +43,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -178,6 +179,24 @@ class Emitter;
 struct MediaLight;
 struct PhotonTargetGroup final { BoundingBox box; }; ///< the bounds of the split union the group was
 
+/// One box of where an object's surface can be, the piece of the object it belongs to, and a sphere holding that piece if known.
+struct SurfaceBox final
+{
+    BoundingBox box;
+    std::uint32_t piece = 0;
+    Vector3d sphereCentre = Vector3d(0.0);
+    double sphereRadius = 0.0; ///< 0: no sphere
+};
+
+/// Receives an object's surface boxes in the order of its structure; `Enter` may skip a group whose surface lies in the box given.
+class SurfaceBoxVisitor
+{
+    public:
+        virtual ~SurfaceBoxVisitor() {}
+        virtual bool Enter(const Vector3d&, const Vector3d&) { return true; }
+        virtual void Visit(const SurfaceBox& box) = 0;
+};
+
 /// Abstract base class for all geometric objects.
 class ObjectBase
 {
@@ -283,6 +302,20 @@ class ObjectBase
         virtual ObjectPtr Invert();
 
         virtual void Compute_BBox() = 0;
+
+        /// Reports where the surface can be, one box per piece, numbering the pieces from `firstPiece` in the structure's order.
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const;
+        /// How many pieces Visit_Surface_Boxes numbers: a union's members each count, anything else is one piece.
+        virtual std::uint32_t Surface_Pieces() const { return 1; }
+        /// How many leaves (shapes with a surface of their own) the object holds, numbered depth first.
+        virtual std::uint32_t Surface_Leaves() const { return 1; }
+        /// Whether `leafObject`, hit at `point`, is a leaf of this object; `piece` and `leaf` come in as this object's first
+        /// numbers and go out as the leaf's. `split` says whether a union met on the way gives each member its own piece.
+        virtual bool Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d&, bool, std::uint32_t&, std::uint32_t&) const
+        { return leafObject == this; }
+        /// The leaf with that number, or null.
+        virtual ObjectPtr Surface_Leaf(std::uint32_t leaf) { return (leaf == 0) ? this : nullptr; }
+
         virtual void Determine_Textures(Intersection *, bool, WeightedTextureVector&, TraceThreadData *Thread); // could be "(const Intersection*...) const" if it wasn't for blob specials
 
         /// Checks whether a given ray intersects the object's bounding box.
@@ -350,6 +383,10 @@ class CompoundObject : public ObjectBase
         virtual ObjectPtr Invert() override;
         /// A compound reports its children's roots, so it reports all of them only when every child does.
         virtual bool ReturnsAllRoots() const override;
+        virtual std::uint32_t Surface_Leaves() const override;
+        virtual bool Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool split, std::uint32_t& piece,
+                                       std::uint32_t& leaf) const override;
+        virtual ObjectPtr Surface_Leaf(std::uint32_t leaf) override;
 };
 
 
@@ -480,6 +517,10 @@ void Update_Infinite_Flag(ObjectPtr Object);
 void Destroy_Single_Object(ObjectPtr *ObjectPtr);
 /// A short name of an object's shape for messages.
 const char *ShapeName(ConstObjectPtr object);
+/// Which piece and leaf of `object` a hit on it belongs to; false when the hit is no surface, as a portal's window is not.
+bool Surface_Part(ConstObjectPtr object, const Intersection& hit, std::uint32_t& piece, std::uint32_t& leaf);
+/// Appends, in the structure's order, the surface boxes of `object` that meet the box from `low` to `high`.
+void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& high, std::vector<SurfaceBox>& out);
 
 /// @}
 ///

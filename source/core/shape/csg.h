@@ -79,6 +79,7 @@ namespace pov
 ******************************************************************************/
 
 struct CSGChildTree;
+struct CSGSurfaceIndex;
 
 class CSG : public CompoundObject
 {
@@ -98,6 +99,13 @@ class CSG : public CompoundObject
         /// Builds `childTree` from the children's certified boxes when `minimum` of them can go in a tree (0: never);
         /// returns whether it did.
         bool Prepare_Child_Tree(unsigned minimum);
+        /// Each child's first piece and leaf number, from the structure only; made on first use.
+        mutable std::shared_ptr<const CSGSurfaceIndex> surfaceIndex;
+
+        virtual std::uint32_t Surface_Leaves() const override;
+        virtual bool Find_Surface_Leaf(ConstObjectPtr leafObject, const Vector3d& point, bool split, std::uint32_t& piece,
+                                       std::uint32_t& leaf) const override;
+        virtual ObjectPtr Surface_Leaf(std::uint32_t leaf) override;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
@@ -129,6 +137,9 @@ class CSGUnion : public CSG
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual ObjectPtr Invert() override;
+        /// A union's members, and a merge's, are its pieces.
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const override;
+        virtual std::uint32_t Surface_Pieces() const override;
 };
 
 class CSGMerge final : public CSGUnion

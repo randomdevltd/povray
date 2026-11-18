@@ -54,7 +54,6 @@
 #include "core/render/ray.h"
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
-#include "core/shape/sphere.h"
 #include "core/support/octree.h"
 #include "core/support/statistics.h"
 
@@ -208,26 +207,23 @@ class SurfaceLightEmitter final : public Emitter
         const LightSource& light;
 };
 
-/// The boxes of a target's union members, recursively, a sphere's own bounds, and any other object's box.
-void TargetBounds(ConstObjectPtr object, double weight, std::uint32_t target, std::vector<PhotonAimBound>& bounds)
+/// A target's surface boxes as aiming bounds, with their spheres; a box with no extent aims at nothing.
+class TargetBounds final : public SurfaceBoxVisitor
 {
-    if (const auto* csg = dynamic_cast<const CSGUnion*>(object))
-    {
-        for (ConstObjectPtr child : csg->children)
-            TargetBounds(child, weight, target, bounds);
-        return;
-    }
-    if (Vector3d(object->BBox.size).lengthSqr() <= 0.0)
-        return;
-    const Vector3d low(object->BBox.lowerLeft);
-    bounds.push_back({low, low + Vector3d(object->BBox.size), weight, target});
-    if (const auto* sphere = dynamic_cast<const Sphere*>(object))
-        if (sphere->Spherical())
+    public:
+        TargetBounds(double w, std::uint32_t t, std::vector<PhotonAimBound>& b) : weight(w), target(t), bounds(b) {}
+        void Visit(const SurfaceBox& piece) override
         {
-            bounds.back().sphereCentre = sphere->Center;
-            bounds.back().sphereRadius = sphere->Radius;
+            if (Vector3d(piece.box.size).lengthSqr() <= 0.0)
+                return;
+            const Vector3d low(piece.box.lowerLeft);
+            bounds.push_back({low, low + Vector3d(piece.box.size), weight, target, piece.sphereCentre, piece.sphereRadius});
         }
-}
+    private:
+        const double weight;
+        const std::uint32_t target;
+        std::vector<PhotonAimBound>& bounds;
+};
 
 void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets,
                         std::vector<PhotonAimBound>* bounds)
@@ -257,7 +253,10 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
                 known = targets.end() - 1;
             }
             if (bounds)
-                TargetBounds(object, known->weight, std::uint32_t(known - targets.begin()), *bounds);
+            {
+                TargetBounds aim(known->weight, std::uint32_t(known - targets.begin()), *bounds);
+                object->Visit_Surface_Boxes(aim, 0);
+            }
         }
         else if (object->Type & IS_COMPOUND_OBJECT)
             ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets, bounds);
