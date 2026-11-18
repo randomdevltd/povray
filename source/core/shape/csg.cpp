@@ -198,6 +198,12 @@ class ChildBoxRay final
 
         explicit ChildBoxRay(const Ray& ray) : valid(true)
         {
+            const RayRootQuery *query = ray.GetRootQuery();
+            if ((query == nullptr) || !query->Segment(nearDepth, farDepth))
+            {
+                nearDepth = 0.0;
+                farDepth = HUGE_VAL;
+            }
             for (int d = X; d <= Z; ++d)
             {
                 origin[d] = ray.Origin[d];
@@ -207,23 +213,23 @@ class ChildBoxRay final
             }
         }
 
-        /// Whether the ray, forward of its origin, may cross the box.
+        /// Whether the ray, within its root query's segment or else forward of its origin, may cross the box.
         bool Hits(const CSGChildTree::Box& b) const
         {
-            DBL tn = -HUGE_VAL, tf = HUGE_VAL;
+            DBL tn = nearDepth, tf = farDepth;
             for (int d = X; d <= Z; ++d)
             {
                 const DBL t1 = (b.lo[d] - origin[d]) * inv[d], t2 = (b.hi[d] - origin[d]) * inv[d];
                 tn = max(tn, min(t1, t2));
                 tf = min(tf, max(t1, t2));
             }
-            return (tn <= tf) && (tf >= 0.0);
+            return tn <= tf;
         }
 
         bool valid;
 
     private:
-        DBL origin[3], inv[3];
+        DBL origin[3], inv[3], nearDepth, farDepth;
 };
 
 inline bool FinitePoint(const Vector3d& p)

@@ -76,6 +76,14 @@ namespace pov
 ******************************************************************************/
 
 const DBL DEPTH_TOLERANCE = 1.0e-4;
+
+// A query naming the segment it wants roots in starts off the surface and keeps only that segment's roots: no cut in
+// scene units. Only the surface map's lines name one, so every other ray keeps the cut.
+static DBL NearestRoot(const Ray& ray)
+{
+    double nearDepth, farDepth;
+    return (ray.GetRootQuery() && ray.GetRootQuery()->Segment(nearDepth, farDepth)) ? 0.0 : DEPTH_TOLERANCE;
+}
 const DBL INSIDE_TOLERANCE = 1.0e-4;
 const DBL ROOT_TOLERANCE = 1.0e-4;
 const DBL COEFF_LIMIT = 1.0e-20;
@@ -253,7 +261,7 @@ bool Poly::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 
     for (i = 0; i < cnt; i++)
     {
-        if (Depths[i] > DEPTH_TOLERANCE)
+        if (Depths[i] > NearestRoot(ray))
         {
             same_root = false;
 

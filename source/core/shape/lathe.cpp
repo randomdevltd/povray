@@ -159,6 +159,14 @@ using std::max;
 
 const DBL DEPTH_TOLERANCE = 1.0e-4;
 
+// A query naming the segment it wants roots in starts off the surface and keeps only that segment's roots: no cut in
+// scene units. Only the surface map's lines name one, so every other ray keeps the cut.
+static DBL NearestRoot(const Ray& ray)
+{
+    double nearDepth, farDepth;
+    return (ray.GetRootQuery() && ray.GetRootQuery()->Segment(nearDepth, farDepth)) ? 0.0 : DEPTH_TOLERANCE;
+}
+
 namespace
 {
 
@@ -1343,7 +1351,7 @@ bool Lathe::test_hit(const Ray &ray, IStack& Depth_Stack, DBL d, DBL w, int n, T
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
+    if ((d > NearestRoot(ray)) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
     {
         IPoint = ray.Evaluate(d);
 

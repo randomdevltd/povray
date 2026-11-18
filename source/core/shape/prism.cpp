@@ -150,6 +150,14 @@ using std::max;
 
 const DBL DEPTH_TOLERANCE = 1.0e-4;
 
+// A query naming the segment it wants roots in starts off the surface and keeps only that segment's roots: no cut in
+// scene units. Only the surface map's lines name one, so every other ray keeps the cut.
+static DBL NearestRoot(const Ray& ray)
+{
+    double nearDepth, farDepth;
+    return (ray.GetRootQuery() && ray.GetRootQuery()->Segment(nearDepth, farDepth)) ? 0.0 : DEPTH_TOLERANCE;
+}
+
 /* Part of the prism hit. */
 
 const int BASE_HIT   = 1;
@@ -204,6 +212,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
     Vector3d P, D;
     PRISM_SPLINE_ENTRY *Entry;
     DBL distance ;
+    const DBL nearest = NearestRoot(ray);
 
     /* Don't test degenerate prisms. */
     if (Test_Flag(this, DEGENERATE_FLAG))
@@ -256,7 +265,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 
                     k = (Height2 - P[Y]) / D[Y];
 
-                    if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
+                    if ((k > nearest) && IsFiniteIntersectionDepth(k))
                     {
                         u = P[X] + k * D[X];
                         v = P[Z] + k * D[Z];
@@ -264,7 +273,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                         if (in_curve(u, v, Thread->Stats()))
                         {
                             distance = k / len;
-                            if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
+                            if ((distance > nearest) && IsFiniteIntersectionDepth(distance))
                             {
                                 IPoint = ray.Evaluate(distance);
                                 if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -280,7 +289,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 
                     k = (Height1 - P[Y]) / D[Y];
 
-                    if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
+                    if ((k > nearest) && IsFiniteIntersectionDepth(k))
                     {
                         u = P[X] + k * D[X];
                         v = P[Z] + k * D[Z];
@@ -288,7 +297,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                         if (in_curve(u, v, Thread->Stats()))
                         {
                             distance = k / len;
-                            if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
+                            if ((distance > nearest) && IsFiniteIntersectionDepth(distance))
                             {
                                 IPoint = ray.Evaluate(distance);
                                 if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -396,7 +405,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                             if ((h >= Height1) && (h <= Height2))
                             {
                                 distance = k / len;
-                                if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
+                                if ((distance > nearest) && IsFiniteIntersectionDepth(distance))
                                 {
                                     IPoint = ray.Evaluate(distance);
                                     if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -433,7 +442,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                     {
                         k = (Height2 - P[Y]) / D[Y];
 
-                        if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
+                        if ((k > nearest) && IsFiniteIntersectionDepth(k))
                         {
                             u = (P[X] + k * D[X]) / Height2;
                             v = (P[Z] + k * D[Z]) / Height2;
@@ -441,7 +450,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                             if (in_curve(u, v, Thread->Stats()))
                             {
                                 distance = k / len;
-                                if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
+                                if ((distance > nearest) && IsFiniteIntersectionDepth(distance))
                                 {
                                     IPoint = ray.Evaluate(distance);
                                     if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -460,7 +469,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                     {
                         k = (Height1 - P[Y]) / D[Y];
 
-                        if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
+                        if ((k > nearest) && IsFiniteIntersectionDepth(k))
                         {
                             u = (P[X] + k * D[X]) / Height1;
                             v = (P[Z] + k * D[Z]) / Height1;
@@ -468,7 +477,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                             if (in_curve(u, v, Thread->Stats()))
                             {
                                 distance = k / len;
-                                if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
+                                if ((distance > nearest) && IsFiniteIntersectionDepth(distance))
                                 {
                                     IPoint = ray.Evaluate(distance);
                                     if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -583,7 +592,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                         if ((h >= Height1) && (h <= Height2))
                         {
                             distance = k / len;
-                            if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
+                            if ((distance > nearest) && IsFiniteIntersectionDepth(distance))
                             {
                                 IPoint = ray.Evaluate(distance);
                                 if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))

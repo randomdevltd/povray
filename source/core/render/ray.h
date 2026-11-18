@@ -75,6 +75,8 @@ struct RayRootQuery
     virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
     virtual bool AllRoots() const { return false; }
     virtual bool PreciseBoundary() const { return false; }
+    /// The depths outside which no root is wanted, so a child tree may skip boxes the segment misses.
+    virtual bool Segment(double& nearDepth, double& farDepth) const { return false; }
 };
 
 /// The root query active on one ray of a ticket; a copy of a ticket has none, and assigning a ticket keeps it.
