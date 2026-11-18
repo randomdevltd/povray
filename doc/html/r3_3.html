@@ -4436,7 +4436,7 @@ DEFAULT_DIRECTIVE:
   #default {DEFAULT_ITEM }
 DEFAULT_ITEM:
   TEXTURE | PIGMENT | NORMAL | FINISH | media { [DEFAULT_MEDIA_ITEM...] } |
-  light { [domain_cells Integer] }
+  interior { light { [domain_cells Integer] } } | light { [domain_cells Integer] }
 DEFAULT_MEDIA_ITEM:
   mix add | replace | subtract | multiply | domain_cells Integer
 </pre>
@@ -4461,7 +4461,8 @@ DEFAULT_MEDIA_ITEM:
 or a texture with a <code>texture_map</code> may not be used as defaults.</p>
 <p>The <code>mix</code> default applies to every object placed afterwards whose first medium does not set its own. An object without media is affected only by <code>mix replace</code>, which makes it clear the media beneath it; <code>add</code>, <code>subtract</code> and <code>multiply</code> leave it inert. A <code>hollow</code> object ignores the default and uses <code>add</code>. The word after <code>mix</code> is read as text, so it cannot come from a variable. See <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>.</p>
 <p>The <code>domain_cells</code> default, an integer from 1 to 1000000000 and 500000 when no default is given, is the cell count of the prepared grid of every method 4 medium parsed afterwards that does not state its own, as in <code>#default { media { domain_cells 2000000 } }</code>. Twice its value at the end of the parse caps the prepared fields that belong to no single medium or light. See <a href="r3_7.html#r3_7_2_3_1">Domain Cells</a>.</p>
-<p>The light <code>domain_cells</code> default, an integer from 1 to 1000000000 and 500000 when no default is given, is the cell count of the prepared source domain of every interior light parsed afterwards that does not state its own, as in <code>#default { light { domain_cells 64000 } }</code>. A light never takes its medium's count. See <a href="r3_12.html#r3_12_1">Interior lights</a>.</p>
+<p>The light <code>domain_cells</code> default, an integer from 1 to 1000000000 and 500000 when no default is given, is the cell count of the prepared source domain of every interior light parsed afterwards that does not state its own, as in <code>#default { interior { light { domain_cells 64000 } } }</code>. A light never takes its medium's count. See <a href="r3_12.html#r3_12_1">Interior lights</a>.</p>
+<p>The separate surface-light default is <code>#default { light { domain_cells N } }</code>, initially 4096 nodes per light (a 2D budget independent of the volume default). Both light defaults can be set together: <code>#default { interior { light { domain_cells 500000 } } light { domain_cells 4096 } }</code>. See <a href="r3_12.html#r3_12_8_2">surface node budgets</a>.</p>
 <p>You may change the defaults several times throughout a scene as you wish. Subsequent <code>#default</code> statements begin with the defaults that were in effect at the time. If you wish to reset to the original POV-Ray defaults then you should first save them as follows:</p>
 <pre>
 //At top of file

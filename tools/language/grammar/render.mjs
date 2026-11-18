@@ -78,6 +78,9 @@ built-in call; bare value words parse as identifiers).\n
     `\n## Block keywords\n
 Legal reserved-word items inside each block, mined from the classic parser. Sub-blocks such as
 \`reflection { ... }\` inside \`finish\` are listed per block. Blocks not listed here are not statically checked.\n
+A surface \`light { domain_cells N }\` sets a 2D node budget per light: 4096 by default,
+independent of the volume default. Set subsequent surface lights with
+\`default { light { domain_cells N } }\`.\n
 | block | items |\n|---|---|\n` +
     blockRows.map(([word, b]) => `| \`${word}\` | ${b.items.map((i) => `\`${i}\``).join(' ')} |`).join('\n') +
     '\n';

@@ -166,5 +166,17 @@ int main()
     }
     catch (const std::invalid_argument&) { rejected = true; }
     assert(rejected);
+    // A defective stream that always survives roulette must throw, never hang or return a truncated estimate.
+    rejected = false;
+    try
+    {
+        SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1), 0.0, 1.0, 1.0,
+            distant, source, zero, [] { return 0.0; });
+    }
+    catch (const std::runtime_error& e)
+    {
+        rejected = std::string(e.what()).find("this is a renderer bug") != std::string::npos;
+    }
+    assert(rejected);
     std::cout << "Internal subsurface analytical transport passed\n";
 }

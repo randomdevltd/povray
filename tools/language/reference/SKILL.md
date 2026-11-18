@@ -46,7 +46,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `background` | — | The colour or pigment shown behind every object. |
 | `bicubic_patch` | 38 | Bezier patch surface from a 4x4 control-point grid. |
 | `blob` | 37 | Metaball surface from sphere and cylinder strength components. |
-| `bounce` | 2 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets a scalar or RGB self share from 0 to 1; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits. |
+| `bounce` | 2 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` sets any finite scalar or RGB self share, including amplification and subtraction; `off` keeps the bounce off its own medium or surface. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits. |
 | `box` | 32 | Box from two opposite corner vectors. |
 | `bump_map` | 33 | Normal perturbation pattern wrapping a 2-D image file. |
 | `camera` | 35 | The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse. |
@@ -54,7 +54,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `cone` | 33 | Cone or frustum from two end points and radii; open removes the caps. |
 | `cubic` | 32 | Third-degree polynomial shape; a special case of poly. |
 | `cylinder` | 33 | Cylinder from two end points and one radius; open removes the caps. |
-| `default` | — | Item values every later object begins from: default { texture { ... } }. |
+| `default` | 9 | Defaults for subsequent materials, media, and independent interior and surface light budgets. |
 | `density` | 102 | Pattern block scaling media density across its container. |
 | `difference` | 75 | CSG: first child minus every following child. |
 | `disc` | 32 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
@@ -118,8 +118,8 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 - A classic twin of a `.pov4` scene is `#version 4.0;` classic syntax — same semantics, two spellings. A `#version 3.7` twin does not match: 4.0 changed defaults (gamma among them).
 - `finish { light_samples M [full | by_contribution] }`: `M` multiplies every surface and volume light's `samples`; `by_contribution` (the 4.0 default) scales each hit's samples by its share of the pixel, so hits seen through reflections or clear layers take fewer while directly seen surfaces keep all. `full` is the classic sampling: choose it where reflections or refractions carry the look and their noise shows. Scene-wide: `default { finish { light_samples 1 full } }`.
 - `max_trace_level` (4.0 default): a ray that reaches it is not black. Its hit is lit without reflection, and through transparent surfaces it goes straight on, filtered and faded, to the first opaque surface or the background. Raise the level where the bent or reflected image itself matters.
-- `media { method 4 domain_cells N }` is the prepared grid's cell count (500000 by default), cubic cells spread over the container's box, so quality survives rescaling; the grid is capped at 2N. Media take no cell width: for cells about `w` wide write the product over the axes of ceil(box extent / w). Scene-wide: `default { media { domain_cells N } }`, which also sets (doubled) the cap of ownerless grids. An interior `light { domain_cells N }` sets the light's source domain, else `default { light { domain_cells N } }`, 500000; a light never takes its medium's count.
-- A volume `light` inside a closed subsurface method 2 solid lights it from within (homogeneous material, one texture layer); `subsurface { samples D, S }`'s S is the internal paths per shaded point. A surface `light { emission }` (or `bounce`) on the host exports the light that escapes. A volume light in or on an open mesh or a disc host is a parse error.
+- `media { method 4 domain_cells N }` is the prepared grid's cell count (500000 by default), cubic cells spread over the container's box, so quality survives rescaling; the grid is capped at 2N. Media take no cell width: for cells about `w` wide write the product over the axes of ceil(box extent / w). Scene-wide: `default { media { domain_cells N } }`, which also sets (doubled) the cap of ownerless grids. An interior `light { domain_cells N }` sets the light's source domain, else `default { interior { light { domain_cells N } } }`, 500000; a light never takes its medium's count. Surface lights budget seeds and refinement with their own `domain_cells`, else `default { light { domain_cells N } }`, initially 4096 nodes per light (a 2D budget independent of the volume default); seeds are reused across orders.
+- A volume `light` inside a closed subsurface method 2 solid lights it from within (using the local material coefficients); `subsurface { samples D, S }`'s S is the internal paths per shaded point. A surface `light { emission }` (or `bounce`) on the host exports the light that escapes. A volume light in or on an open mesh or a disc host is a parse error.
 
 ## Canonical examples
 

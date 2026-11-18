@@ -158,7 +158,7 @@ emission         : absent (use pigment)
 brightness       : 1.0 nits
 attenuation      : power 2, scale 1 (physical), cutoff 0.000004
 samples          : 64
-domain_cells     : the scene's light default (500000, #default { light { domain_cells N } })
+domain_cells     : the scene's light default (500000, #default { interior { light { domain_cells N } } })
 shadowless       : off
 media_interaction: on
 media_attenuation: on
@@ -169,7 +169,7 @@ media_attenuation: on
 <tr><td><code>brightness</code></td><td>A non-negative source brightness. Unitless, it multiplies the input: a pigment through the topology-normalized radiance convention below, <code>emission</code> as a plain multiplier of the media's emission. <code>nits</code> state the input's measured mean radiance at the container's boundary, whatever its colour or pattern; <code>lumens</code> specifies total generated luminous flux under the convention 1 scene unit = 1 m. In a bounce-only block it multiplies the bounced light instead (see <a href="r3_12.html#r3_12_8">Bounced and Passive Lights</a>). See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
 <tr><td><code>attenuation</code></td><td>The falloff: a block of a <code>power</code>, a <code>scale</code> and a <code>cutoff</code>, each given at most once and 2, 1 and 0.000004 by default; power 2 and scale 1 are physical. A scale of 0 turns the falloff off; a cutoff of 0 turns the cutoff off. See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
 <tr><td><code>samples</code></td><td>An integer of at least 1: emitter draws per lit point, and so the shadow rays. More samples give smoother soft shadows and cost more. Varying method 4 media take &radic;<code>samples</code> &times; their <code>light_samples</code> draws per cell width of ray instead; a surface takes <code>samples</code> &times; its finish's <code>light_samples</code>. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
-<tr><td><code>domain_cells</code></td><td>An integer from 1 to 1000000000: the cell count of this light's prepared source domain, the lattice the light is sampled from, which also lays out its prepared light field and the gather grid of a bounced volume. Without it the light takes the scene's light default, 500000 cells, set with <code>#default { light { domain_cells N } }</code> for lights parsed after it. A light never takes its medium's <a href="r3_7.html#r3_7_2_3_1">domain_cells</a>: preparing the light is usually the most expensive part and its source need not resolve what the medium's density does, so the two are set apart. The lattice targets N cells over the container's bounding box, with at most 128 &times; &#8731;(max(1, N/500000)) cells along any axis; counts round up to whole cells, so it is a target, not a strict ceiling. Given at most once. A surface light block refuses it: a surface light has no prepared source domain. The word is matched by its text and stays free as an identifier.</td></tr>
+<tr><td><code>domain_cells</code></td><td>An integer from 1 to 1000000000: the cell count of this light's prepared source domain, the lattice the light is sampled from, which also lays out its prepared light field and the gather grid of a bounced volume. Without it the light takes the scene's light default, 500000 cells, set with <code>#default { interior { light { domain_cells N } } }</code> for lights parsed after it. A light never takes its medium's <a href="r3_7.html#r3_7_2_3_1">domain_cells</a>: preparing the light is usually the most expensive part and its source need not resolve what the medium's density does, so the two are set apart. The lattice targets N cells over the container's bounding box, with at most 128 &times; &#8731;(max(1, N/500000)) cells along any axis; counts round up to whole cells, so it is a target, not a strict ceiling. Given at most once. On a surface light, the count budgets surface nodes instead (see <a href="#r3_12_8_2">What Bounce Costs</a>). The word is matched by its text and stays free as an identifier.</td></tr>
 <tr><td><code>shadowless</code></td><td>The light casts no shadows, as a <a href="r3_4.html#r3_4_3_1_6">shadowless</a> light does.</td></tr>
 <tr><td><code>media_interaction</code></td><td>With <code>off</code>, the light does not light scattering media, as for a normal <a href="r3_4.html#r3_4_3_1_10">light source</a>.</td></tr>
 <tr><td><code>media_attenuation</code></td><td>With <code>off</code>, a shadow ray is not dimmed by the media it passes; see <a href="r3_4.html#r3_4_3_1_11">Atmospheric Attenuation</a>.</td></tr>
@@ -298,8 +298,8 @@ box { &lt;-1, 3, -1&gt;, &lt;1, 3.05, 1&gt; light { brightness 5 attenuation { c
 </ul>
 <table width="100%" class="option-list">
 <tr><td><code>Only one light block allowed in an interior.</code></td><td>Error.</td></tr>
+<tr><td><code>Internal subsurface walk reached 4096 scattering and reflection events, which roulette makes impossible for a correct walk: this is a renderer bug, not a scene limit; please report it in ...</code></td><td>Error naming the object, channel and sample. A correct walk reaches this with probability below 10<sup>&minus;90</sup>, so no scene setting causes it; report the scene.</td></tr>
 <tr><td><code>domain_cells must be an integer from 1 to 1000000000.</code>, <code>A light block accepts only one domain_cells setting.</code></td><td>Error.</td></tr>
-<tr><td><code>A surface light has no prepared source domain; domain_cells is for interior lights.</code></td><td>Error: <code>domain_cells</code> in a surface light block.</td></tr>
 <tr><td><code>The volume light block at line L of F lies within the subsurface ..., which cannot enclose it: ...</code>, <code>The volume light block at line L of F is on the ..., which encloses no volume to emit from.</code></td><td>Error: a volume light in or on an open subsurface part. See <a href="r3_12.html#r3_12_10">Lights Inside Subsurface Materials</a>.</td></tr>
 <tr><td><code>A light block's attenuation is a block: attenuation { power 2 scale 1 }.</code></td><td>Error: numbers written directly after <code>attenuation</code>.</td></tr>
 <tr><td><code>An attenuation block takes a power greater than 0 and a scale of 0 or more.</code></td><td>Error.</td></tr>
@@ -407,7 +407,7 @@ SURFACE_LIGHT:
 SURFACE_LIGHT_ITEM:
   pigment { PIGMENT } | emission | brightness Value [nits | lumens] |
   attenuation { cutoff Value } |
-  samples Integer | shadowless [Bool] | media_interaction [Bool] |
+  domain_cells Integer | samples Integer | shadowless [Bool] | media_interaction [Bool] |
   media_attenuation [Bool] | photons { [reflection Bool] [refraction Bool] } |
   bounce [{ passes Integer }]
 </pre>
@@ -418,6 +418,7 @@ emission         : absent (use pigment)
 brightness       : 1.0 nits
 attenuation      : cutoff 0.000004
 samples          : 64
+domain_cells     : 4096 (surface nodes)
 shadowless       : off
 media_interaction: on
 media_attenuation: on
@@ -434,6 +435,7 @@ bounce           : absent
 <tr><td><code>media_attenuation</code></td><td>With <code>off</code>, a shadow ray is not dimmed by the media it passes.</td></tr>
 <tr><td><code>photons</code></td><td><code>reflection</code> and <code>refraction</code> switches selecting the photon routes of this light, as a light source's <code>photons</code> block. Only photon method 2 shoots them.</td></tr>
 <tr><td><code>bounce</code></td><td>Adds light the surface itself scatters on. See <a href="r3_12.html#r3_12_8">Bounced and Passive Lights</a>.</td></tr>
+<tr><td><code>domain_cells</code></td><td>Surface nodes for bounce and exported subsurface light, including seeds and refinement, independently of the volume default. Integer 1 to 1000000000; default 4096, set with <code>#default { light { domain_cells N } }</code>. See <a href="#r3_12_8_2">What Bounce Costs</a> and <code>scenes/lights/surface_domain_cells.pov</code>.</td></tr>
 </table>
 <p>The light is placed, transformed and copied with its object, and takes part in <code>light_group</code> as any other light. An object does not light itself from a convex surface: a sphere's own light never reaches the sphere. The light does not make the object visible; the glow the camera sees is the object's own material, which is authored separately, usually with a finish <code>emission</code> as below.</p>
 <pre>
@@ -553,13 +555,15 @@ box { &lt;-27, 12, -2&gt;, &lt;3, 33, 24&gt; pigment { rgbt 1 }
 <div class="content-level-h4" contains="What Bounce Costs" id="r3_12_8_2">
 <h4>3.12.8.2 What Bounce Costs</h4>
 <p>Bounce is prepared once, before the first pixel is traced, in the <code>bounce</code> phase of the <a href="r3_2.html#r3_2_7_6">preparation progress lines</a>. A scene without it pays nothing, and the cost does not grow with the image size. Each pass is one more order, prepared after the one before it, so the cost grows with <code>passes</code>.</p>
-<p><strong>Surfaces.</strong> A bounced surface stores the light that arrives at nodes spread over its surface; where the field is read, the surface's own colour and finish are evaluated at that point, so a texture costs no nodes. The nodes are seeded once for the whole scene, at a spacing set by the total area of all bounced surfaces so that about 4096 cover it, and each order refines them level by level, down to 1/64 of that spacing. A node is split where the light it receives changes: where it differs by more than 10% from what its neighbours predict, where the two halves of its disc differ by more than 10% (a shadow edge, a contact crease) or where its light comes from closer than its spacing. A plain lit wall therefore stays close to the seed count, and nodes gather along shadow edges, creases and nearby lights. The refinement does not depend on <code>samples</code>, on the number of threads or on the scale of the scene. The nodes of all orders, and those of light exported from buried sources, share a budget of as many colours as twice the scene's default <a href="r3_7.html#r3_7_2_3_1">domain_cells</a> (1000000 by default), each order an equal part of what is left; when it is used up, the splits that remove the most error per byte are taken first. Each order reports one console line:</p>
+<p><strong>Surfaces.</strong> A surface light's <code>domain_cells</code> budgets its two-dimensional nodes for bounce and exported subsurface light. The default is 4096, set for subsequent lights with <code>#default { light { domain_cells N } }</code>. It is independent of media and interior-light budgets. Half the budget seeds the light evenly over its own area. The seeds are reused by every order; additional nodes share the remaining budget equally among the orders still to prepare, including exported buried light. Adding another light leaves this light's seed density and budget unchanged.</p>
+<p>Each order refines to at most 1/64 of its seed spacing. Nodes split where their light differs by more than 10% from their neighbours' prediction or across their disc, or where incoming light is closer than their spacing. At the budget, the largest estimated errors receive nodes first. Surface colour and finish are evaluated where the field is read. Each draw at a node connects to one of the lights it gathers, chosen by the light it delivers there and weighted by that choice, so a node among many lights costs about what it costs beside one. Preparation counts completed sampling and subsurface gathers, including resampling. Nothing stops a gather for its length or its count of steps. Each order reports:</p>
 <pre>
 Bounce o1: 3474 nodes, 1 levels, 0.23 MiB, 0.0+0.0s
 Bounce o1 levels: 3474
 Bounce o1 splits: between 0, within 0, near 0
+Bounce o1 heaviest gather: 2311 trace steps on box at line 12 of room.pov
 </pre>
-<p>with its nodes in total and per level, the memory they take, the time of the refinement and of the final pass, and how many splits each criterion asked for.</p>
+<p>with its nodes in total and per level, the memory they take, the time of the refinement and of the final pass, how many splits each criterion asked for, and the single gather that took the most trace steps, with its object, which is where to look when preparation is slow. A gather whose progress stops for a minute names its objects on the <a href="r3_2.html#r3_2_7_6">stalled line</a>.</p>
 <p><strong>Volumes.</strong> A bounced volume is prepared on the interior's media cells with the scattering coefficients and phase functions of its media, and it counts its progress in those cells and light samples rather than in nodes. It costs more than a surface of the same size: the example above counts millions of units at the default <code>domain_cells</code>, where the surface example counts thousands. Each node draws round(8 &times; &radic;<em>N</em> &times; <em>M</em>) points from each light it gathers, where <em>N</em> is the bouncing light's <code>samples</code> and <em>M</em> the largest <code>light_samples</code> of its scattering media: 32 at <code>samples 16</code>, 64 at <code>samples 64</code>. Each node keeps six lobes whatever the phase, so these set the gather's noise and cost, not its memory. Raise <code>light_samples</code> on objects used as lights: a one-off preparation cost that improves everything they light (it also raises that medium's own lighting draws when rendered).</p></div>
 
 <a name="r3_12_9"></a>

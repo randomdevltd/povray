@@ -7849,15 +7849,45 @@ void Parser::Parse_Default ()
             Parse_End ();
         END_CASE
 
+        CASE (INTERIOR_TOKEN)
+            Parse_Begin();
+            EXPECT
+                OTHERWISE
+                    if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+                    {
+                        Parse_Begin();
+                        EXPECT
+                            OTHERWISE
+                                if (CurrentTokenText() == "domain_cells")
+                                    sceneData->lightDomainCells = Parse_Domain_Cells();
+                                else
+                                {
+                                    UNGET
+                                    EXIT
+                                }
+                            END_CASE
+                        END_EXPECT
+                        Parse_End();
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
+                END_CASE
+            END_EXPECT
+            Parse_End();
+        END_CASE
+
         OTHERWISE
-            // an interior light's default grid size, its own setting apart from the media's
+            // Surface lights have their own two-dimensional node budget.
             if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
             {
                 Parse_Begin ();
                 EXPECT
                     OTHERWISE
                         if (CurrentTokenText() == "domain_cells")
-                            sceneData->lightDomainCells = Parse_Domain_Cells();
+                            sceneData->surfaceDomainCells = Parse_Domain_Cells();
                         else
                         {
                             UNGET
@@ -10618,6 +10648,7 @@ void Parser::Make_Surface_Light(ObjectPtr container)
     light->Area_Size2 = 1;
     light->lawRadius = light->emitter->Radius();
     light->cutoff = settings.cutoff;
+    light->sourceDomainCells = settings.domainCells;
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless) light->Light_Type = FILL_LIGHT_SOURCE;

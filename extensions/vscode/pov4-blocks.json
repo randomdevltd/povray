@@ -2275,6 +2275,24 @@
         ]
       }
     },
+    "default": {
+      "items": [
+        "camera",
+        "finish",
+        "interior",
+        "light",
+        "media",
+        "normal",
+        "pigment",
+        "radiosity",
+        "texture"
+      ],
+      "nested": {
+        "radiosity": [
+          "importance"
+        ]
+      }
+    },
     "finish": {
       "items": [
         "albedo",

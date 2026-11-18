@@ -105,6 +105,25 @@ class MeshBuildTask final : public SceneTask
         void SendFatalError(pov_base::Exception& e);
 };
 
+/// Prepares media, light and bounce fields once the sets' bounds are built, so its rays use them.
+class FieldPreparationTask final : public SceneTask
+{
+    public:
+        FieldPreparationTask(std::shared_ptr<BackendSceneData> sd, size_t seed, TraceThreadData *parseData);
+        virtual ~FieldPreparationTask() override;
+
+        virtual void Run() override;
+        virtual void Stopped() override;
+        virtual void Finish() override;
+
+    private:
+        std::shared_ptr<BackendSceneData> sceneData;
+        size_t seed;
+        TraceThreadData *parseData;
+
+        void SendFatalError(pov_base::Exception& e);
+};
+
 /// The scene's cameras that look_at an object or tagged selection and are not framed yet, each once.
 std::vector<Camera *> FramedCameras(SceneData& sceneData);
 

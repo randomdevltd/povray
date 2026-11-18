@@ -32,6 +32,7 @@ difference {
         #if (Buried) emission #end
         #if (Emit) pigment { rgb <1, 0.6, 0.3> } brightness 0.1 #end
         samples Samples
+        #if (Buried) domain_cells 32768 #end
         #if (Photons) photons { reflection on } #end
         #if (Bounce > 0) bounce { passes Bounce self Self } #end
       }
