@@ -43,7 +43,11 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
 #include <cstdint>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -51,6 +55,7 @@
 
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
+#include "core/math/matrix.h"
 #include "core/material/texture.h"
 #include "core/scene/tagfilter.h"
 
@@ -194,6 +199,18 @@ struct SurfaceBox final
     std::uint32_t piece = 0;
     Vector3d sphereCentre = Vector3d(0.0);
     double sphereRadius = 0.0; ///< 0: no sphere
+    std::uint64_t cell = 0;    ///< the refinement cell a whole-set box covers, for Surface_Cell; 0: none
+};
+
+/// What a caller asks of an object's surface boxes: a world region, unbounded when any bound is infinite, and the finest
+/// detail it can use, a world length; 0 is the region's own largest side, and an unbounded region at 0 the coarsest answer.
+struct SurfaceQuery final
+{
+    Vector3d low = Vector3d(-HUGE_VAL), high = Vector3d(HUGE_VAL);
+    double fineness = 0.0;
+    bool Bounded() const;
+    /// The fineness asked, or the region's largest side.
+    double Fineness() const;
 };
 
 /// Receives an object's surface boxes in the order of its structure; `Enter` may skip a group whose surface lies in the box given.
@@ -203,6 +220,33 @@ class SurfaceBoxVisitor
         virtual ~SurfaceBoxVisitor() {}
         virtual bool Enter(const Vector3d&, const Vector3d&) { return true; }
         virtual void Visit(const SurfaceBox& box) = 0;
+};
+
+/// The render's surface map of an object, set by surface_map::Maps; a copy starts with none.
+struct SurfaceMapSlot final
+{
+    std::atomic<void*> map{nullptr};
+    SurfaceMapSlot() = default;
+    SurfaceMapSlot(const SurfaceMapSlot&) {}
+    SurfaceMapSlot& operator=(const SurfaceMapSlot&) { return *this; }
+};
+
+/// Copies of one declared object (Copy_Object): one geometry, each copy under the transforms applied to it since. Copies
+/// are also made while rendering (per-thread lights, portals), so `live` and `made` change only under the copy lock.
+struct SurfaceLineage final
+{
+    std::map<std::uint64_t, const void*> live;         ///< the copies alive, by the order they were made
+    std::uint64_t made = 0;
+    std::atomic<void*> map{nullptr};                   ///< the render's shared surface map, set by surface_map::Maps
+};
+
+/// An object's place in its lineage: none, or its order and the transforms applied since the lineage began.
+struct SurfaceCopy final
+{
+    std::shared_ptr<SurfaceLineage> lineage;
+    std::uint64_t ordinal = 0;
+    TRANSFORM since;
+    SurfaceCopy() { MIdentity(since.matrix); MIdentity(since.inverse); }
 };
 
 /// Abstract base class for all geometric objects.
@@ -229,10 +273,16 @@ class ObjectBase
         std::vector<std::string> tags;
         /// whether the parent's effective tags add to `tags`: true when omitted or written with `inherit`
         bool inheritTags = true;
+        /// subsurface method 2's map points for this object as a whole (subsurface { domain_cells }); 0 takes its material's density over its area, at most kSubsurfacePointsPerMM2
+        double subsurfaceDomainCells = 0.0;
+        /// the placed union of subsurface members this object is part of, which diffuses light as one body; set once the scene is complete
+        ObjectBase *subsurfaceBody = nullptr;
         /// Shared by the members of a split union that was one photon target, so method 2 keeps them one target.
         std::shared_ptr<const PhotonTargetGroup> photonTargetGroup;
         /// Where the scene wrote it ("line N of file", with its declared name if placed by name), for messages; may be null.
         std::shared_ptr<const std::string> source;
+        SurfaceMapSlot surfaceMap;
+        SurfaceCopy surfaceCopy;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -259,7 +309,7 @@ class ObjectBase
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
-            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup), source(o.source)
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), subsurfaceDomainCells(o.subsurfaceDomainCells), photonTargetGroup(o.photonTargetGroup), source(o.source)
         {
             if (transplant)
             {
@@ -320,7 +370,10 @@ class ObjectBase
         virtual bool Has_Box_Test() const { return false; }
 
         /// Reports where the surface can be, one box per piece, numbering the pieces from `firstPiece` in the structure's order.
-        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const;
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query = SurfaceQuery()) const;
+        /// The enclosure of where the surface can be at that fineness (a world length), within the certified box; false
+        /// when nothing is left. The default is the certified box.
+        virtual bool Surface_Extent(double fineness, Vector3d& low, Vector3d& high) const;
         /// How many pieces Visit_Surface_Boxes numbers: a union's members each count, anything else is one piece.
         virtual std::uint32_t Surface_Pieces() const { return 1; }
         /// How many leaves (shapes with a surface of their own) the object holds, numbered depth first.
@@ -449,6 +502,7 @@ class LightSource final : public CompoundObject
         std::shared_ptr<LightSource> selfLight;         ///< the light as it was before bouncing, for the rest; null if it emitted none
         ConstObjectPtr ownSurface = nullptr;            ///< for a surface bounce light, its object, which receives ownLight in its place
         std::shared_ptr<LightSource> ownLight;          ///< its primary emission and its bounce's self share; null if neither
+        bool bounceFed = false;                         ///< in surface bounce preparation: holds its previous pass's field, which exports receive
         bool mediaPhotonOptions = false;
 
         LightSource();
@@ -537,10 +591,15 @@ BoxClass Classify_Object(ConstObjectPtr object, const Vector3d& lo, const Vector
 bool Has_Box_Test(ConstObjectPtr object);
 /// A short name of an object's shape for messages.
 const char *ShapeName(ConstObjectPtr object);
+/// Takes an object and everything in it out of its lineage: its geometry is now its own (clipped, bounded, inverted).
+void Leave_Lineage(ObjectPtr object);
+/// The first live copy of a lineage, under the copy lock.
+ObjectPtr First_Surface_Copy(const SurfaceLineage& lineage);
 /// Which piece and leaf of `object` a hit on it belongs to; false when the hit is no surface, as a portal's window is not.
 bool Surface_Part(ConstObjectPtr object, const Intersection& hit, std::uint32_t& piece, std::uint32_t& leaf);
-/// Appends, in the structure's order, the surface boxes of `object` that meet the box from `low` to `high`.
-void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& high, std::vector<SurfaceBox>& out);
+/// Appends, in the structure's order, the surface boxes of `object` that meet the box from `low` to `high`, at `fineness`
+/// (0: the box's own largest side). A bounded box gets at most one box per piece.
+void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& high, std::vector<SurfaceBox>& out, double fineness = 0.0);
 
 /// @}
 ///

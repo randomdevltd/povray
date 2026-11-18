@@ -1,6 +1,8 @@
 #include "core/lighting/bounceprepare.h"
 #include "core/material/noise.h"
 #include "core/shape/sphere.h"
+#include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <iostream>
 
@@ -14,26 +16,6 @@ struct Messages : pov_base::GenericMessenger
 };
 int main()
 {
-    const std::vector<double> masses{0.0, 1.0, 9.0};
-    const auto first = surface_refine::ChooseSource(masses, 0.1);
-    const auto middle = surface_refine::ChooseSource(masses, 0.3);
-    const auto last = surface_refine::ChooseSource(masses, std::nextafter(1.0, 0.0));
-    assert(first.index == 0 && std::abs(first.probability - 1.0 / 6.0) < 1e-15);
-    assert(middle.index == 1 && std::abs(middle.probability - (1.0 / 6.0 + 0.05)) < 1e-15);
-    assert(last.index == 2 && std::abs(last.probability - (1.0 / 6.0 + 0.45)) < 1e-15);
-    const auto dark = surface_refine::ChooseSource({0.0, 0.0}, 0.75);
-    const auto overflow = surface_refine::ChooseSource({HUGE_VAL, 1.0}, 0.75);
-    assert(dark.index == 1 && dark.probability == 0.5);
-    assert(overflow.index == 1 && overflow.probability == 0.5);
-    LightSource sun, faded;
-    sun.Parallel = true;
-    sun.Center = faded.Center = Vector3d(0.0, 1.0e6, 0.0);
-    faded.Fade_Power = 2.0;
-    faded.Fade_Distance = 0.0;
-    const double near = surface_refine::SourceMass(sun, Vector3d(0.0, 1.0e6 - 1.0, 0.0));
-    assert(near > 0.0 && surface_refine::SourceMass(sun, Vector3d(0.0)) == near);
-    assert(std::abs(surface_refine::SourceMass(faded, Vector3d(0.0, 1.0e6 - 1.0, 0.0)) /
-                    surface_refine::SourceMass(faded, Vector3d(0.0, 1.0e6 - 2.0, 0.0)) - 4.0) < 1e-9);
     Initialize_Noise();
     auto scene = std::make_shared<SceneData>();
     assert(scene->surfaceDomainCells > 0.0);

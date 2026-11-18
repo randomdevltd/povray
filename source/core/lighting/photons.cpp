@@ -1711,11 +1711,14 @@ void ShootingDirection::recomputeForAreaLight(Ray& ray, int area_x, int area_y)
     }
 }
 
-void ShootingDirection::compute()
+void ShootingDirection::compute(DBL spacing)
 {
-    // find bounding sphere based on bounding box
-    Vector3d v = Vector3d(target->BBox.size) / 2.0;
-    ctr = Vector3d(target->BBox.lowerLeft) + v;
+    // find bounding sphere based on where the surface can be at the photon spacing
+    Vector3d low, high;
+    if (!(spacing > 0.0) || !target->Surface_Extent(spacing, low, high))
+        Make_min_max_from_BBox(low, high, target->BBox);
+    Vector3d v = (high - low) / 2.0;
+    ctr = low + v;
     rad = v.length();
 
     // find direction from object to bounding sphere
@@ -2711,7 +2714,7 @@ int LightTargetCombo::computeMergedFlags()
 
 void LightTargetCombo::computeAnglesAndDeltas(std::shared_ptr<SceneData> sceneData)
 {
-    shootingDirection.compute();
+    shootingDirection.compute(target->Ph_Density*sceneData->photonSettings.surfaceSeparation);
 
     // calculate the spacial separation (spread)
     photonSpread = target->Ph_Density*sceneData->photonSettings.surfaceSeparation;

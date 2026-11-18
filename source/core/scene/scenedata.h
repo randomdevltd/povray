@@ -81,6 +81,7 @@ using namespace pov_base;
 
 class BSPTree;
 class SubsurfaceCache;
+namespace surface_map { class Maps; }
 struct DeferredMeshState;
 class DeferredMeshPool;
 
@@ -319,8 +320,16 @@ class SceneData
         double domainCells;
         /// the default cell budget of an interior light (#default { interior { light { domain_cells N } } })
         double lightDomainCells;
+        /// the default detail of a refraction field (#default { refraction { detail D } }), in scene units; 0 is auto
+        double refractionDetail;
+        /// the default cell budget of a refraction field (#default { refraction { domain_cells N } })
+        double refractionDomainCells;
         /// the node budget of each surface light (#default { light { domain_cells N } })
         double surfaceDomainCells;
+        /// the view directions of each surface bounce point (#default { light { bounce { view_directions N } } })
+        unsigned surfaceBounceDirections;
+        // Every surface map of this render, made empty when preparation starts.
+        std::shared_ptr<surface_map::Maps> surfaceMaps;
         /// the machine's method 2 photon memory ceiling in GB (INI/CLI Photon_Memory); zero when not given
         double machinePhotonMemory;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media
@@ -331,8 +340,6 @@ class SceneData
         unsigned int firstMediaPrecedence;
         /// point-cloud method: how coarsely far groups of points may be summed as one
         double subsurfaceErrorBound;
-        /// point-cloud method: point spacing relative to the automatic spacing
-        double subsurfaceSpacing;
         /// point-cloud method: the memory all clouds may take, in MB, past which the render stops; 0, the default,
         /// leaves the clouds uncapped
         double subsurfaceMemory;

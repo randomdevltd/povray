@@ -1,7 +1,7 @@
 #!/bin/sh
-# subsurface_volume_self.sh <povray> <srcdir>: a volume light inside its own subsurface host lights the host with its
-# emission plus the self share of its bounce: self 0 looks as without bounce, self 1 adds the bounce, a half share
-# adds half of it.
+# subsurface_volume_self.sh <povray> <srcdir>: a bounce volume light inside its own subsurface host lights the host
+# with the self share of its bounce, on top of the lamp buried in it: self 0 looks as without bounce, self 1 adds the
+# bounce, a half share adds half of it.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"

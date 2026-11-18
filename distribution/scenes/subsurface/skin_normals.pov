@@ -2,12 +2,11 @@
 #ifndef (Lighting) #declare Lighting = 0; #end
 #ifndef (Highlights) #declare Highlights = 1; #end
 #ifndef (Strength) #declare Strength = 0.16; #end
-#ifndef (Spacing) #declare Spacing = 0.45; #end
 #ifndef (Flat) #declare Flat = 0; #end
 
 global_settings {
   assumed_gamma 1 mm_per_unit 10 max_trace_level 12
-  subsurface { method 2 samples 24, 8 spacing Spacing }
+  subsurface { method 2 samples 24, 8 }
 }
 background { rgb <0.035, 0.045, 0.065> }
 camera {

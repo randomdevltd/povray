@@ -521,7 +521,6 @@ void Parser::Run()
             Assign_Scene_Lights();
             Check_Legacy_Transport();
             Check_Subsurface_Light_Hosts();
-            Warn_Unused_Media_Domain_Cells();
             Split_Unions();
 
             // post process atmospheric media
@@ -3066,6 +3065,8 @@ ObjectPtr Parser::Parse_CSG(int CSG_Type)
         VersionWarning(150, "Should have at least 2 objects in csg.");
 
     Object->Compute_BBox();
+    if (CSGIntersection *intersection = dynamic_cast<CSGIntersection *>(Object))
+        intersection->Begin_Cells();
 
     // if the invert flag is in the object mods, the returned pointer will be
     // different than the passed one, though the object will still be an instance
@@ -7849,6 +7850,24 @@ void Parser::Parse_Default ()
             Parse_End ();
         END_CASE
 
+        CASE (REFRACTION_TOKEN)
+            Parse_Begin();
+            EXPECT
+                OTHERWISE
+                    if (CurrentTokenText() == "detail")
+                        sceneData->refractionDetail = Parse_Refraction_Detail();
+                    else if (CurrentTokenText() == "domain_cells")
+                        sceneData->refractionDomainCells = Parse_Domain_Cells();
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
+                END_CASE
+            END_EXPECT
+            Parse_End();
+        END_CASE
+
         CASE (INTERIOR_TOKEN)
             Parse_Begin();
             EXPECT
@@ -7888,6 +7907,22 @@ void Parser::Parse_Default ()
                     OTHERWISE
                         if (CurrentTokenText() == "domain_cells")
                             sceneData->surfaceDomainCells = Parse_Domain_Cells();
+                        else if ((CurrentTokenText() == "bounce") && Peek_Token(LEFT_CURLY_TOKEN))
+                        {
+                            Parse_Begin();
+                            EXPECT
+                                OTHERWISE
+                                    if (CurrentTokenText() == "view_directions")
+                                        sceneData->surfaceBounceDirections = Parse_Bounce_Directions();
+                                    else
+                                    {
+                                        UNGET
+                                        EXIT
+                                    }
+                                END_CASE
+                            END_EXPECT
+                            Parse_End();
+                        }
                         else
                         {
                             UNGET
@@ -8644,12 +8679,6 @@ void Parser::Parse_Global_Settings()
                         Error("Subsurface error_bound must be greater than 0.");
                 END_CASE
 
-                CASE (SPACING_TOKEN)
-                    sceneData->subsurfaceSpacing = Parse_Float();
-                    if (!(sceneData->subsurfaceSpacing > 0.0))
-                        Error("Subsurface spacing must be greater than 0.");
-                END_CASE
-
                 OTHERWISE
                     if (CurrentTokenText() == "memory")
                     {
@@ -8895,6 +8924,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         END_CASE
 
         CASE (BOUNDED_BY_TOKEN)
+            Leave_Lineage(Object);
             Parse_Begin ();
             if(!Object->Bound.empty())
                 if(Object->Clip == Object->Bound)
@@ -8913,6 +8943,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         END_CASE
 
         CASE (CLIPPED_BY_TOKEN)
+            Leave_Lineage(Object);
             Parse_Begin ();
             if(!Object->Clip.empty())
                 if(Object->Clip == Object->Bound)
@@ -9014,12 +9045,14 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
 
             // warning: Object->Invert will change the pointer if Object is CSG
             Object = Object->Invert();
+            Leave_Lineage(Object);
         END_CASE
 
         CASE (STURM_TOKEN)
             if (!(Object->Type & STURM_OK_OBJECT))
                 Not_With ("sturm","this object");
             Bool_Flag (Object, STURM_FLAG, (Allow_Float(1.0) > 0.0));
+            Leave_Lineage(Object);
         END_CASE
 
         /* Object-Ray Options
@@ -9102,6 +9135,23 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             END_EXPECT
             Parse_End ();
 #endif
+        END_CASE
+
+        CASE(SUBSURFACE_TOKEN)
+            // the object's own subsurface point budget; the scene's #default otherwise
+            Parse_Begin();
+            EXPECT
+                OTHERWISE
+                    if (CurrentTokenText() == "domain_cells")
+                        Object->subsurfaceDomainCells = Parse_Domain_Cells();
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
+                END_CASE
+            END_EXPECT
+            Parse_End();
         END_CASE
 
         CASE(DEBUG_TAG_TOKEN)
@@ -10760,14 +10810,6 @@ static const FINISH *Object_Legacy_Subsurface(ConstObjectPtr object, int sceneMe
     return finish;
 }
 
-static bool Media_Is_Constant(const Media& medium)
-{
-    for (const PIGMENT *pigment : medium.Density)
-        if (pigment->Type != PLAIN_PATTERN)
-            return false;
-    return true;
-}
-
 static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
 {
     objects.push_back(object);
@@ -10843,36 +10885,6 @@ void Parser::Check_Legacy_Transport()
         if (object->interior != nullptr)
             for (const Media& medium : object->interior->media)
                 reject(medium, std::string("in the ") + ShapeName(object));
-}
-
-// A constant method 4 medium's resolution sets its interior's grid only when nothing there varies.
-void Parser::Warn_Unused_Media_Domain_Cells()
-{
-    std::vector<ObjectPtr> objects;
-    for (ObjectPtr object : sceneData->objects)
-        Collect_Scene_Objects(object, objects);
-    std::unordered_set<std::string> warned;
-    for (ObjectPtr object : objects)
-    {
-        const Interior *interior = object->interior.get();
-        if (interior == nullptr)
-            continue;
-        std::string cause;
-        if (interior->light != nullptr)
-            cause = "the light block at " + interior->light->where;
-        else if (interior->refraction && !interior->refraction->functions.empty())
-            cause = "its refraction";
-        for (const Media& medium : interior->media)
-            if (cause.empty() && (medium.Sample_Method == 4) && !Media_Is_Constant(medium))
-                cause = "the varying medium at " + medium.where;
-        if (cause.empty())
-            continue;
-        for (const Media& medium : interior->media)
-            if ((medium.Sample_Method == 4) && medium.domainCellsStated && Media_Is_Constant(medium) &&
-                warned.insert(medium.where).second)
-                Warning("The constant medium at %s in the %s gives domain_cells, but the grid there follows %s, "
-                        "so its domain_cells is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());
-    }
 }
 
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
@@ -11657,13 +11669,100 @@ void Parser::Prepare_Link(ObjectPtr Object)
             Prepare_Link(child);
 }
 
-// Whether a placed object is a union whose members are placed in its stead, warning as it is placed when asked.
-bool Parser::Splits_Union(ObjectPtr Object, bool warn)
+// Every alternative material must carry method 2; a method 1 layer keeps the legacy body semantics.
+static bool Point_Cloud_Texture(const TEXTURE *textures, int sceneMethod, std::unordered_set<const TextureBlendMap *>& maps)
 {
+    bool subsurface = false;
+    for (const TEXTURE *layer = textures; layer != nullptr; layer = layer->Next)
+    {
+        if ((layer->Finish != nullptr) && layer->Finish->UseSubsurface)
+        {
+            const int method = layer->Finish->SubsurfaceMethod ? layer->Finish->SubsurfaceMethod : sceneMethod;
+            if (method != kSubsurfaceMethodPointCloud)
+                return false;
+            subsurface = true;
+        }
+        for (const TEXTURE *material : layer->Materials)
+        {
+            if (!Point_Cloud_Texture(material, sceneMethod, maps))
+                return false;
+            subsurface = true;
+        }
+        if (layer->Blend_Map != nullptr)
+        {
+            if (maps.count(layer->Blend_Map.get()) == 0)
+            {
+                for (const TextureBlendMapEntry& entry : layer->Blend_Map->Blend_Map_Entries)
+                    if (!Point_Cloud_Texture(entry.Vals, sceneMethod, maps))
+                        return false;
+                maps.insert(layer->Blend_Map.get());
+            }
+            subsurface = subsurface || !layer->Blend_Map->Blend_Map_Entries.empty();
+        }
+    }
+    return subsurface;
+}
+
+// Whether every leaf's effective textures carry active method 2, including inherited textures.
+static bool Point_Cloud_Members(ConstObjectPtr Object, const TEXTURE *inherited, int method,
+                                std::unordered_set<const TextureBlendMap *>& maps)
+{
+    if (Object->Type & LIGHT_SOURCE_OBJECT)
+        return false;
+    const TEXTURE *texture = (Object->Texture != nullptr) ? Object->Texture : inherited;
+    if (Object->Type & IS_COMPOUND_OBJECT)
+    {
+        const std::vector<ObjectPtr>& children = static_cast<const CompoundObject *>(Object)->children;
+        return !children.empty() &&
+               std::all_of(children.begin(), children.end(), [texture, method, &maps](ConstObjectPtr child) { return Point_Cloud_Members(child, texture, method, maps); });
+    }
+    bool subsurface = Point_Cloud_Texture(texture, method, maps);
+    if ((texture != nullptr) && !subsurface)
+        return false;
+    if ((Object->Interior_Texture != nullptr) && !Point_Cloud_Texture(Object->Interior_Texture, method, maps))
+        return false;
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(Object))
+        for (MeshIndex i = 0; i < mesh->Number_Of_Textures; i++)
+            if (mesh->Textures[i] != nullptr)
+            {
+                if (!Point_Cloud_Texture(mesh->Textures[i], method, maps))
+                    return false;
+                subsurface = true;
+            }
+    if (const Blob *blob = dynamic_cast<const Blob *>(Object))
+        for (const TEXTURE *material : blob->Element_Texture)
+            if (material != nullptr)
+            {
+                if (!Point_Cloud_Texture(material, method, maps))
+                    return false;
+                subsurface = true;
+            }
+    return subsurface;
+}
+
+bool Parser::Subsurface_Members(ConstObjectPtr Object, const TEXTURE *inherited)
+{
+    if (!sceneData->useSubsurface)
+        return false;
+    std::unordered_set<const TextureBlendMap *> maps;
+    return Point_Cloud_Members(Object, inherited, sceneData->subsurfaceMethod, maps);
+}
+
+// Whether a placed object is a union whose members are placed in its stead, warning as it is placed when asked.
+bool Parser::Splits_Union(ObjectPtr Object, bool warn, bool *subsurfaceBody)
+{
+    if (subsurfaceBody != nullptr)
+        *subsurfaceBody = false;
     // Only an unclipped union that is not a merge splits. TODO FIXME - check if bound is used
-    if ((Object->Clip.empty() == false) ||
-        (dynamic_cast<CSGUnion *>(Object) == nullptr) ||
+    if ((dynamic_cast<CSGUnion *>(Object) == nullptr) ||
         (dynamic_cast<CSGMerge *>(Object) != nullptr))
+        return false;
+
+    // A union whose every member is of a subsurface material diffuses light as one body, so it stays whole.
+    const bool body = Subsurface_Members(Object, nullptr);
+    if (subsurfaceBody != nullptr)
+        *subsurfaceBody = body;
+    if (body || !Object->Clip.empty())
         return false;
 
     // A medium prepared over the union, or a light made from it, keeps a pointer to the union, so the union stays whole.
@@ -11729,10 +11828,23 @@ void Parser::Split_Unions()
         Split_Union(object);
 }
 
+// Names a union of subsurface members as the body of every object within it.
+static void Mark_Subsurface_Body(ObjectPtr Object, ObjectPtr Body)
+{
+    Object->subsurfaceBody = Body;
+    if (Object->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : static_cast<CompoundObject *>(Object)->children)
+            Mark_Subsurface_Body(child, Body);
+}
+
 void Parser::Split_Union(ObjectPtr Object)
 {
-    if (!Splits_Union(Object, false))
+    bool subsurfaceBody;
+    if (!Splits_Union(Object, false, &subsurfaceBody))
     {
+        if (subsurfaceBody)
+            for (ObjectPtr child : static_cast<CSG *>(Object)->children)
+                Mark_Subsurface_Body(child, Object);
         Link(Object, sceneData->objects);
         return;
     }

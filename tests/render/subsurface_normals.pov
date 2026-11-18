@@ -2,11 +2,10 @@
 #ifndef (Bump) #declare Bump = 1; #end
 #ifndef (Strength) #declare Strength = 0.25; #end
 #ifndef (Mapped) #declare Mapped = 0; #end
-#ifndef (Spacing) #declare Spacing = 0.5; #end
 
 global_settings {
   assumed_gamma 1 mm_per_unit 10
-  subsurface { method 2 samples 12, 4 spacing Spacing }
+  subsurface { method 2 samples 12, 4 }
 }
 camera { orthographic location <0,0,-5> look_at 0 right x*2.7 up y*2.7 }
 light_source { <-4,3,-2> rgb 1.5 }

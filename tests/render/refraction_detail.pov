@@ -7,9 +7,12 @@
 #ifndef (Atmosphere) #declare Atmosphere = 0; #end
 // Case 12's medium asks for MediumCells; one cell lays out as 2 x 2 x 1 over the plate, above its limit of two.
 #ifndef (MediumCells) #declare MediumCells = 1; #end
-// Cells sets the scene default domain_cells; twice it caps the refraction fields and the optical-depth tables.
+// Cells sets the media default domain_cells, twice it caps the optical-depth tables; RefractionCells sets the
+// refraction default domain_cells, twice it caps the refraction fields.
 #ifndef (Cells) #declare Cells = 0; #end
+#ifndef (RefractionCells) #declare RefractionCells = 0; #end
 #if (Cells > 0) #default { media { domain_cells Cells } } #end
+#if (RefractionCells > 0) #default { refraction { domain_cells RefractionCells } } #end
 global_settings {
   assumed_gamma 1
   #if (Atmosphere) atmospheric_ior Atmosphere #end

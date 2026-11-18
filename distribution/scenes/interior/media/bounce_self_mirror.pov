@@ -27,17 +27,24 @@ box { <-4.1,-0.18,-2>, <3.8,0,2> texture { Metal } }
 #for (I,-1,1)
   cylinder { <-3.9,0.006,I>, <3.6,0.006,I>, 0.006 pigment { rgb <0.08,0.19,0.26> } finish { emission 0.13 } }
 #end
-// The warm core and the long scattering volume share this one interior.
+// The warm core lights the long scattering volume, which bounces it; a bounce light takes no emission, so the core
+// is its own object.
 box {
   <-3.5,0.4,-1.15>, <3.2,2.7,1.15> hollow pigment { rgbt 1 }
   interior {
     media { method 4 scattering { 1, rgb 0.18 } absorption rgb 0.025
       density { function { max(0,1-pow((y-1.5)/1.1,2)-pow(z/1.1,2))*min(1,max(0,(x+3.5)/0.7)) } }
     }
+    light { samples Samples photons { reflection on refraction on } bounce { passes 2 self Self } }
+  }
+}
+sphere {
+  <1.2,1.5,0>, 0.3 hollow pigment { rgbt 1 }
+  interior {
     media { method 4 emission rgb <1,0.3,0.045>*Power
       density { function { pow(max(0,1-((x-1.2)*(x-1.2)+(y-1.5)*(y-1.5)+z*z)/0.09),2) } }
     }
-    light { emission samples Samples photons { reflection on refraction on } bounce { passes 2 self Self } }
+    light { emission samples Samples photons { reflection on refraction on } }
   }
 }
 // The spherical cap has its paraxial focus at the warm core.

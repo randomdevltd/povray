@@ -63,6 +63,12 @@ public:
             messages->Info("%s", (whole ? text : text.substr(0, width)).c_str());
     }
 
+    void Warn(const std::string& text) const
+    {
+        if (messages != nullptr)
+            messages->Warning(pov_base::kWarningGeneral, "%s", text.c_str());
+    }
+
     void Poll()
     {
         if (phase.empty())

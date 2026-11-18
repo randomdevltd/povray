@@ -4,7 +4,7 @@
 #ifdef (Bad) #declare T = <1, -1, 1>; #end
 #ifndef (Ext) #declare Ext = 0; #end
 #ifndef (Plain) #declare Plain = 0; #end
-global_settings { assumed_gamma 1 mm_per_unit 10 subsurface { method 2 samples 16, 8 spacing 0.5 } }
+global_settings { assumed_gamma 1 mm_per_unit 10 subsurface { method 2 samples 16, 8 } }
 camera { location <0.6, 1.6, -5> look_at <0, 0.2, 0> angle 50 }
 background { rgb 0 }
 #if (Ext) light_source { <0.3, 3, -3>, rgb 1 } #end

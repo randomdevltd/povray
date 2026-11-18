@@ -1,6 +1,6 @@
 #!/bin/sh
 # domain_cells.sh <povray> <srcdir>: the scene-wide, per-medium and per-light domain_cells parse, accept, reject and
-# set an interior light's source lattice.
+# set an interior light's source lattice; each grid of an interior follows only its own count or detail.
 set -eu
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 SRCDIR=$(cd "$2" && pwd)
@@ -137,5 +137,63 @@ for language in pov pov4; do
     write surface "$language" 'sphere { 0, 1 pigment { rgb 1 } light { brightness 12 domain_cells 64 } }'
     "$POVRAY" +isurface.$language +w1 +h1 +wt1 +pr -a -f -d -p -v -gp >surface.$language.log 2>&1 ||
         { cat surface.$language.log; exit 1; }
+done
+# Each grid in one interior follows only its own count. In the 2 x 2 x 2 box the medium's 5000 cells are 0.117 wide, 18
+# per axis, whatever the light's count or the media default; the refraction grid follows only its own detail (0.3 is a
+# 0.15 cell, 14 per axis; 0.6 gives 7) or its own domain_cells at detail auto (500000: 80 per axis; 5000: 18).
+grids() {
+    name=$1 language=$2 defaults=$3 light=$4 detail=$5
+    if [ "$language" = pov ]; then prefix='#'; else prefix=; fi
+    write "$name" "$language" "$(printf '%s' "$defaults" | sed "s/@/$prefix/g")
+box { -1, 1 hollow pigment { rgbt 1 }
+  interior {
+    light { brightness 1 samples 1 $light }
+    media { method 4 domain_cells 5000 scattering { 1, 0.5 } density { bozo } }
+    refraction { function { 0.01 * x } $detail }
+  }
+}"
+    "$POVRAY" +i"$name.$language" +w1 +h1 +wt1 +pr -a -f -d -p -gp Warning_Level=5 >"$name.$language.log" 2>&1 ||
+        { cat "$name.$language.log"; exit 1; }
+    flat=$(tr '\n' ' ' <"$name.$language.log" | tr -s '[:space:]' ' ')
+    density=$(printf '%s' "$flat" | grep -o "Prepared density grid: [0-9]* x [0-9]* x [0-9]*" | head -1)
+    refraction=$(printf '%s' "$flat" | grep -o "Prepared refraction grid: [0-9]* x [0-9]* x [0-9]*" | head -1)
+}
+expect() {
+    [ "$density" = "Prepared density grid: $2" ] && [ "$refraction" = "Prepared refraction grid: $3" ] ||
+        { cat "$1.log"; echo "domain_cells: $1 gave '$density' and '$refraction'"; exit 1; }
+}
+for language in pov pov4; do
+    grids plain "$language" '' '' ''
+    expect plain.$language '18 x 18 x 18' '80 x 80 x 80'
+    grids finelight "$language" '' 'domain_cells 262144' ''
+    expect finelight.$language '18 x 18 x 18' '80 x 80 x 80'
+    grids mediadefault "$language" '@default { media { domain_cells 262144 } }' '' ''
+    expect mediadefault.$language '18 x 18 x 18' '80 x 80 x 80'
+    grids detaildefault "$language" '@default { refraction { detail 0.3 } }' '' ''
+    expect detaildefault.$language '18 x 18 x 18' '14 x 14 x 14'
+    grids statedauto "$language" '@default { refraction { detail 0.3 } }' '' 'detail auto'
+    expect statedauto.$language '18 x 18 x 18' '80 x 80 x 80'
+    grids stated "$language" '@default { media { domain_cells 5000 } }' '' 'detail 0.6'
+    expect stated.$language '18 x 18 x 18' '7 x 7 x 7'
+    grids cellsdefault "$language" '@default { refraction { domain_cells 5000 } }' '' ''
+    expect cellsdefault.$language '18 x 18 x 18' '18 x 18 x 18'
+    grids cellsstated "$language" '@default { refraction { domain_cells 5000 } }' '' 'domain_cells 500000'
+    expect cellsstated.$language '18 x 18 x 18' '80 x 80 x 80'
+done
+# A stated detail past twice the refraction domain_cells is coarsened with a warning that names the count to set.
+grids capped pov '' '' 'detail 0.012 domain_cells 1000'
+tr '\n' ' ' <capped.pov.log | tr -s '[:space:]' ' ' |
+    grep -F "The refraction grid at its detail width 0.006 needs 37259704 cells, above the limit of 2000 (twice its domain_cells)" >/dev/null &&
+    tr '\n' ' ' <capped.pov.log | tr -s '[:space:]' ' ' | grep -F "Set the refraction domain_cells to at least 18629852" >/dev/null ||
+    { cat capped.pov.log; echo "domain_cells: no coarsening warning for a capped refraction grid"; exit 1; }
+for language in pov pov4; do
+    if [ "$language" = pov ]; then item='#default { refraction { detail 0 } }'; else item='default { refraction { detail 0 } }'; fi
+    write baddetail "$language" "$item"
+    if "$POVRAY" +ibaddetail.$language +w1 +h1 +wt1 +pr -a -f -d -p -v -gp >baddetail.$language.log 2>&1; then
+        echo "domain_cells: expected a zero refraction default detail in $language to fail" >&2; exit 1
+    fi
+    tr '\n' ' ' <baddetail.$language.log | tr -s '[:space:]' ' ' |
+        grep -F "Refraction detail must be auto or finite and greater than zero, in scene units." >/dev/null ||
+        { cat baddetail.$language.log; exit 1; }
 done
 echo 'domain_cells: ok'

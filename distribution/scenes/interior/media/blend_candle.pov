@@ -23,11 +23,13 @@
 #declare WickY = Wick.y;
 #declare Back = 1.6;
 #include "functions.inc"
-// the heat-shimmer refraction fields need 3.2 million cells each, within twice this default
+// twice these defaults cap the media's light-aligned optical-depth tables and the heat-shimmer refraction fields,
+// which need 3.2 million cells each
 #default { media { domain_cells 2000000 } }
+#default { refraction { domain_cells 2000000 } }
 global_settings { assumed_gamma 1
  #if (Caustics & RenderView!=2) photons { method 2 quality PhotonQuality } #end atmospheric_ior 1.000277 max_trace_level 24
- #if (WaxSSLT & RenderView!=2) mm_per_unit 1000 subsurface { method 2 samples 12,2 spacing 0.35 error_bound 0.1 memory 128 } #end
+ #if (WaxSSLT & RenderView!=2) mm_per_unit 1000 subsurface { method 2 samples 12,2 error_bound 0.1 memory 128 } #end
  #if (Radio & RenderView!=2) radiosity { count 180 error_bound 0.45 nearest_count 6 pretrace_start 0.32 pretrace_end 0.03 media on } #end
 }
 #if (RenderView=0)

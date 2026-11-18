@@ -1851,5 +1851,114 @@ int Solve_Polynomial(int n, const DBL *c0, DBL *r, int sturm, DBL epsilon, Rende
     return(roots);
 }
 
+// The value of c[0] x^n + ... + c[n] at x by Horner's rule.
+static DBL precise_value(int n, const DBL *c, DBL x)
+{
+    DBL value = c[0];
+    for (int i = 1; i <= n; ++i)
+        value = value * x + c[i];
+    return value;
+}
+
+// The root of c[0] x^n + ... + c[n] between a and b, where its value changes sign from va to vb: Newton steps from the
+// end nearer zero while they land inside the bracket and halve it, halving otherwise, until the bracket has no
+// representable middle or the value somewhere is exactly zero.
+static DBL bracketed_root(int n, const DBL *c, const DBL *slope, DBL a, DBL b, DBL va, DBL vb)
+{
+    for (;;)
+    {
+        const DBL middle = a + 0.5 * (b - a);
+        if (!(middle > a && middle < b))
+            return (fabs(va) <= fabs(vb)) ? a : b;
+        const DBL from = (fabs(va) <= fabs(vb)) ? a : b;
+        const DBL fromValue = (fabs(va) <= fabs(vb)) ? va : vb;
+        const DBL rate = precise_value(n - 1, slope, from);
+        DBL next = (rate != 0.0) ? from - fromValue / rate : middle;
+        if (!(next > a && next < b) || (fabs(next - from) > 0.5 * (b - a)))
+            next = middle;
+        const DBL value = precise_value(n, c, next);
+        if (value == 0.0)
+            return next;
+        if (opposite_signs(value, va)) { b = next; vb = value; } else { a = next; va = value; }
+    }
+}
+
+// Every real root of c[0] x^n + ... + c[n] in [low, high], ascending. Between consecutive real roots of the derivative
+// (found the same way, down to a linear one) the polynomial is monotone, so each such stretch holds at most one root,
+// found where its value changes sign. Two roots however close are told apart by the turning point between them, and
+// a root touched without a change of sign (an even root) is a tangency, not a crossing.
+static int monotone_roots(int n, const DBL *c, DBL low, DBL high, DBL *r)
+{
+    if (n == 1)
+    {
+        const DBL x = -c[1] / c[0];
+        if (x >= low && x <= high)
+        {
+            r[0] = x;
+            return 1;
+        }
+        return 0;
+    }
+    DBL slope[MAX_ORDER + 1], turns[MAX_ORDER + 1];
+    for (int i = 0; i < n; ++i)
+        slope[i] = c[i] * (n - i);
+    const int m = monotone_roots(n - 1, slope, low, high, turns + 1);
+    turns[0] = low;
+    turns[m + 1] = high;
+    int count = 0;
+    DBL va = precise_value(n, c, low);
+    if (va == 0.0)
+        r[count++] = low;
+    for (int k = 1; k <= m + 1; ++k)
+    {
+        const DBL a = turns[k - 1], b = turns[k];
+        const DBL vb = precise_value(n, c, b);
+        if (vb == 0.0)
+        {
+            if ((count == 0) || (r[count - 1] != b))
+                r[count++] = b;
+        }
+        else if (opposite_signs(va, vb) && (b > a))
+            r[count++] = bracketed_root(n, c, slope, a, b, va, vb);
+        va = vb;
+    }
+    return count;
+}
+
+int Solve_Polynomial_Precise(int n, const DBL *c0, DBL *r, RenderStatistics& stats)
+{
+    stats[Polynomials_Tested]++;
+    // only coefficients that are exactly zero lower the order; a small one is a far root, not none
+    int lead = 0;
+    while ((lead < n) && (c0[lead] == 0.0))
+        lead++;
+    n -= lead;
+    const DBL *c = c0 + lead;
+    if (n <= 0)
+        return 0;
+    // every root lies within 2^(e+1), e the least power of two with |c[i] / c[0]| below 2^(e i) for every i (Fujiwara's
+    // bound, by exponents)
+    int leading;
+    std::frexp(c[0], &leading);
+    int e = std::numeric_limits<int>::min();
+    for (int i = 1; i <= n; ++i)
+        if (c[i] != 0.0)
+        {
+            int exponent;
+            std::frexp(c[i], &exponent);
+            const int ratio = exponent - leading + 1;
+            e = std::max(e, (ratio >= 0) ? (ratio + i - 1) / i : -((-ratio) / i));
+        }
+    if (e == std::numeric_limits<int>::min())
+    {
+        r[0] = 0.0;
+        return 1;
+    }
+    const DBL bound = std::ldexp(1.0, e + 1);
+    if (!IsFiniteIntersectionDepth(bound))
+        return 0;
+    return monotone_roots(n, c, -bound, bound, r);
+}
+
 }
 // end of namespace pov

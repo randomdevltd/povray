@@ -48,7 +48,7 @@ BEGIN {
     if (!(first > 0.0001)) fail("buried source failed to illuminate the external receiver")
     if (abs(second / first - 1) > 0.02) fail("primary source was reinjected after its first order: " second / first)
 }'
-for mode in 1 2 3; do
+for mode in 1 2; do
     "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_source.pov" +w24 +h24 +wt2 +pr -a -d -p -v -gp \
         +fp16 File_Gamma=1 Stochastic_Seed=0 Declare=Power=0.1 Declare=ExportMode="$mode" \
         +o"export$mode.ppm" >"export$mode.log" 2>&1 ||
@@ -56,10 +56,16 @@ for mode in 1 2 3; do
 done
 image_awk '
 BEGIN {
-    n = read_ppm("export1.ppm", a); read_ppm("export2.ppm", b); read_ppm("export3.ppm", c)
-    emission = sum_of(a, n); bounce = sum_of(b, n); both = sum_of(c, n)
+    n = read_ppm("export1.ppm", a); read_ppm("export2.ppm", b)
+    emission = sum_of(a, n); bounce = sum_of(b, n)
     if (!(emission > 0.0001 && bounce > 0.0001)) fail("internal flux needs both emission and bounce enabled")
     if (abs(bounce / emission - 1) > 0.1) fail("emission and bounce internal source powers differ: " bounce / emission)
-    if (abs(both / emission - 1) > 0.02) fail("emission plus bounce counted internal primary twice: " both / emission)
 }'
-echo 'subsurface_internal_source: buried emission, linear power, source-order and emission/bounce isolation passed'
+# bounce already exports the buried source, so emission plus bounce in one light block is a parse error
+if "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_source.pov" +w1 +h1 +wt1 +pr -f -a -d -p -v -gp \
+    Declare=ExportMode=3 >export3.log 2>&1; then
+    echo "subsurface_internal_source: emission plus bounce in one light block was accepted" >&2; exit 1
+fi
+tr '\n' ' ' <export3.log | tr -s '[:space:]' ' ' | grep -F 'A bounce light block takes no pigment or emission' >/dev/null ||
+    { cat export3.log; exit 1; }
+echo 'subsurface_internal_source: buried emission, linear power, source-order and emission/bounce export passed'

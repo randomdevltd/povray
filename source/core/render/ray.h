@@ -215,6 +215,9 @@ class Ray final : public BasicRay
             return slot.ray != this || !slot.query || slot.query->Admit(slot.owner ? slot.owner : object, depth);
         }
         const RayRootQuery* GetRootQuery() const { return ticket.rootQuery.ray == this ? ticket.rootQuery.query : nullptr; }
+        /// Whether this ray's root query asks for every crossing at full precision: it places its own start, so no
+        /// depth is too near to be a crossing, and no root may be left at a solver's absolute tolerance.
+        bool PreciseRoots() const { return GetRootQuery() && GetRootQuery()->PreciseBoundary(); }
         ConstObjectPtr GetRootOwner() const { return ticket.rootQuery.ray == this ? ticket.rootQuery.owner : nullptr; }
         void SetRootQuery(const RayRootQuery* query) const { ticket.rootQuery.Set(this, query, nullptr); }
         void SetRootOwner(ConstObjectPtr owner) const { if (ticket.rootQuery.ray == this) ticket.rootQuery.owner = owner; }

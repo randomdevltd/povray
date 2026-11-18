@@ -29,6 +29,7 @@ class InteriorField final
 {
     public:
         ObjectPtr owner;
+        /// the refraction field's grid; media and lights keep their own
         std::shared_ptr<const PreparedGridLayout> layout;
         std::vector<PreparedLightComponent> lights;
         bool mediaReady = false, lightReady = false;

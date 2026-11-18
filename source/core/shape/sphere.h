@@ -95,7 +95,7 @@ class Sphere final : public ObjectBase
         virtual void Transform(const TRANSFORM *) override;
         virtual void Compute_BBox() override;
         /// A sphere's piece carries the sphere itself, which holds it more tightly than its box.
-        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const override;
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query = SurfaceQuery()) const override;
         virtual bool Intersect_BBox(BBoxDirection, const BBoxVector3d&, const BBoxVector3d&, BBoxScalar) const override;
 
         static bool Intersect(const BasicRay& ray, const Vector3d& Center, DBL Radius2, DBL *Depth1, DBL  *Depth2);

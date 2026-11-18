@@ -4,7 +4,6 @@
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (Samples) #declare Samples = 128; #end
 #ifndef (Single) #declare Single = 0; #end
-#ifndef (Spacing) #declare Spacing = 0.7; #end
 #ifndef (Photons) #declare Photons = 1; #end
 #ifndef (Collect) #declare Collect = 1; #end
 #ifndef (PhotonCount) #declare PhotonCount = 30000; #end
@@ -29,7 +28,7 @@
 #ifndef (Power) #declare Power = 0.08; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 max_trace_level 12
-  subsurface { method Method samples Samples, Single spacing Spacing }
+  subsurface { method Method samples Samples, Single }
   #if (Photons)
     photons { count PhotonCount gather GatherMin, GatherMax radius GatherRadius autostop 0
       #ifdef (LoadMap) load_file "subsurface-photons.ph" #end

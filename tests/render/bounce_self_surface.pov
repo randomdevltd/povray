@@ -1,7 +1,7 @@
 // bounce_self_surface.pov: an open box lit inside, a surface bounce light with Bounce passes and Self its self share;
-// Emit 1 gives it a light of its own, Subsurface 1 a method 2 finish, Photons 1 a mirror returning its light by
-// progressive photons, Buried 1 a lamp inside its back wall whose light leaves through the wall as the box's emission;
-// Scene 1 adds a floor before it, Mask 1 shows only the box, flat.
+// Emit 1 makes it an emitting light of its own instead (with Bounce too, a parse error), Subsurface 1 gives it a method 2
+// finish, Photons 1 a mirror returning its light by progressive photons, Buried 1 a lamp inside its back wall whose light
+// leaves through the wall; Scene 1 adds a floor before it, Mask 1 shows only the box, flat.
 #version 3.7;
 #ifndef (Bounce) #declare Bounce = 0; #end
 #ifndef (Self) #declare Self = 1; #end
@@ -14,7 +14,7 @@
 #ifndef (Mask) #declare Mask = 0; #end
 #ifndef (Samples) #declare Samples = 4; #end
 global_settings { assumed_gamma 1 max_trace_level 8
-  #if (Subsurface) subsurface { method 2 samples 16, 4 spacing 0.5 } #end
+  #if (Subsurface) subsurface { method 2 samples 16, 4 } #end
   #if (Photons) photons { method 2 quality 0.25 } #end
 }
 camera { location <0.6, 1.6, -5> look_at <0, 0.2, 0> angle 50 }
@@ -27,14 +27,13 @@ difference {
   #else
     pigment { rgb <0.9, 0.85, 0.8> }
     finish { ambient 0 emission 0 diffuse 0.8 #if (Subsurface) subsurface { translucency 0.4 } #end }
-    #if (Bounce > 0 | Emit | Buried)
+    #if (Bounce > 0 | Emit)
       light {
-        #if (Buried) emission #end
         #if (Emit) pigment { rgb <1, 0.6, 0.3> } brightness 0.1 #end
         samples Samples
         #if (Buried) domain_cells 32768 #end
         #if (Photons) photons { reflection on } #end
-        #if (Bounce > 0) bounce { passes Bounce self Self } #end
+        #if (Bounce > 0) bounce { passes Bounce self Self } #else self Self #end
       }
     #end
   #end

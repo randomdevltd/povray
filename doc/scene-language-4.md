@@ -68,6 +68,7 @@ the cell count of that light's prepared source domain; without it the light take
 the scene's light default, `default { interior { light { domain_cells N } } }` (classic `#default`),
 500000 by default, never its medium's count. Surface lights use their own `domain_cells`
 for a 2D budget of 4096 nodes per light by default, independent of the volume default, set by `default { light { domain_cells N } }`.
+A surface light's budget counts the points it shades; its first look, or its last split, can pass the budget by the points it finds.
 The word is contextual. Both defaults can be set together with
 `default { interior { light { domain_cells 500000 } } light { domain_cells 4096 } }`,
 using the ordinary nested block grammar at every scene version.
@@ -81,13 +82,14 @@ and method 4 only: the cell count of the medium's prepared grid, spread as cubic
 width `cbrt(V/N)` over its container's bounding box (whole cells per axis round the count
 up by under one layer per axis). The count is scale-invariant: rescaling the scene or
 transforming the container keeps the grid's cells and quality. A grid holds at most twice
-its `domain_cells`, and is coarsened with a warning past that. A constant medium in an
-interior whose grid follows a varying medium, a light block or a refraction field ignores
-its `domain_cells`, with a warning. `default { media { domain_cells N } }` (classic
+its `domain_cells`, and is coarsened with a warning past that. Each grid in an interior
+follows only its own count: media, the light's source lattice and the refraction field
+never share or refine one another's grid. `default { media { domain_cells N } }` (classic
 `#default`), beside `mix`, sets the count of media parsed after it, 500000 by default;
-its value at the end of the parse also serves refraction fields without `detail`, and, doubled, caps the prepared
-fields that belong to no single medium or light (surface bounce nodes, refraction detail
-fields, optical-depth tables), 1000000 cells by default. For cells about `w` units
+its value at the end of the parse, doubled, caps the media's light-aligned optical-depth
+tables, 1000000 cells by default. A refraction field has its own `detail` and
+`domain_cells` (500000 cells at `detail auto`, its grid capped at twice the count), with
+their own `default { refraction { detail D domain_cells N } }`. For cells about `w` units
 wide, write the product over the axes of `ceil(extent / w)` of the container's box.
 `domain_cells` is contextual.
 

@@ -114,6 +114,7 @@ class Cone final : public ObjectBase
         void Compute_Cylinder_Data();
     protected:
         int Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistics& stats) const;
+        int IntersectPrecise(const BasicRay& ray, CONE_INT *Intersection, RenderStatistics& stats) const;
 #ifdef POV_ENABLE_CONE_UV
         void CalcUV(const Vector3d& IPoint, Vector2d& Result) const;
 #endif // POV_ENABLE_CONE_UV

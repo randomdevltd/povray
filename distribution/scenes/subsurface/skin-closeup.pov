@@ -3,9 +3,9 @@
 #ifndef (Strength) #declare Strength=0.35; #end
 #ifndef (Highlights) #declare Highlights=1; #end
 #ifndef (Flat) #declare Flat=0; #end
-#ifndef (Spacing) #declare Spacing=0.45; #end
+#ifndef (Cells) #declare Cells=0; #end
 #ifndef (Lighting) #declare Lighting=0; #end
-global_settings {assumed_gamma 1 mm_per_unit 1000 max_trace_level 12 subsurface {method 2 samples 24,8 spacing Spacing}}
+global_settings {assumed_gamma 1 mm_per_unit 1000 max_trace_level 12 subsurface {method 2 samples 24,8}}
 background {rgb <0.025,0.035,0.052>}
 camera {orthographic location <0,0.003,-0.15> look_at <0,0.003,0> right x*0.041 up y*0.041*image_height/image_width}
 #if (Lighting=0)
@@ -49,4 +49,4 @@ camera {orthographic location <0,0.003,-0.15> look_at <0,0.003,0> right x*0.041 
   }
 #end
 
-object {Ear(Kind) rotate y*-12 scale 0.01}
+object {Ear(Kind) rotate y*-12 scale 0.01 #if (Cells > 0) subsurface {domain_cells Cells} #end}

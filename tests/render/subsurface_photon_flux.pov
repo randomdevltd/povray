@@ -2,7 +2,6 @@
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (SurfaceOnly) #declare SurfaceOnly = 0; #end
 #ifndef (Samples) #declare Samples = 256; #end
-#ifndef (Spacing) #declare Spacing = 0.7; #end
 #ifndef (Photons) #declare Photons = 1; #end
 #ifndef (Collect) #declare Collect = 1; #end
 #ifndef (GatherMax) #declare GatherMax = 4096; #end
@@ -29,7 +28,7 @@
 #ifndef (GlobalLights) #declare GlobalLights = 0; #end
 global_settings {
   assumed_gamma 1 mm_per_unit Mm
-  subsurface { method Method samples Samples, 0 spacing Spacing }
+  subsurface { method Method samples Samples, 0 }
   #if (Photons) photons { load_file "subsurface-photons.ph" gather 0, GatherMax radius GatherRadius } #end
 }
 camera { orthographic location <0, 6, -0.001> look_at 0 right x * 4 up z * 3 }

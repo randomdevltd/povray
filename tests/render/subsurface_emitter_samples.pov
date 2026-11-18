@@ -6,7 +6,7 @@
 global_settings {
   assumed_gamma 1
   mm_per_unit (Cloud ? 1 : 1000)
-  subsurface { method 2 samples 4, 1 spacing 2 }
+  subsurface { method 2 samples 4, 1 }
 }
 camera { location <0,1.5,-4> look_at <0,0.4,0> right x*image_width/image_height angle 45 }
 #if (Source = 0)

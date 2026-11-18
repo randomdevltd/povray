@@ -4,7 +4,6 @@
 #ifndef (MediaCells) #declare MediaCells = 500000; #end
 #ifndef (VolumeCells) #declare VolumeCells = 256; #end
 #ifndef (UseDefault) #declare UseDefault = 0; #end
-#ifndef (Export) #declare Export = 0; #end
 #ifndef (Passes) #declare Passes = 1; #end
 #ifndef (S) #declare S = 1; #end
 #default { media { domain_cells MediaCells } }
@@ -12,7 +11,7 @@
 #if (Cells > 0)
 #default { interior { light { domain_cells VolumeCells } } light { domain_cells Cells } }
 #end
-global_settings { assumed_gamma 1 mm_per_unit 1/S subsurface { method 2 samples 4, 4 spacing 0.5 } }
+global_settings { assumed_gamma 1 mm_per_unit 1/S subsurface { method 2 samples 4, 4 } }
 camera { orthographic location <0,0,-3>*S look_at 0 right x*1.4*S up y*0.8*S }
 background { rgb 0.01 }
 sphere_sweep {
@@ -21,7 +20,8 @@ sphere_sweep {
   pigment { rgb <0.8,0.5,0.3> }
   finish { ambient 0 diffuse 1 subsurface { translucency 0.3 } }
   interior { ior 1.4 }
-  light { #if (Export) emission #end bounce { passes Passes } samples 4
+  // bounce exports the buried vein through the skin itself, so the block takes no emission
+  light { bounce { passes Passes } samples 4
     #if (Cells > 0 & !UseDefault) domain_cells Cells #end }
   scale S
 }

@@ -2,7 +2,7 @@
 #ifndef (SourceDepth) #declare SourceDepth = 0.35; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 max_trace_level 8
-  subsurface { method 2 samples 4, 32 spacing 0.5 }
+  subsurface { method 2 samples 4, 32 }
 }
 camera { orthographic location <0, 3, 0> look_at 0 right x * 0.01 up z * 0.01 }
 background { rgb 0 }

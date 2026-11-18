@@ -45,18 +45,18 @@ region set v37_set 0 95 0 71
 render v37_auto Version=3.7 Declare=Case=1 Declare=Detail=0
 same auto v37_auto
 
-# Resolved periodic fields converge against a reference with 32 cells per period; a default of five million cells
-# lets the finest field's 7.2 million stand.
+# Resolved periodic fields converge against a reference with 32 cells per period; a refraction default of five
+# million cells lets the finest field's 7.2 million stand.
 error() {
     for name in "$1" "$2"; do tail -c $((6 * W * H)) "refraction_detail_$name.ppm" | od -An -v -tu1 -w6 > "refraction_detail_$name.values"; done
     paste -d' ' "refraction_detail_$1.values" "refraction_detail_$2.values" | awk '
         { for (k = 1; k <= 5; k += 2) { d = ($k * 256 + $(k + 1)) - ($(k + 6) * 256 + $(k + 7)); total += d < 0 ? -d : d } }
         END { printf "%.12g", total / (NR * 3 * 65535) }'
 }
-render resolved_coarse Declare=Case=15 Declare=Detail=0.24 Declare=Cells=5000000
-render resolved_medium Declare=Case=15 Declare=Detail=0.12 Declare=Cells=5000000
-render resolved_fine Declare=Case=15 Declare=Detail=0.06 Declare=Cells=5000000
-render resolved_reference Declare=Case=15 Declare=Detail=0.03 Declare=Cells=5000000
+render resolved_coarse Declare=Case=15 Declare=Detail=0.24 Declare=RefractionCells=5000000
+render resolved_medium Declare=Case=15 Declare=Detail=0.12 Declare=RefractionCells=5000000
+render resolved_fine Declare=Case=15 Declare=Detail=0.06 Declare=RefractionCells=5000000
+render resolved_reference Declare=Case=15 Declare=Detail=0.03 Declare=RefractionCells=5000000
 coarse_error=$(error resolved_coarse resolved_reference)
 medium_error=$(error resolved_medium resolved_reference)
 fine_error=$(error resolved_fine resolved_reference)

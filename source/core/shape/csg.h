@@ -80,6 +80,7 @@ namespace pov
 
 struct CSGChildTree;
 struct CSGSurfaceIndex;
+struct CSGCells;
 
 class CSG : public CompoundObject
 {
@@ -124,6 +125,11 @@ class CSG : public CompoundObject
 /// one whose inside test honours the inversion; this is what the child trees assume of a child outside its box.
 BoxClass Classify_By_Certified_Box(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld);
 
+/// Child classifications cell refinement has made, all threads, since the program started.
+std::uint64_t CSG_Cell_Tests();
+/// Cell nodes alive, and their bytes.
+std::uint64_t CSG_Cell_Nodes();
+
 /// The child count from which a CSG indexes its children; POV_CSG_CHILD_TREE=<n> overrides it, 0 turns the trees off.
 unsigned CSG_Child_Tree_Minimum();
 
@@ -144,7 +150,9 @@ class CSGUnion : public CSG
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual ObjectPtr Invert() override;
         /// A union's members, and a merge's, are its pieces.
-        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece) const override;
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query = SurfaceQuery()) const override;
+        /// The enclosure of the members' extents, within the union's own box.
+        virtual bool Surface_Extent(double fineness, Vector3d& low, Vector3d& high) const override;
         virtual std::uint32_t Surface_Pieces() const override;
         /// Outside when every member is, inside when one is and none is unknown: a union reports its inner surfaces.
         virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
@@ -168,6 +176,7 @@ class CSGIntersection final : public CSG
     public:
         CSGIntersection(bool diff);
         CSGIntersection(bool diff, CompoundObject& o, bool transplant);
+        virtual ~CSGIntersection() override;
 
         virtual ObjectPtr Copy() override;
 
@@ -176,8 +185,24 @@ class CSGIntersection final : public CSG
         virtual ObjectPtr Invert() override;
         /// Outside when any child is, inside when every child is; a difference's later children were inverted at parse.
         virtual BoxClass Classify_Box(const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld) const override;
+        /// The cells left by refining the box as far as the query asks: one box per region, or the least-area cover.
+        virtual void Visit_Surface_Boxes(SurfaceBoxVisitor& visitor, std::uint32_t firstPiece, const SurfaceQuery& query = SurfaceQuery()) const override;
+        virtual bool Surface_Extent(double fineness, Vector3d& low, Vector3d& high) const override;
+
+        /// Starts the cells in the frame the intersection has now, its build frame, when a child can answer more than its box.
+        void Begin_Cells();
+        /// Hands this object's children to the cells its copies share, if it is the one they classify with; before it goes.
+        void Release_Cells();
+        /// Whether requests refine cells here.
+        bool Refines() const;
+        /// The cell of the whole-set answer `answer` (at `fineness`) holding `point`, as an index into it; -1 if none.
+        int Surface_Cell(const Vector3d& point, double fineness, const std::vector<SurfaceBox>& answer) const;
 
         bool isDifference;
+        /// The cells, shared by copies; null: none.
+        std::shared_ptr<CSGCells> cells;
+        /// The transforms applied since the build frame; null: none.
+        std::shared_ptr<const TRANSFORM> sinceBuild;
 };
 
 /// @}

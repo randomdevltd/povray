@@ -110,7 +110,7 @@ bool Cone::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 
     Intersection_Found = false;
 
-    if ((cnt = Intersect(ray, I, Thread->Stats())) != 0)
+    if ((cnt = ray.PreciseRoots() ? IntersectPrecise(ray, I, Thread->Stats()) : Intersect(ray, I, Thread->Stats())) != 0)
     {
         for (i = 0; i < cnt; i++)
         {
@@ -297,6 +297,130 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
             Intersection[i++].t = BASE_HIT;
         }
     }
+
+    if (i)
+        stats[Ray_Cone_Tests_Succeeded]++;
+
+    return (i);
+}
+
+
+
+// The crossings for a precise boundary query: every root at any depth past the start, with no threshold in the cone's
+// units. The side's quadratic is solved in the form that keeps both roots accurate however small its leading term (a
+// ray nearly parallel to the side), and only an exactly vanishing term changes its order. The frustum is convex, so a
+// whole line crosses it twice or not at all: a crossing on the rim between the side and an end that computes just
+// outside both faces is taken from the face it misses by the least, within the rounding of the coordinates placing
+// it there, and one that both faces take is the end's.
+int Cone::IntersectPrecise(const BasicRay& ray, CONE_INT *Intersection, RenderStatistics& stats) const
+{
+    Vector3d P, D;
+
+    stats[Ray_Cone_Tests]++;
+
+    MInvTransPoint(P, ray.Origin, Trans);
+    MInvTransDirection(D, ray.Direction, Trans);
+    const DBL len = D.length();
+    D /= len;
+
+    const bool cylinder = Test_Flag(this, CYLINDER_FLAG);
+    const DBL low = cylinder ? 0.0 : dist;
+    const DBL epsilon = std::numeric_limits<DBL>::epsilon();
+
+    // every root of the whole line, each with how far outside its face it computes in units of its own rounding
+    struct Candidate { DBL t, excess; int kind; };
+    Candidate candidates[4];
+    int count = 0;
+    auto side = [&](DBL t)
+    {
+        if (!IsFiniteIntersectionDepth(t))
+            return;
+        const DBL z = P[Z] + t * D[Z];
+        const DBL rounding = 4.0 * epsilon * (fabs(P[Z]) + fabs(t * D[Z]));
+        const DBL excess = std::max(low - z, z - 1.0);
+        candidates[count++] = {t, (excess > 0.0) ? ((rounding > 0.0) ? excess / rounding : HUGE_VAL) : 0.0, SIDE_HIT};
+    };
+
+    // side: a t^2 + 2 b t + c = 0
+    const DBL a = cylinder ? D[X] * D[X] + D[Y] * D[Y] : D[X] * D[X] + D[Y] * D[Y] - D[Z] * D[Z];
+    const DBL b = cylinder ? P[X] * D[X] + P[Y] * D[Y] : D[X] * P[X] + D[Y] * P[Y] - D[Z] * P[Z];
+    const DBL c = cylinder ? P[X] * P[X] + P[Y] * P[Y] - 1.0 : P[X] * P[X] + P[Y] * P[Y] - P[Z] * P[Z];
+    if (a == 0.0)
+    {
+        if (b != 0.0)
+            side(-0.5 * c / b);
+    }
+    else
+    {
+        const DBL d = b * b - a * c;
+        if (d >= 0.0)
+        {
+            const DBL q = -(b + std::copysign(sqrt(d), b));
+            side(q / a);
+            if (q != 0.0)
+                side(c / q);
+        }
+    }
+
+    // ends: the plane z = 1 within radius 1, and z = low within the base radius
+    if (Test_Flag(this, CLOSED_FLAG) && (D[Z] != 0.0))
+    {
+        auto end = [&](DBL height, DBL radius, int kind)
+        {
+            const DBL t = (height - P[Z]) / D[Z];
+            if (!IsFiniteIntersectionDepth(t))
+                return;
+            const DBL x = P[X] + t * D[X], y = P[Y] + t * D[Y];
+            const DBL rounding = 4.0 * epsilon * (Sqr(fabs(P[X]) + fabs(t * D[X])) + Sqr(fabs(P[Y]) + fabs(t * D[Y])) + radius * radius);
+            const DBL excess = x * x + y * y - radius * radius;
+            candidates[count++] = {t, (excess > 0.0) ? ((rounding > 0.0) ? excess / rounding : HUGE_VAL) : 0.0, kind};
+        };
+        end(1.0, 1.0, CAP_HIT);
+        end(low, cylinder ? 1.0 : dist, BASE_HIT);
+    }
+
+    // the crossings on their faces; then a missing one from rounding, or a doubled one at a rim
+    bool kept[4] = {false, false, false, false};
+    int found = 0;
+    for (int k = 0; k < count; k++)
+        if (candidates[k].excess == 0.0)
+        {
+            kept[k] = true;
+            found++;
+        }
+    if (found % 2 == 1)
+    {
+        int best = -1;
+        for (int k = 0; k < count; k++)
+            if (!kept[k] && (candidates[k].excess <= 1.0) && ((best < 0) || (candidates[k].excess < candidates[best].excess)))
+                best = k;
+        if (best >= 0)
+            kept[best] = true;
+    }
+    else if (found > 2)
+    {
+        // the side root nearest an end root is the same rim crossing
+        int drop = -1;
+        DBL nearest = HUGE_VAL;
+        for (int k = 0; k < count; k++)
+            for (int e = 0; e < count; e++)
+                if (kept[k] && kept[e] && (candidates[k].kind == SIDE_HIT) && (candidates[e].kind != SIDE_HIT) &&
+                    (fabs(candidates[k].t - candidates[e].t) < nearest))
+                {
+                    nearest = fabs(candidates[k].t - candidates[e].t);
+                    drop = k;
+                }
+        if (drop >= 0)
+            kept[drop] = false;
+    }
+
+    int i = 0;
+    for (int k = 0; k < count; k++)
+        if (kept[k] && (candidates[k].t > 0.0))
+        {
+            Intersection[i].d = candidates[k].t / len;
+            Intersection[i++].t = candidates[k].kind;
+        }
 
     if (i)
         stats[Ray_Cone_Tests_Succeeded]++;

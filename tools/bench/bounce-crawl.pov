@@ -7,7 +7,7 @@
 #ifndef (Floor) #declare Floor = 1; #end
 // Cells=N sets every surface light's node budget; without it each takes the renderer's default.
 #ifdef (Cells) #default { light { domain_cells Cells } } #end
-global_settings { assumed_gamma 1 subsurface { method 2 samples 8, 8 spacing 0.5 } }
+global_settings { assumed_gamma 1 subsurface { method 2 samples 8, 8 } }
 camera { location <0, 1.1, -3.2> look_at <0, 0.45, 0> angle 48 }
 background { rgb 0.01 }
 #declare R = seed(7);
@@ -17,7 +17,7 @@ background { rgb 0.01 }
     pigment { rgb <0.8, 0.5, 0.3> }
     finish { ambient 0 diffuse 1 subsurface { translucency <0.04, 0.07, 0.12> } }
     interior { ior 1.4 }
-    light { emission bounce { passes 1 } samples Samples }
+    light { bounce { passes 1 } samples Samples }
     translate O }
   sphere { <0, 0.8, 0>, 0.03 hollow no_image pigment { rgbt 1 } finish { ambient 0 diffuse 0 }
     interior { ior off light { brightness 400 samples 8 attenuation { cutoff 0 } } }

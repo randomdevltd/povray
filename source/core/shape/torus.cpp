@@ -332,9 +332,9 @@ int Torus::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats, b
         c[4] = k1 * k1 + 4.0 * R2 * (Py2 - r2);
 
         // order reduction drops the root at the start: within ROOT_TOLERANCE object units, or that share of a torus
-        // smaller than a unit; a precise query keeps it
-        n = Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG),
-                                     everyRoot ? 0.0 : ROOT_TOLERANCE * std::min(1.0, 1.0 / size), stats);
+        // smaller than a unit; a precise query keeps it, and every root to the rounding of the quartic
+        n = everyRoot ? Solve_Polynomial_Precise(4, c, r, stats) :
+            Solve_Polynomial(4, c, r, Test_Flag(this, STURM_FLAG), ROOT_TOLERANCE * std::min(1.0, 1.0 / size), stats);
 
         while(n--)
             Depth[i++] = (r[n] + Closer) * size / len;

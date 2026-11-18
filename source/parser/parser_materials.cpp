@@ -3996,13 +3996,41 @@ double Parser::Parse_Light_Samples()
     return multiplier;
 }
 
-void Parser::Parse_Light_Bounce(MediaLight& light)
+unsigned Parser::Parse_Bounce_Directions()
+{
+    const double value = Parse_Float();
+    if (!std::isfinite(value) || value < 1.0 || std::floor(value) != value ||
+        value > static_cast<double>(std::numeric_limits<unsigned>::max()))
+        Error("Bounce view_directions must be a positive integer in the unsigned range.");
+    return static_cast<unsigned>(value);
+}
+
+void Parser::Parse_Light_Self(MediaLight& light, bool& haveSelf)
+{
+    if (haveSelf)
+        Error("A light block accepts only one self setting, in the light block or in its bounce block.");
+    haveSelf = true;
+    Get_Token();
+    switch (CurrentCategorizedTokenId())
+    {
+        CASE_EXPRESS_RAW
+            break;
+        OTHERWISE
+            Error("Light self requires a scalar or RGB expression.");
+    }
+    UNGET
+    Parse_Colour(light.selfShare);
+    for (int channel = 0; channel < MathColour::channels; ++channel)
+        if (!std::isfinite(light.selfShare[channel]) || light.selfShare[channel] < 0.0 || light.selfShare[channel] > 1.0)
+            Error("Light self channels must be finite and between 0 and 1.");
+}
+
+void Parser::Parse_Light_Bounce(MediaLight& light, bool surface, bool& haveSelf)
 {
     light.bouncePasses = 1;
     if (!Peek_Token(LEFT_CURLY_TOKEN))
         return;
     bool havePasses = false;
-    bool haveSelf = false;
     Parse_Begin();
     EXPECT
         OTHERWISE
@@ -4017,25 +4045,16 @@ void Parser::Parse_Light_Bounce(MediaLight& light)
                     Error("Bounce passes must be a positive integer in the unsigned range.");
                 light.bouncePasses = static_cast<unsigned>(value);
             }
-            else if (CurrentTokenText() == "self")
+            else if (CurrentTokenText() == "view_directions")
             {
-                if (haveSelf)
-                    Error("A bounce block accepts only one self setting.");
-                haveSelf = true;
-                Get_Token();
-                switch (CurrentCategorizedTokenId())
-                {
-                    CASE_EXPRESS_RAW
-                        break;
-                    OTHERWISE
-                        Error("Bounce self requires a scalar or RGB expression.");
-                }
-                UNGET
-                Parse_Colour(light.bounceSelf);
-                for (int channel = 0; channel < MathColour::channels; ++channel)
-                    if (!std::isfinite(light.bounceSelf[channel]) || light.bounceSelf[channel] < 0.0 || light.bounceSelf[channel] > 1.0)
-                        Error("Bounce self channels must be finite and between 0 and 1.");
+                if (!surface)
+                    Error("Bounce view_directions are for surface lights; a volume's bounce views no surface.");
+                if (light.bounceDirections > 0)
+                    Error("A bounce block accepts only one view_directions setting.");
+                light.bounceDirections = Parse_Bounce_Directions();
             }
+            else if (CurrentTokenText() == "self")
+                Parse_Light_Self(light, haveSelf);
             else
             {
                 UNGET
@@ -4051,6 +4070,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
     std::shared_ptr<MediaLight> light(new MediaLight());
     light->where = CurrentSourceLine();
     bool haveAttenuation = false;
+    bool haveSelf = false;
     Parse_Begin();
 
     EXPECT
@@ -4128,8 +4148,10 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             {
                 if (light->bouncePasses != 0)
                     Error("A light block accepts only one bounce setting.");
-                Parse_Light_Bounce(*light);
+                Parse_Light_Bounce(*light, surface, haveSelf);
             }
+            else if (CurrentTokenText() == "self")
+                Parse_Light_Self(*light, haveSelf);
             else if (CurrentTokenText() == "attenuation")
             {
                 if (haveAttenuation)
@@ -4154,11 +4176,16 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
     Parse_End();
 
-    if (light->BounceOnly() && (light->nits || light->lumens >= 0.0))
-        Error("A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.");
+    // bounce re-emits what the object shows, its own emission included, so it takes no input of its own
+    if ((light->bouncePasses > 0) && ((light->pigment != nullptr) || light->useEmission))
+        Error("A bounce light block takes no pigment or emission: bounce re-emits what the object shows, its own emission included.");
+    if ((light->bouncePasses > 0) && !surface && (light->nits || light->lumens >= 0.0))
+        Error("A volume bounce light takes a plain brightness multiplier; nits and lumens are for surface bounce and emitting lights.");
     // Each kind takes its own default at the point where the light is parsed.
     if (!(light->domainCells > 0.0))
         light->domainCells = surface ? sceneData->surfaceDomainCells : sceneData->lightDomainCells;
+    if (surface && (light->bounceDirections == 0))
+        light->bounceDirections = sceneData->surfaceBounceDirections;
     // a pattern's luminance integral is known only once prepared; a constant pigment's is known here
     if (light->pigment && (light->pigment->Type == PLAIN_PATTERN) && !(light->pigment->colour.colour().Greyscale() > 0.0) &&
         ((light->nits && light->brightness > 0.0) || (light->lumens > 0.0)))
@@ -4193,6 +4220,19 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 *
 ******************************************************************************/
 
+/// A refraction detail after its keyword: auto (0) or a finite positive length in scene units.
+DBL Parser::Parse_Refraction_Detail()
+{
+    Get_Token();
+    if (CurrentTokenText() == "auto")
+        return 0.0;
+    UNGET
+    const DBL detail = Parse_Float();
+    if (!std::isfinite(detail) || detail <= 0.0)
+        Error("Refraction detail must be auto or finite and greater than zero, in scene units.");
+    return detail;
+}
+
 void Parser::Parse_Interior_Refraction(Interior& interior)
 {
     auto refraction = std::make_shared<RefractionSpec>();
@@ -4203,6 +4243,9 @@ void Parser::Parse_Interior_Refraction(Interior& interior)
         return;
     }
     UNGET
+    // a field without its own detail or count takes the refraction defaults in effect here, as a medium takes its own
+    refraction->detail = sceneData->refractionDetail;
+    refraction->domainCells = sceneData->refractionDomainCells;
     Parse_Begin();
     EXPECT
         CASE (FUNCTION_TOKEN)
@@ -4211,18 +4254,9 @@ void Parser::Parse_Interior_Refraction(Interior& interior)
 
         OTHERWISE
             if (CurrentTokenText() == "detail")
-            {
-                Get_Token();
-                if (CurrentTokenText() == "auto")
-                    refraction->detail = 0.0;
-                else
-                {
-                    UNGET
-                    refraction->detail = Parse_Float();
-                    if (!std::isfinite(refraction->detail) || refraction->detail <= 0.0)
-                        Error("Refraction detail must be auto or finite and greater than zero, in scene units.");
-                }
-            }
+                refraction->detail = Parse_Refraction_Detail();
+            else if (CurrentTokenText() == "domain_cells")
+                refraction->domainCells = Parse_Domain_Cells();
             else
             {
                 UNGET

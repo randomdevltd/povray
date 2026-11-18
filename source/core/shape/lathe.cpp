@@ -161,11 +161,6 @@ const DBL DEPTH_TOLERANCE = 1.0e-4;
 
 // A query naming the segment it wants roots in starts off the surface and keeps only that segment's roots: no cut in
 // scene units. Only the surface map's lines name one, so every other ray keeps the cut.
-static DBL NearestRoot(const Ray& ray)
-{
-    double nearDepth, farDepth;
-    return (ray.GetRootQuery() && ray.GetRootQuery()->Segment(nearDepth, farDepth)) ? 0.0 : DEPTH_TOLERANCE;
-}
 
 namespace
 {
@@ -354,6 +349,8 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
         Thread->Stats()[Lathe_Bound_Tests_Succeeded]++;
     #endif
 
+    const bool precise = ray.PreciseRoots();
+
     // Precalculate some constants that are ray-dependant only.
     m = D[X] * P[X] + D[Z] * P[Z];
     Dy2 = D[Y] * D[Y];
@@ -385,7 +382,7 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[1] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[2] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
                 order = 2;
-                n1 = Solve_Polynomial(2, x1, y1, false, 0.0, Thread->Stats());
+                n1 = precise ? Solve_Polynomial_Precise(2, x1, y1, Thread->Stats()) : Solve_Polynomial(2, x1, y1, false, 0.0, Thread->Stats());
                 break;
             // Quadratic spline
             case QUADRATIC_SPLINE:
@@ -396,7 +393,7 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[3] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[4] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
                 order = 4;
-                n1 = Solve_Polynomial(4, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
+                n1 = precise ? Solve_Polynomial_Precise(4, x1, y1, Thread->Stats()) : Solve_Polynomial(4, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
                 break;
             // Cubic spline
             case BEZIER_SPLINE:
@@ -410,18 +407,64 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[5] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[6] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
                 order = 6;
-                n1 = Solve_Polynomial(6, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
+                n1 = precise ? Solve_Polynomial_Precise(6, x1, y1, Thread->Stats()) : Solve_Polynomial(6, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
                 break;
         }
 
-        // The depth below is (y(w) - P[Y]) / D[Y], which multiplies any error in w by 1 / D[Y].
-        PolishRoots(x1, order, y1, n1);
+        // The depth below is (y(w) - P[Y]) / D[Y], which multiplies any error in w by 1 / D[Y]. A precise query's roots
+        // are already at the rounding of their polynomial.
+        if (!precise)
+            PolishRoots(x1, order, y1, n1);
 
         // Test roots for valid intersections.
         while(n1--)
         {
             w = y1[n1];
-            if((w >= 0.0) && (w <= 1.0))
+            if (precise && (w >= 0.0) && (w <= 1.0))
+            {
+                // the depth from the height at w or from the radius at w, whichever magnifies the rounding of w less:
+                // y'(w) / D[Y] against x x'(w) over the rate the ray's squared radius changes there
+                const DBL height = w * (w * (w * Entry->A[Y] + Entry->B[Y]) + Entry->C[Y]) + Entry->D[Y];
+                const DBL radius = w * (w * (w * Entry->A[X] + Entry->B[X]) + Entry->C[X]) + Entry->D[X];
+                const DBL rise = w * (3.0 * w * Entry->A[Y] + 2.0 * Entry->B[Y]) + Entry->C[Y];
+                const DBL spread = radius * (w * (3.0 * w * Entry->A[X] + 2.0 * Entry->B[X]) + Entry->C[X]);
+                DBL depth = HUGE_VAL, gain = HUGE_VAL;
+                if (D[Y] != 0.0)
+                {
+                    depth = (height - P[Y]) / D[Y];
+                    gain = fabs(rise / D[Y]);
+                }
+                x2[0] = r;
+                x2[1] = 2.0 * m;
+                x2[2] = P[X] * P[X] + P[Z] * P[Z] - radius * radius;
+                n2 = (r != 0.0) ? Solve_Polynomial_Precise(2, x2, y2, Thread->Stats()) : 0;
+                // a horizontal ray meets the circle at w twice, at the same height; otherwise only the root at w's height
+                const bool level = (D[Y] == 0.0);
+                for (int k2 = 0; k2 < n2; k2++)
+                {
+                    const DBL t = y2[k2];
+                    const DBL rate = fabs(m + r * t);
+                    const DBL radial = (rate > 0.0) ? fabs(spread) / rate : HUGE_VAL;
+                    if (level)
+                    {
+                        if (test_hit(ray, Depth_Stack, t / len, w, intervals[j].n, Thread))
+                            found = true;
+                        continue;
+                    }
+                    const DBL other = (k2 + 1 < n2) ? y2[k2 + 1] : (k2 > 0 ? y2[k2 - 1] : HUGE_VAL);
+                    if ((fabs(t - depth) <= fabs(other - depth)) && (radial < gain))
+                    {
+                        depth = t;
+                        gain = radial;
+                    }
+                }
+                if (!level && (gain < HUGE_VAL) && test_hit(ray, Depth_Stack, depth / len, w, intervals[j].n, Thread))
+                {
+                    found = true;
+                    best = std::min(best, depth);
+                }
+            }
+            else if((w >= 0.0) && (w <= 1.0))
             {
                 if(fabs(D[Y]) > EPSILON)
                 {
@@ -1351,7 +1394,8 @@ bool Lathe::test_hit(const Ray &ray, IStack& Depth_Stack, DBL d, DBL w, int n, T
 {
     Vector3d IPoint;
 
-    if ((d > NearestRoot(ray)) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
+    // a precise query places its own start, so no depth is too near to be a crossing
+    if ((d > (ray.PreciseRoots() ? 0.0 : DEPTH_TOLERANCE)) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
     {
         IPoint = ray.Evaluate(d);
 

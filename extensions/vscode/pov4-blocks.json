@@ -33,6 +33,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -53,6 +54,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -85,6 +89,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -101,6 +106,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -134,6 +142,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -150,6 +159,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -182,6 +194,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -198,6 +211,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -231,6 +247,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -247,6 +264,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -279,6 +299,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -295,6 +316,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -348,6 +372,7 @@
         "strupr",
         "sturm",
         "substr",
+        "subsurface",
         "sys",
         "tags",
         "texture",
@@ -369,6 +394,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -412,6 +440,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "threshold",
@@ -429,6 +458,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -462,6 +494,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -478,6 +511,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -512,6 +548,7 @@
         "smooth_triangle",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -529,6 +566,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -564,6 +604,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -580,6 +621,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -616,6 +660,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -635,6 +680,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -667,6 +715,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -683,6 +732,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -715,6 +767,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -731,6 +784,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -763,6 +819,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -779,6 +836,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -811,6 +871,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -827,6 +888,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -866,6 +930,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -882,6 +947,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -914,6 +982,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -930,6 +999,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -962,6 +1034,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -978,6 +1051,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1010,6 +1086,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1027,6 +1104,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1060,6 +1140,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1076,6 +1157,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1108,6 +1192,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1124,6 +1209,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1156,6 +1244,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1172,6 +1261,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1207,6 +1299,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1224,6 +1317,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1256,6 +1352,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1272,6 +1369,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1304,6 +1404,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1320,6 +1421,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1389,6 +1493,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -1411,6 +1516,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1480,6 +1588,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -1502,6 +1611,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1571,6 +1683,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -1593,6 +1706,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1662,6 +1778,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -1684,6 +1801,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1753,6 +1873,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -1775,6 +1896,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1844,6 +1968,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -1866,6 +1991,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1901,6 +2029,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "tolerance",
@@ -1918,6 +2047,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -1954,6 +2086,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "transform",
@@ -1970,6 +2103,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -2006,6 +2142,7 @@
         "split_union",
         "strength",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "threshold",
@@ -2023,6 +2160,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -2060,6 +2200,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "texture_list",
@@ -2080,6 +2221,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -2133,6 +2277,7 @@
         "split_union",
         "sqr",
         "sturm",
+        "subsurface",
         "tags",
         "tan",
         "tanh",
@@ -2151,6 +2296,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -2194,6 +2342,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "threshold",
@@ -2211,6 +2360,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -2255,6 +2407,7 @@
         "scale",
         "split_union",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "to",
@@ -2272,6 +2425,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -2285,6 +2441,7 @@
         "normal",
         "pigment",
         "radiosity",
+        "refraction",
         "texture"
       ],
       "nested": {
@@ -2837,6 +2994,7 @@
       "items": [
         "auto",
         "detail",
+        "domain_cells",
         "function"
       ],
       "nested": {}
@@ -2888,6 +3046,7 @@
         "photons",
         "pigment",
         "samples",
+        "self",
         "shadowless"
       ],
       "nested": {
@@ -2900,7 +3059,8 @@
     "bounce": {
       "items": [
         "passes",
-        "self"
+        "self",
+        "view_directions"
       ],
       "nested": {}
     },
@@ -3045,8 +3205,7 @@
           "memory",
           "method",
           "radiosity",
-          "samples",
-          "spacing"
+          "samples"
         ]
       }
     },
@@ -3116,6 +3275,7 @@
         "sphere_sweep",
         "split_union",
         "sturm",
+        "subsurface",
         "superellipsoid",
         "tagged",
         "tags",
@@ -3138,6 +3298,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },
@@ -3191,6 +3354,7 @@
         "split_union",
         "spotlight",
         "sturm",
+        "subsurface",
         "tags",
         "texture",
         "tightness",
@@ -3207,6 +3371,9 @@
         ],
         "radiosity": [
           "importance"
+        ],
+        "subsurface": [
+          "domain_cells"
         ]
       }
     },

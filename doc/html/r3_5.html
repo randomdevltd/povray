@@ -3711,11 +3711,14 @@ OBJECT_MODIFIER:
   pigment { PIGMENT_BODY }   |
   normal { NORMAL_BODY }     |
   finish { FINISH_ITEMS... } |
-  photons { PHOTON_ITEMS...}
+  photons { PHOTON_ITEMS...} |
+  subsurface { domain_cells Integer } |
   radiosity { RADIOSITY_ITEMS...}
   tags { "NAME" [, "NAME"...] }
   TRANSFORMATION
 </pre>
+
+<p><code>subsurface { domain_cells Integer }</code> sets the number of map points of the object's subsurface method 2 light; see <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light Transport</a>.</p>
 
 <p>Transformations such as translate, rotate and scale have already been discussed. The modifiers <em><a href="r3_6.html#r3_6_1">Textures</a></em> and its parts <em><a href="r3_6.html#r3_6_1_1">Pigment</a></em>, <em><a href="r3_6.html#r3_6_1_2">Normal</a></em>, and <em><a href="r3_6.html#r3_6_1_3">Finish</a></em> as well as <em><a href="r3_7.html#r3_7_2_1">Interior</a></em>, and <em><a href="r3_7.html#r3_7_2">Media</a></em> (which is part of interior) are each in major chapters of their own below. In the sub-sections below we cover several other important modifiers: <code><a href="r3_5.html#r3_5_1_5_1">clipped_by</a></code>, <code><a href="r3_5.html#r3_5_1_5_2">bounded_by</a></code>, <code><a href="r3_5.html#r3_5_1_5_3">material</a></code>, <code><a href="r3_5.html#r3_5_1_5_5">inverse</a></code>, <code><a href="r3_5.html#r3_5_1_5_4">hollow</a></code>, <code><a href="r3_5.html#r3_5_1_5_6">no_shadow</a></code>, <code><a href="r3_5.html#r3_5_1_5_7">no_image</a></code>, <code><a href="r3_5.html#r3_5_1_5_8">no_reflection</a></code>, <code><a href="r3_5.html#r3_5_1_5_9">double_illuminate</a></code>, <code><a href="r3_5.html#r3_5_1_5_10">no_radiosity</a></code>, <code><a href="r3_5.html#r3_5_1_5_11">sturm</a></code> and <code><a href="r3_5.html#r3_5_1_5_12">tags</a></code>. Although the examples below use object statements and object identifiers, these modifiers may be used on any type of object such as sphere, box etc.</p></div>
 

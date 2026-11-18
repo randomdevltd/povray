@@ -6,13 +6,12 @@
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (Diffuse) #declare Diffuse = 40; #end
 #ifndef (Single) #declare Single = 10; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (Memory) #declare Memory = 1024; #end
 #ifndef (Translucency) #declare Translucency = 0.1; #end
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 1
-  subsurface { samples Diffuse, Single method Method spacing Spacing memory Memory }
+  subsurface { samples Diffuse, Single method Method memory Memory }
 }
 #include "projections.inc"
 

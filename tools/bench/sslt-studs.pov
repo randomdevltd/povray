@@ -4,7 +4,6 @@
 #ifndef (Diffuse) #declare Diffuse = 74; #end
 #ifndef (Single) #declare Single = 21; #end
 #ifndef (Method) #declare Method = 1; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (Subsurface) #declare Subsurface = 1; #end
 #ifndef (Fillet) #declare Fillet = 0; #end
 #ifndef (Zoom) #declare Zoom = 1; #end
@@ -17,7 +16,7 @@
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 10
-  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing } #end
+  #if (Subsurface) subsurface { samples Diffuse, Single method Method } #end
 }
 
 #ifndef (View) #declare View = 0; #end

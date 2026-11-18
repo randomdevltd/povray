@@ -33,6 +33,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -53,11 +54,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:1073 Parse_Bicubic_Patch",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:1072 Parse_Bicubic_Patch",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "box": {
@@ -89,6 +93,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -105,10 +110,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "cone": {
@@ -141,6 +149,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -157,11 +166,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3084 Parse_Cone",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:3085 Parse_Cone",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "cubic": {
@@ -193,6 +205,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -209,10 +222,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "cylinder": {
@@ -245,6 +261,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -261,11 +278,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3117 Parse_Cylinder",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:3118 Parse_Cylinder",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "disc": {
@@ -297,6 +317,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -313,10 +334,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "height_field": {
@@ -369,6 +393,7 @@
     "strupr",
     "sturm",
     "substr",
+    "subsurface",
     "sys",
     "tags",
     "texture",
@@ -390,12 +415,15 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3515 Parse_HField",
+    "parser.cpp:3516 Parse_HField",
     "parser_materials.cpp:218 Parse_Image",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "isosurface_mesh": {
@@ -438,6 +466,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "threshold",
@@ -455,11 +484,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3711 Parse_Isosurface_Body",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:3712 Parse_Isosurface_Body",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "lemon": {
@@ -492,6 +524,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -508,11 +541,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:4277 Parse_Lemon",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:4278 Parse_Lemon",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "mesh": {
@@ -546,6 +582,7 @@
     "smooth_triangle",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -563,11 +600,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:4931 Parse_Mesh1",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:4932 Parse_Mesh1",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "ovus": {
@@ -602,6 +642,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -618,11 +659,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:6004 Parse_Ovus",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:6005 Parse_Ovus",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "parametric": {
@@ -658,6 +702,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -677,11 +722,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:6157 Parse_Parametric",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:6158 Parse_Parametric",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "plane": {
@@ -713,6 +761,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -729,10 +778,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "poly": {
@@ -764,6 +816,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -780,10 +833,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "polygon": {
@@ -815,6 +871,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -831,10 +888,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "polynomial": {
@@ -866,6 +926,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -882,10 +943,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "prism": {
@@ -924,6 +988,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -940,11 +1005,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:6503 Parse_Prism",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:6504 Parse_Prism",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "quadric": {
@@ -976,6 +1044,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -992,10 +1061,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "quartic": {
@@ -1027,6 +1099,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1043,10 +1116,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "smooth_triangle": {
@@ -1078,6 +1154,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1095,12 +1172,15 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:6807 Parse_Smooth_Triangle",
-    "parser.cpp:9467 Parse_Three_UVCoords",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:6808 Parse_Smooth_Triangle",
+    "parser.cpp:9517 Parse_Three_UVCoords",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "sor": {
@@ -1133,6 +1213,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1149,11 +1230,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:6896 Parse_Sor",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:6897 Parse_Sor",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "sphere": {
@@ -1185,6 +1269,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1201,10 +1286,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "superellipsoid": {
@@ -1236,6 +1324,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1252,10 +1341,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "text": {
@@ -1290,6 +1382,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1307,11 +1400,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7321 Parse_TrueType",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7322 Parse_TrueType",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "torus": {
@@ -1343,6 +1439,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1359,10 +1456,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "triangle": {
@@ -1394,6 +1494,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -1410,10 +1511,13 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "composite": {
@@ -1482,6 +1586,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -1504,11 +1609,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "difference": {
@@ -1577,6 +1685,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -1599,11 +1708,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "intersection": {
@@ -1672,6 +1784,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -1694,11 +1807,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "light_group": {
@@ -1767,6 +1883,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -1789,11 +1906,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "merge": {
@@ -1862,6 +1982,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -1884,11 +2005,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "union": {
@@ -1957,6 +2081,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -1979,11 +2104,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "sphere_sweep": {
@@ -2018,6 +2146,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "tolerance",
@@ -2035,11 +2164,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7040 Parse_Sphere_Sweep",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7041 Parse_Sphere_Sweep",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "lathe": {
@@ -2075,6 +2207,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "transform",
@@ -2091,11 +2224,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:4089 Parse_Lathe",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:4090 Parse_Lathe",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "blob": {
@@ -2131,6 +2267,7 @@
     "split_union",
     "strength",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "threshold",
@@ -2148,11 +2285,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:1200 Parse_Blob",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:1199 Parse_Blob",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "mesh2": {
@@ -2189,6 +2329,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "texture_list",
@@ -2209,11 +2350,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:5329 Parse_Mesh2",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:5330 Parse_Mesh2",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "julia_fractal": {
@@ -2266,6 +2410,7 @@
     "split_union",
     "sqr",
     "sturm",
+    "subsurface",
     "tags",
     "tan",
     "tanh",
@@ -2284,11 +2429,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3906 Parse_Julia_Fractal",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:3907 Parse_Julia_Fractal",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "isosurface": {
@@ -2331,6 +2479,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "threshold",
@@ -2348,11 +2497,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3711 Parse_Isosurface_Body",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:3712 Parse_Isosurface_Body",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "portal": {
@@ -2396,6 +2548,7 @@
     "scale",
     "split_union",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "to",
@@ -2413,11 +2566,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:3193 Parse_Portal",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:3194 Parse_Portal",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "default": {
@@ -2430,6 +2586,7 @@
     "normal",
     "pigment",
     "radiosity",
+    "refraction",
     "texture"
    ],
    "nested": {
@@ -2438,7 +2595,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:7760 Parse_Default"
+    "parser.cpp:7761 Parse_Default"
    ]
   },
   "finish": {
@@ -2629,7 +2786,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:5221 Parse_Material"
+    "parser_materials.cpp:5255 Parse_Material"
    ]
   },
   "pigment": {
@@ -3009,18 +3166,20 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4239 Parse_Interior"
+    "parser_materials.cpp:4273 Parse_Interior"
    ]
   },
   "refraction": {
    "items": [
     "auto",
     "detail",
+    "domain_cells",
     "function"
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4196 Parse_Interior_Refraction"
+    "parser_materials.cpp:4236 Parse_Interior_Refraction",
+    "parser_materials.cpp:4224 Parse_Refraction_Detail"
    ]
   },
   "media": {
@@ -3073,6 +3232,7 @@
     "photons",
     "pigment",
     "samples",
+    "self",
     "shadowless"
    ],
    "nested": {
@@ -3082,17 +3242,18 @@
     ]
    },
    "sources": [
-    "parser_materials.cpp:4049 Parse_Light"
+    "parser_materials.cpp:4068 Parse_Light"
    ]
   },
   "bounce": {
    "items": [
     "passes",
-    "self"
+    "self",
+    "view_directions"
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:3999 Parse_Light_Bounce"
+    "parser_materials.cpp:4028 Parse_Light_Bounce"
    ]
   },
   "attenuation": {
@@ -3150,9 +3311,9 @@
     ]
    },
    "sources": [
-    "parser.cpp:1686 Parse_Camera",
-    "parser.cpp:2626 Parse_Camera_Mods",
-    "parser.cpp:2497 Parse_Camera_Look_At"
+    "parser.cpp:1685 Parse_Camera",
+    "parser.cpp:2625 Parse_Camera_Mods",
+    "parser.cpp:2496 Parse_Camera_Look_At"
    ]
   },
   "output": {
@@ -3163,7 +3324,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser.cpp:2786 Parse_Camera_Output"
+    "parser.cpp:2785 Parse_Camera_Output"
    ]
   },
   "tags": {
@@ -3173,7 +3334,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser.cpp:2883 Parse_Tags"
+    "parser.cpp:2882 Parse_Tags"
    ]
   },
   "global_settings": {
@@ -3250,12 +3411,11 @@
      "memory",
      "method",
      "radiosity",
-     "samples",
-     "spacing"
+     "samples"
     ]
    },
    "sources": [
-    "parser.cpp:8117 Parse_Global_Settings"
+    "parser.cpp:8152 Parse_Global_Settings"
    ]
   },
   "object": {
@@ -3324,6 +3484,7 @@
     "sphere_sweep",
     "split_union",
     "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
@@ -3346,11 +3507,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:7536 Parse_Object",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:7537 Parse_Object",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "light_source": {
@@ -3403,6 +3567,7 @@
     "split_union",
     "spotlight",
     "sturm",
+    "subsurface",
     "tags",
     "texture",
     "tightness",
@@ -3419,11 +3584,14 @@
     ],
     "radiosity": [
      "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:4512 Parse_Light_Source",
-    "parser.cpp:8745 Parse_Object_Mods"
+    "parser.cpp:4513 Parse_Light_Source",
+    "parser.cpp:8774 Parse_Object_Mods"
    ]
   },
   "image_map": {

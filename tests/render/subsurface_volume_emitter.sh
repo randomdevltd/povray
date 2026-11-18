@@ -54,7 +54,7 @@ echo 'subsurface_volume_emitter: physical far-field point equivalence and near-f
 render near_reuse Declare=NearSource=1 Declare=SingleSamples=0 Declare=Photons=1 Declare=PhotonQuality=0.25 Declare=ReuseViews=1
 tr -d ' \r\n' < sslt_volume_near_reuse.log > sslt_volume_near_reuse.txt
 grep -q 'Photonmapsshotonceforthisscene' sslt_volume_near_reuse.txt
-count=$(grep -o 'Method2pointcloudatspacing0.3:' sslt_volume_near_reuse.txt | wc -l)
+count=$(grep -o 'Method2pointcloud:[0-9.]*MBheld' sslt_volume_near_reuse.txt | wc -l)
 [ "$count" -eq 2 ] || { cat sslt_volume_near_reuse.log; exit 1; }
 tail -c 864 sslt_volume_near_reuse-1.ppm > sslt_volume_near_reuse-1.pixels
 tail -c 864 sslt_volume_near_reuse-2.ppm > sslt_volume_near_reuse-2.pixels

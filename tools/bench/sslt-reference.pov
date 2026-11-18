@@ -11,14 +11,13 @@
 #ifndef (Diffuse) #declare Diffuse = 74; #end
 #ifndef (Single) #declare Single = 0; #end
 #ifndef (Method) #declare Method = 2; #end
-#ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (Facets) #declare Facets = 480; #end
 #ifndef (Smooth) #declare Smooth = 0; #end
 #declare MmPerUnit = array[5] { 10, 10, 80, 40, 10 };
 global_settings {
   assumed_gamma 1.0
   mm_per_unit MmPerUnit[Shape]
-  subsurface { samples Diffuse, Single method Method spacing Spacing }
+  subsurface { samples Diffuse, Single method Method }
 }
 
 // Materials: 0 red and 1 high albedo (sslt-studs.pov), 2 wax (sslt-lamps.pov), 3 bark (sslt-wide.pov), 4 clay (sslt-open.pov).

@@ -149,6 +149,38 @@ public:
         return result;
     }
 
+    /// Refuses what a bounce surface's materials cannot export from a virtual camera: ray-dependent pigments, crand.
+    static void ValidateBounceMaterial(ConstObjectPtr object, bool useSubsurface)
+    {
+        std::set<const TEXTURE*> visited;
+        std::function<void(const TEXTURE*)> texture = [&](const TEXTURE* t)
+        {
+            if (!t || !visited.insert(t).second) return;
+            PIGMENT probe{};
+            probe.pattern = t->pattern;
+            ValidatePigment(&probe);
+            ValidatePigment(t->Pigment);
+            if (t->Finish && t->Finish->Crand > 0.0 &&
+                !(useSubsurface && t->Finish->UseSubsurface && t->Finish->SubsurfaceSurfaceChannels().IsZero()))
+                throw std::invalid_argument("Surface bounce cannot prepare stochastic crand diffuse finishes");
+            if (t->Blend_Map)
+                for (const TextureBlendMapEntry& entry : t->Blend_Map->Blend_Map_Entries) texture(entry.Vals);
+            for (const TEXTURE* material : t->Materials) texture(material);
+            texture(t->Next);
+        };
+        std::function<void(ConstObjectPtr)> walk = [&](ConstObjectPtr o)
+        {
+            if (!o) return;
+            texture(o->Texture);
+            texture(o->Interior_Texture);
+            if (const Mesh* mesh = dynamic_cast<const Mesh*>(o))
+                for (MeshIndex i = 0; i < mesh->Number_Of_Textures; ++i) texture(mesh->Textures[i]);
+            if (const CSG* csg = dynamic_cast<const CSG*>(o))
+                for (ConstObjectPtr child : csg->children) walk(child);
+        };
+        walk(object);
+    }
+
     static bool UniformMeshMaterial(const Mesh* mesh)
     {
         if (!mesh || Test_Flag(mesh, UV_FLAG)) return false;

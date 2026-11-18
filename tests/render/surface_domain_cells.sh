@@ -28,8 +28,13 @@ render medium Declare=MediaCells=8
 cmp stated.rgb medium.rgb
 render small Declare=S=0.001
 render large Declare=S=1000
-render exported Declare=Export=1 Declare=Passes=2
-CAP=1 render single Declare=Cells=1 Declare=Export=1 Declare=Passes=2
+render passes2 Declare=Passes=2
+# A budget of one point reads one line at the start, too few to meet the capsule: no bounce, and a warning saying so.
+"$POVRAY" +i"$SRCDIR/tests/render/surface_domain_cells.pov" +w48 +h32 +wt2 +pr -a -d -p +fp16 +osingle.ppm Declare=Cells=1 \
+    Declare=Passes=2 >single.log 2>&1 || { cat single.log; exit 1; }
+tr '\n' ' ' <single.log | tr -s '[:space:]' ' ' | grep -q 'Surface light total: 0 nodes across 1 lights' &&
+    tr '\n' ' ' <single.log | tr -s '[:space:]' ' ' | grep -q 'found no surface on the cone or cylinder.*0 points of 1,' ||
+    { cat single.log; echo 'surface_domain_cells: a budget of 1 did not end with no points and a warning'; exit 1; }
 # The built-in 2D budget equals an explicit 4096, independent of either volume default.
 # Use a diffuse surface here so this default check does not require buried-source walks.
 for language in pov pov4; do
@@ -53,6 +58,38 @@ SCENE
     cmp builtin.rgb explicit.rgb
     cmp builtin.nodes explicit.nodes
 done
+# More disconnected pieces than seed slots must still obey one shared budget.
+cat >seeds.pov <<'SCENE'
+#version 3.7;
+global_settings { assumed_gamma 1 }
+camera { location <4,5,-8> look_at <4,0,4> }
+light_source { <4,10,4>, rgb 1 }
+union {
+  #for (J,0,7)
+    #for (I,0,7)
+      sphere { <I,0,J>, 0.3 }
+    #end
+  #end
+  pigment { rgb 1 }
+  finish { ambient 0 diffuse 0 emission 1 }
+  light { bounce { passes 2 } domain_cells 4 samples 1 }
+}
+SCENE
+for threads in 1 2; do
+    "$POVRAY" +iseeds.pov +w8 +h8 +wt$threads +pr -a -d -p +fp16 +oseeds$threads.ppm >seeds$threads.log 2>&1 ||
+        { cat seeds$threads.log; exit 1; }
+    sed -n 's/.*Bounce o[0-9]*: \([0-9]*\) nodes.*/\1/p' seeds$threads.log |
+        awk '$1 < 1 || $1 > 4 { bad=1 } END { exit (bad || NR!=2) }' ||
+        { cat seeds$threads.log; exit 1; }
+    tr '\n' ' ' <seeds$threads.log | tr -s '[:space:]' ' ' |
+        sed -n 's/.*points stand for area \([^,]*\), exported power \([^;]*\);.*/\1 \2/p' |
+        awk 'BEGIN { area=64*4*atan2(0,-1)*0.3*0.3 }
+             $1 < area/4 || $1 > area*4 || $2 < $1*0.99 || $2 > $1*1.01 { bad=1 }
+             END { exit (bad || NR!=1) }' ||
+        { cat seeds$threads.log; echo 'surface_domain_cells: sparse seeds lost area or constant emission'; exit 1; }
+    tail -c 384 seeds$threads.ppm >seeds$threads.rgb
+done
+cmp seeds1.rgb seeds2.rgb
 # Both defaults in the same block are also accepted by the 4.0 static checker.
 cat >defaults.pov4 <<'SCENE'
 default { interior { light { domain_cells 8 } } light { domain_cells 1 } }

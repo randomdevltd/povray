@@ -102,6 +102,8 @@ fail empty_nits 'Interior light stated in nits requires an input of positive lum
 fail zero_pigment_nits 'Interior light stated in nits requires an input of positive luminance' Declare=Alias=0 Declare=Zero=1 Declare=Nits=1 Declare=Hand=0
 fail constant_zero_nits 'A light stated in nits or lumens requires an input of positive luminance' Declare=Alias=0 Declare=Constant=1 Declare=Zero=1 Declare=Nits=1 Declare=Hand=0
 fail constant_zero_lumens 'A light stated in nits or lumens requires an input of positive luminance' Declare=Alias=0 Declare=Constant=1 Declare=Zero=1 Declare=Lumens=1
-fail bounce_nits 'A bounce-only light block takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Nits=1
-fail bounce_lumens 'A bounce-only light block takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Lumens=1
+fail bounce_nits 'A volume bounce light takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Nits=1
+fail bounce_lumens 'A volume bounce light takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Lumens=1
+fail bounce_emission 'A bounce light block takes no pigment or emission' Declare=Bounce=1
+fail bounce_pigment 'A bounce light block takes no pigment or emission' Declare=Alias=0 Declare=Bounce=1
 echo 'light_emission: ok'
