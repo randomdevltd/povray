@@ -7356,22 +7356,22 @@ bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3
 
 MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
     const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-    const std::vector<const LightSource*>& lights, int samples, std::uint64_t key, bool homogeneous, const SubsurfaceFlesh* skin)
+    const std::vector<const LightSource*>& lights, double lightSamples, bool nested, std::uint64_t key, bool homogeneous,
+    const SubsurfaceFlesh* skin)
 {
     MathColour result;
-    if (samples <= 0) return result;
     const Interior* material = out.Object->interior.get();
     if (eye.IsInterior(material) || !SubsurfaceFiniteBounds(material->boundsLow, material->boundsHigh)) return result;
     // A bounce light in its own material reaches it as its own emission plus the self share of its bounce: the bounced
     // emitter at the share and the light as it was before bouncing at the rest, as its own media scatter it.
-    struct Source { const Emitter* emitter; MathColour scale; };
+    struct Source { const LightSource* light; const Emitter* emitter; MathColour scale; };
     std::vector<Source> sources;
     const ObjectPtr whole = SubsurfaceObject(out);
     auto add = [&](const LightSource& light, const Emitter* emitter, const MathColour& scale)
     {
         if ((emitter == nullptr) || !emitter->HasVolumeEmission() || scale.IsZero()) return;
         if (std::any_of(sources.begin(), sources.end(), [&](const Source& seen) { return seen.emitter == emitter; })) return;
-        if (SubsurfaceSourceOverlaps(light, material, whole, eye.GetPreparedSetId())) sources.push_back({emitter, scale});
+        if (SubsurfaceSourceOverlaps(light, material, whole, eye.GetPreparedSetId())) sources.push_back({&light, emitter, scale});
     };
     for (const auto* light : lights)
         if (!light->Photon_Only && light->emitter && light->emitterContainer)
@@ -7397,7 +7397,13 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     {
         return SubsurfaceInternalBoundaryAt(point, direction, out.Object, SubsurfaceObject(out), eye.GetTicket());
     };
-    samples = std::max(1, samples);
+    // Samples are the receiver's: the shaded point draws each buried light's samples times its finish's light_samples, as
+    // any receiver of that light does; one path connects to every source, so the source asking most sets the count.
+    // A nested subsurface evaluation keeps the single path its other subsurface counts are cut to.
+    int samples = 1;
+    if (!nested)
+        for (const auto& from : sources)
+            samples = max(samples, WeightedLightSamples(from.light->Area_Size1 * lightSamples));
     for (int channel = 0; channel < MathColour::channels; ++channel)
     {
         const double sigmaA = absorption[channel] * sceneData->mmPerUnit;
@@ -11031,9 +11037,10 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     int NumSamplesSingle  = sceneData->subsurfaceSamplesSingle;
 
     // TODO FIXME - this is hard-coded for now
+    const bool nested = (Eye.GetTicket().subsurfaceRecursionDepth == 1);
     if (Eye.GetTicket().subsurfaceRecursionDepth >= 2)
         return;
-    else if (Eye.GetTicket().subsurfaceRecursionDepth == 1)
+    else if (nested)
     {
         NumSamplesDiffuse = 1;
         NumSamplesSingle  = 1;
@@ -11299,8 +11306,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
             const std::uint64_t pathKey = DeriveKey(viewKey, kDrawSubsurface, k + 2);
             MathColour internal, single;
             if (pointCloud)
-                internal = ComputeSubsurfaceInternalSource(out, eye, eta, sigma_a, sigma_s, lights, NumSamplesSingle,
-                    DeriveKey(pathKey, kDrawSubsurface, 0), !flesh.fleshAtDepth && layers.top->Next == nullptr,
+                internal = ComputeSubsurfaceInternalSource(out, eye, eta, sigma_a, sigma_s, lights, Finish->LightSamples,
+                    nested, DeriveKey(pathKey, kDrawSubsurface, 0), !flesh.fleshAtDepth && layers.top->Next == nullptr,
                     Finish->SubsurfaceHasColour ? &flesh : nullptr);
             Vector3d refracted;
             const double cosine = clip(dot(toward, normal), 0.0, 1.0);
@@ -11340,7 +11347,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     MathColour internalSource;
     if (pointCloud)
         internalSource = ComputeSubsurfaceInternalSource(out, Eye, eta, sigma_a, sigma_s, lights,
-            NumSamplesSingle, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
+            Finish->LightSamples, nested, DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
                 Finish->SubsurfaceHasColour ? &flesh : nullptr);
     if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
     Final_Colour += internalSource * layers.weight;

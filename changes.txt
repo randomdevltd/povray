@@ -1,6 +1,7 @@
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
 
+- A volume light buried in a method 2 subsurface solid draws its internal paths as any receiver draws from a light: the light's `samples` times the host finish's `light_samples`, the largest such count where several buried lights share a host. The second count of `global_settings { subsurface { samples D, S } }` no longer reaches them, so `samples D, 0` no longer switches buried lights off without a message; scenes that raised S for a smoother buried glow raise the light's `samples` or the host's `light_samples` instead.
 - Cubic and b-spline `sphere_sweep` crossings are found for thin, small, tapered and sharply bent tubes at any scale, where rays used to pass through them and a buried volume light inside one stopped the render with "found no exit". A linear sweep's inside test no longer misses points inside a short fat or a small segment.
 - `torus`, `ovus` and `sor` solve their rays in units of their own size, so a solid a few hundredths of a unit across keeps its crossings and a small `sor` keeps its end caps.
 - A `height_field`'s inside test follows its real surface over the last two cell columns and rows at its +x and +z edges, where it used to take an earlier cell's plane and disagree with the surface rays cross there. CSG with a height field, media containers and `inside()` change there: a difference cutting two touching height fields could report neither surface, and a buried light's exit search stopped the render with "found no exit".
