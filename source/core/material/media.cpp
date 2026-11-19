@@ -75,6 +75,7 @@
 #include "core/math/matrix.h"
 #include "core/render/ray.h"
 #include "core/scene/object.h"
+#include "core/shape/csg.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
@@ -2224,7 +2225,18 @@ class VolumeEmitter final : public Emitter
             if (!(object->Type & IS_COMPOUND_OBJECT) && object->Clip.empty() &&
                 StretchMissesBox(object->BBox, ray.Origin, ray.Direction, start, end))
                 return;
-            if (object->Type & IS_COMPOUND_OBJECT)
+            if (const CSG *csg = dynamic_cast<const CSG *>(object))
+            {
+                // only the members whose boxes the stretch may cross, by the CSG's child tree
+                struct Along { const VolumeEmitter *self; const Ray& ray; double start, end; TraceThreadData *td; vector<double>& cuts; }
+                    along{this, ray, start, end, td, cuts};
+                csg->Visit_Ray_Children(ray, start, end, [](void *context, ObjectPtr child)
+                {
+                    Along& a = *static_cast<Along *>(context);
+                    a.self->Boundaries(child, a.ray, a.start, a.end, a.td, a.cuts);
+                }, &along);
+            }
+            else if (object->Type & IS_COMPOUND_OBJECT)
             {
                 for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
                     Boundaries(child, ray, start, end, td, cuts);
@@ -2519,6 +2531,17 @@ static DBL CellIntegral(const PreparedSourceDomain& layout, size_t cell, const F
     return sum;
 }
 
+// A copy or a transform of a CSG drops its child trees; an emitter's copy of its container indexes its children again, as
+// the scene's objects are, so that its chords and inside tests do not visit every member of a union of many.
+static void IndexEmitterGeometry(ObjectPtr geometry, const SceneData& scene)
+{
+    if (scene.boundingMethod == 0)
+        return;
+    std::unordered_set<ConstObjectPtr> visited;
+    unsigned built = 0;
+    Prepare_CSG_Child_Trees(geometry, CSG_Child_Tree_Minimum(), visited, built);
+}
+
 void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                                 const std::function<void()>& cooperate) const
 {
@@ -2555,6 +2578,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
+    IndexEmitterGeometry(emitter->geometry, *td->GetSceneData());
     // a bounce-only block casts no primary light; a unit normalizes the input below, else the emission alias casts its
     // glow times brightness and a unitless pigment takes the mean chord 4V/A
     const bool nits = settings.nits;
@@ -2768,6 +2792,7 @@ std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary
     std::shared_ptr<VolumeEmitter> emitter(new VolumeEmitter());
     emitter->container = original->container;
     emitter->geometry = Copy_Object(original->geometry);
+    IndexEmitterGeometry(emitter->geometry, *td->GetSceneData());
     emitter->sourceSettings = original->sourceSettings;
     emitter->bounceField = field;
     emitter->volumeEmission = includePrimary && original->HasVolumeEmission();

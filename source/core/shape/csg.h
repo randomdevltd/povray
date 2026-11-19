@@ -112,6 +112,10 @@ class CSG : public CompoundObject
         /// Calls `visit(context, child)` on each child the inside tree cannot rule out as outside at `p`, and on every child
         /// without a tree, until it returns true; returns whether it did.
         bool Any_Child_At(const Vector3d& p, bool (*visit)(void *context, ObjectPtr child), void *context) const;
+        /// Calls `visit(context, child)` on each child the ray tree cannot rule out between depths nearDepth and farDepth of the
+        /// ray, and on every child without a tree, in no set order.
+        void Visit_Ray_Children(const Ray& ray, double nearDepth, double farDepth, void (*visit)(void *context, ObjectPtr child),
+                                void *context) const;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;

@@ -201,6 +201,13 @@ class ChildBoxRay final
     public:
         ChildBoxRay() : valid(false) {}
 
+        /// The ray within depths [nearDepth, farDepth].
+        ChildBoxRay(const Ray& ray, DBL nearDepth, DBL farDepth) : ChildBoxRay(ray)
+        {
+            this->nearDepth = nearDepth;
+            this->farDepth = farDepth;
+        }
+
         explicit ChildBoxRay(const Ray& ray) : valid(true)
         {
             const RayRootQuery *query = ray.GetRootQuery();
@@ -1553,6 +1560,23 @@ BoxClass Classify_By_Certified_Box(ConstObjectPtr object, const Vector3d& lo, co
     if (!Test_Flag(object, INVERTED_FLAG))
         return BoxClass::Outside;
     return (object->Clip.empty() && Honours_Inversion(object)) ? BoxClass::Inside : BoxClass::Unknown;
+}
+
+void CSG::Visit_Ray_Children(const Ray& ray, double nearDepth, double farDepth, void (*visit)(void *context, ObjectPtr child),
+                             void *context) const
+{
+    const CSGChildTree *tree = childTree.get();
+    const ChildBoxRay boxRay = ((tree != nullptr) && tree->ray.Built()) ? ChildBoxRay(ray, nearDepth, farDepth) : ChildBoxRay();
+    if (!boxRay.valid)
+    {
+        for (ObjectPtr child : children)
+            visit(context, child);
+        return;
+    }
+    for (std::uint32_t k : tree->rayRest)
+        visit(context, children[k]);
+    CSGChildTree::Visit(tree->ray, [&boxRay](const CSGChildTree::Box& b) { return boxRay.Hits(b); },
+                        [&](std::uint32_t k) { if (boxRay.Hits(tree->boxes[k])) visit(context, children[k]); return false; });
 }
 
 bool CSG::Any_Child_At(const Vector3d& p, bool (*visit)(void *context, ObjectPtr child), void *context) const
