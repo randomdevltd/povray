@@ -109,6 +109,9 @@ class CSG : public CompoundObject
         virtual ObjectPtr Surface_Leaf(std::uint32_t leaf) override;
         /// A CSG answers through its children, so it can answer more than its box when one of them can.
         virtual bool Has_Box_Test() const override;
+        /// Calls `visit(context, child)` on each child the inside tree cannot rule out as outside at `p`, and on every child
+        /// without a tree, until it returns true; returns whether it did.
+        bool Any_Child_At(const Vector3d& p, bool (*visit)(void *context, ObjectPtr child), void *context) const;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;

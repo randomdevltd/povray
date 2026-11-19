@@ -9905,11 +9905,14 @@ bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector
         }
         return Inside_Object(point, object, threadData);
     }
-    for (ObjectPtr child : csg->children)
-        if ((!(child->Type & LIGHT_SOURCE_OBJECT) || !reinterpret_cast<LightSource*>(child)->children.empty()) &&
-            Inside_BBox(point, child->BBox) && InsideByBounds(point, child, out))
-            return true;
-    return false;
+    // Only the children whose boxes the union's child tree finds around the point are asked, not every member in turn.
+    struct Probe { Trace *trace; const Vector3d& point; const Vector3d *out; } probe{this, point, out};
+    return csg->Any_Child_At(point, [](void *context, ObjectPtr child)
+    {
+        const Probe& p = *static_cast<const Probe*>(context);
+        return (!(child->Type & LIGHT_SOURCE_OBJECT) || !reinterpret_cast<LightSource*>(child)->children.empty()) &&
+               Inside_BBox(p.point, child->BBox) && p.trace->InsideByBounds(p.point, child, p.out);
+    }, &probe);
 }
 
 // A disc point's shadows, photons, and the flesh and emission its light enters by, weighted by the profile rd.
