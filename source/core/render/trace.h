@@ -1334,6 +1334,7 @@ class Trace
             std::vector<char> exitAgreed; ///< whether the light's shadow holds around the exit point
             bool edge = false; ///< the surface runs out within the ring
             std::vector<char> exitStray; ///< on a coarse cloud, whether the light's shadow at the exit point differs from its neighbours'
+            bool exitShadowed = false; ///< every light the exit point faces is blocked there
             mutable std::vector<double> entryEtas; ///< per light of the exit point's part, its entry IOR, while entryEtasKept
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;

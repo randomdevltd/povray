@@ -7778,6 +7778,7 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
     cloud.exitDirection.assign(count, Vector3d());
     cloud.exitAgreed.assign(count, 1);
     cloud.exitStray.assign(count, 0);
+    bool facing = false, reached = false;
     for (int i = 0; i < count; i++)
     {
         int l = cloud.exitSlot[i];
@@ -7839,8 +7840,11 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
             if (k == 0)
                 cloud.exitLight[i] = lightcolour;
             irradiance += lightcolour * (lit / float(points));
+            facing = facing || (lit > 0.0f);
+            reached = reached || ((lit > 0.0f) && !lightcolour.IsZero());
         }
     }
+    cloud.exitShadowed = facing && !reached;
     return irradiance;
 }
 
@@ -10445,11 +10449,17 @@ bool Trace::ComputeMapDiffusion(const Intersection& out, const Vector3d& base, c
     }
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     ssltScratchVisibility.Reset(cloud.lights.size());
-    MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, true, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
+    const MathColour lit = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, true, ticket, key);
+    MathColour rest = ComputeCloudExitAmbient(out, n, cloud, ticket);
     if (cloud.photons)
-        here += ComputeCloudExitPhotons(out, n, cloud, ticket);
+        rest += ComputeCloudExitPhotons(out, n, cloud, ticket);
+    MathColour factor(1.0), emission;
     if (cloud.medium != nullptr)
-        here = here * cloud.flesh->nearby.factor + cloud.flesh->nearby.emission;
+    {
+        factor = cloud.flesh->nearby.factor;
+        emission = cloud.flesh->nearby.emission;
+    }
+    const MathColour here = (lit + rest) * factor + emission;
 
     // The far face's own normal and the light entering there, by the same rays.
     Vector3d farN, u1, u2, v1, v2;
@@ -10576,7 +10586,16 @@ bool Trace::ComputeMapDiffusion(const Intersection& out, const Vector3d& base, c
     };
     auto clampShare = [](PreciseMathColour share) { for (int j = 0; j < MathColour::channels; j++) share[j] = max(0.0, share[j]); return share; };
     const PreciseMathColour nearShare = onFace(radius), farShare = clampShare(onFace(reach) - nearShare);
-    PreciseMathColour sum = nearShare * PreciseMathColour(here) + farShare * PreciseMathColour(own.At(here));
+    // One point's area about the exit point is lit as the exit point is, unless every light it faces is blocked there: a
+    // point apart reaches past bricks and crevices, so the lights' share is then drawn over the disc, as on a coarse cloud.
+    PreciseMathColour nearLight = nearShare * PreciseMathColour(here);
+    if (cloud.exitShadowed)
+    {
+        threadData->Stats()[Subsurface_Cloud_Near_Field]++;
+        nearLight = ComputeCloudNearField(out, base, n, cloud, profile, radius, ticket, DeriveKey(key, kDrawSubsurface, 10)) * PreciseMathColour(factor) +
+                    nearShare * PreciseMathColour(rest * factor + emission);
+    }
+    PreciseMathColour sum = nearLight + farShare * PreciseMathColour(own.At(here));
     if (through)
     {
         // through to the far face: the disc about the point opposite, over the straight distance through the part
