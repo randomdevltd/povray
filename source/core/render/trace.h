@@ -1300,6 +1300,7 @@ class Trace
             std::unordered_map<const void*, int> setOf;
             std::unordered_set<const void*> sheets; ///< parts with no inside (discs, meshes with a border): no subsurface
             bool anyCollects = false;
+            bool anyEntry = false; ///< whether any part's material looks up flesh or skin where light enters, so its points keep their own
             std::shared_ptr<const surface_map::Instance> map; ///< the object's surface map, which its points come from; null for an unbounded object
             double area = 0.0; ///< on the map: the object's surface area from the map's coarsest read that finds any, in scene units squared; 0 if none does
             int depthLevel = 0; ///< on the map: the level its points are read at, from its domain_cells over its area
@@ -1314,7 +1315,7 @@ class Trace
             bool bumps = false; ///< whether the exit point's texture perturbs the normal light enters by
             std::vector<Vector3d> bumped; ///< perturbed normals over the area the exit point's own light enters, on its INormal's side
             std::vector<double> bumpedShare; ///< each one's share of that light, by the profile at its offset
-            const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
+            const void *medium = nullptr; ///< the exit point's layer where it looks up flesh where light enters; null for nothing
             int sizeLevel = 0, depthLevel = kCloudNoDepthLevel; ///< on the map: depthLevel is the points' map level
             const surface_map::Instance *map = nullptr; ///< the object's surface map, for a bounded object
             int litLevel = 0; ///< on the map: the level whose cubes are the lit cells
@@ -1487,6 +1488,14 @@ class Trace
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
                                   std::uint64_t key);
+        /// The part of a layer's flesh that light entering anywhere on it looks up: its finish, depths and skin pigment.
+        void SetUpEntryFlesh(SubsurfaceFlesh& flesh, const TEXTURE *layer) const;
+        /// Whether a part of a subsurface body may look up flesh or skin where light enters.
+        bool SubsurfaceLooksUpEntry(ConstObjectPtr part) const;
+        /// The texture layer whose flesh light entering at a hit looks up, from the hit's own part; null for none.
+        const TEXTURE *SubsurfaceEntryLayer(const Intersection& hit);
+        /// While lighting a job of cloud points: the entry flesh of each layer met, so that it is set up once.
+        std::vector<std::pair<const TEXTURE*, SubsurfaceFlesh>> ssltEntryFlesh;
         MathColour ComputeSubsurfaceSkin(const SubsurfaceFlesh& flesh, const Vector3d& point);
         void ComputeSubsurfaceEntry(const SubsurfaceFlesh& flesh, const Vector3d& point, const Vector3d& inward, double draw, SubsurfaceEntry& entry);
         bool SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, double eta, Vector3d& refracted);

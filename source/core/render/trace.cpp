@@ -8529,6 +8529,11 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.rows.resize(cell.jobs);
                 cell.tapRows.resize(cell.jobs);
                 threadData->subsurfaceCache->Stage(cell, cell.tapRows.capacity() * sizeof(std::vector<float>));
+                if (cloud.parts->anyEntry)
+                {
+                    cell.layerRows.resize(cell.jobs);
+                    threadData->subsurfaceCache->Stage(cell, cell.layerRows.capacity() * sizeof(std::vector<const void*>));
+                }
             }
         }
         cell.changed.notify_all();
@@ -8556,6 +8561,16 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.taps.insert(cell.taps.end(), row.begin(), row.end());
                 std::vector<float>().swap(row);
             }
+            if (!cell.layerRows.empty())
+            {
+                cell.layers.reserve(count);
+                threadData->subsurfaceCache->Stage(cell, cell.layers.capacity() * sizeof(const void*));
+                for (std::vector<const void*>& row : cell.layerRows)
+                {
+                    cell.layers.insert(cell.layers.end(), row.begin(), row.end());
+                    std::vector<const void*>().swap(row);
+                }
+            }
             if (!cell.taps.empty())
             {
                 cell.tapStart.resize(count);
@@ -8569,7 +8584,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             }
             cell.lights = int(cloud.lights.size());
             cell.visibility.resize(count * cell.lights * MathColour::channels);
-            if (key.medium != nullptr)
+            if (cloud.parts->anyEntry)
                 cell.entry.assign(count * 2 * MathColour::channels, 0.0f);
             if (key.photons)
                 cell.photonEntry.assign(count * MathColour::channels, 0.0f);
@@ -8586,6 +8601,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             usable = !cell.failed;
             std::vector<float>().swap(cell.taps);
             std::vector<size_t>().swap(cell.tapStart);
+            std::vector<const void*>().swap(cell.layers);
             cell.mapRead.reset();
             std::vector<SubsurfaceCell::MapRef>().swap(cell.mapRefs);
             if (usable && key.radiosity)
@@ -8617,6 +8633,7 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
         {
             cell.rows.clear();
             std::vector<std::vector<float>>().swap(cell.tapRows);
+            std::vector<std::vector<const void*>>().swap(cell.layerRows);
             if (!usable)
                 cell.Release();
         }
@@ -8747,6 +8764,7 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     uint64_t state = CloudSeed(key, 0, job);
     std::vector<SubsurfacePoint>& row = cell.rows[job];
     std::vector<float>& tapRow = cell.tapRows[job];
+    std::vector<const void*> *layerRow = cell.layerRows.empty() ? nullptr : &cell.layerRows[job];
     std::vector<Vector3d>& taps = ssltScratchTaps;
     size_t capacity = row.capacity(), tapCapacity = tapRow.capacity();
     std::vector<Intersection> crossings;
@@ -8823,6 +8841,8 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             point.id = unsigned(((set != cloud.parts->setOf.end()) ? set->second : 0) * 2 + (Test_Flag(in.Object, PH_IGNORE_PHOTONS_FLAG) ? 0 : 1));
             point.axis = a;
             row.push_back(point);
+            if (layerRow != nullptr)
+                layerRow->push_back(SubsurfaceEntryLayer(in));
             kept++;
         }
         if (kept == 0)
@@ -8966,6 +8986,7 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
     std::vector<Intersection>& hits = ssltMapHits;
     if (!cell.mapRefs.empty())
         RebuildMapHits(cloud, cell, first, last, hits);
+    ssltEntryFlesh.clear();
     for (int k = first; k < last; k++)
     {
         // A point's area shift is drawn where its run's splitmix sequence puts it, whichever job lights it.
@@ -8976,6 +8997,8 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
         const std::vector<char>& uses = cloud.parts->sets[min(size_t(point.id / 2), cloud.parts->sets.size() - 1)];
         bool collects = (point.id % 2 != 0);
+        // the layer whose flesh the light entering here looks up is the point's own part's, whichever part is shaded
+        const TEXTURE *layer = cell.layers.empty() ? nullptr : static_cast<const TEXTURE*>(cell.layers[k]);
         std::vector<Vector3d>& taps = ssltScratchTaps;
         taps.resize(point.taps);
         for (int t = 0; t < point.taps; t++)
@@ -8998,8 +9021,10 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
                 }
                 continue;
             }
-            // a map point's place, shading normal and entry taps come from its hit
+            // a map point's place, shading normal, entry taps and flesh come from its hit
             Intersection in(hits[k - first]);
+            if (!cell.entry.empty())
+                layer = SubsurfaceEntryLayer(in);
             point.position = in.IPoint;
             ComputeSSLTNormal(in);
             shading = in.INormal.normalized();
@@ -9015,17 +9040,33 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
             photonEntry = ComputeSubsurfacePhotonIrradiance(point.position, normal, cloud.object, point.tolerance, *gatherer, ticket, true);
             irradiance += photonEntry;
         }
-        if (key.medium != nullptr)
+        if (!cell.entry.empty())
         {
-            SubsurfaceEntry entry;
-            std::uint64_t mapState = 0;
-            if (!cell.mapRefs.empty())
+            const SubsurfaceFlesh *flesh = nullptr;
+            for (const auto& known : ssltEntryFlesh)
+                if (known.first == layer)
+                    flesh = &known.second;
+            if (flesh == nullptr)
             {
-                const SubsurfaceCell::MapRef& ref = cell.mapRefs[k];
-                const surface_map::Map::Part& part = static_cast<const surface_map::Map::Points*>(cell.mapRead.get())->parts[ref.part];
-                mapState = surface_map::Map::Id(part, *part.chunks[ref.chunk], ref.record);
+                ssltEntryFlesh.emplace_back(layer, SubsurfaceFlesh());
+                if (layer != nullptr)
+                    SetUpEntryFlesh(ssltEntryFlesh.back().second, layer);
+                flesh = &ssltEntryFlesh.back().second;
             }
-            ComputeSubsurfaceEntry(*cloud.flesh, point.position, -normal, cell.mapRefs.empty() ? CloudDepthDraw(key, cell, point, cloud.size) : CloudRandom(mapState), entry);
+            // a part that looks nothing up lets its light in as it is
+            SubsurfaceEntry entry;
+            entry.emission.Clear();
+            if (flesh->PerEntry())
+            {
+                std::uint64_t mapState = 0;
+                if (!cell.mapRefs.empty())
+                {
+                    const SubsurfaceCell::MapRef& ref = cell.mapRefs[k];
+                    const surface_map::Map::Part& part = static_cast<const surface_map::Map::Points*>(cell.mapRead.get())->parts[ref.part];
+                    mapState = surface_map::Map::Id(part, *part.chunks[ref.chunk], ref.record);
+                }
+                ComputeSubsurfaceEntry(*flesh, point.position, -normal, cell.mapRefs.empty() ? CloudDepthDraw(key, cell, point, cloud.size) : CloudRandom(mapState), entry);
+            }
             irradiance = irradiance * entry.factor + entry.emission;
             if (gatherer)
                 photonEntry *= entry.factor;
@@ -9214,6 +9255,7 @@ const Trace::SubsurfaceParts& Trace::FindSubsurfaceParts(ObjectPtr object, Prepa
             if (std::find(parts.lights.begin(), parts.lights.end(), light) == parts.lights.end())
                 parts.lights.push_back(light);
         parts.anyCollects = parts.anyCollects || !Test_Flag(leaves[i], PH_IGNORE_PHOTONS_FLAG);
+        parts.anyEntry = parts.anyEntry || SubsurfaceLooksUpEntry(leaves[i]);
         if (SubsurfaceSheet(leaves[i], cutters[i], threadData->subsurfaceCache.get()))
             parts.sheets.insert(leaves[i]);
     }
@@ -9487,7 +9529,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
                 SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(floor(out.IPoint[X] / cloud.size)) + k % 3 - 1,
                                           std::int64_t(floor(out.IPoint[Y] / cloud.size)) + (k / 3) % 3 - 1,
                                           std::int64_t(floor(out.IPoint[Z] / cloud.size)) + k / 9 - 1,
-                                          cloud.photons, cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
+                                          cloud.photons, cloud.radiosity, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
                 double step[3];
                 SubsurfaceStepTerm term;
                 bool floored;
@@ -9567,7 +9609,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     for (double cz = lo[Z]; cz <= hi[Z]; cz++)
     {
         SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(cx), std::int64_t(cy), std::int64_t(cz), cloud.photons,
-                                  cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
+                                  cloud.radiosity, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
@@ -10946,12 +10988,9 @@ void Trace::ComputeSubsurfaceEntry(const SubsurfaceFlesh& flesh, const Vector3d&
         entry.factor *= ComputeSubsurfaceSkin(flesh, point);
 }
 
-// The flesh and skin at a shading point; the flesh's reference and nearby values are means of a few lookups spread
-// around it, so that nothing is read from under the exit point alone.
-void Trace::SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
-                                 std::uint64_t key)
+void Trace::SetUpEntryFlesh(SubsurfaceFlesh& flesh, const TEXTURE *layer) const
 {
-    const FINISH *finish = layers.top->Finish;
+    const FINISH *finish = layer->Finish;
     flesh.finish = finish;
     if (!finish->SubsurfaceHasColour && !finish->SubsurfaceEmits)
         return;
@@ -10963,7 +11002,112 @@ void Trace::SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers&
     flesh.emissionAtDepth = finish->SubsurfaceEmits && finish->SubsurfaceVolume && ((finish->SubsurfaceEmissionPigment != nullptr) || flesh.fleshAtDepth);
     bool skin = finish->SubsurfaceHasColour && ((finish->SubsurfaceThicknessPigment != nullptr) || (finish->SubsurfaceThickness != 0.0));
     if (skin && (finish->SubsurfaceThicknessSet || flesh.fleshAtDepth || flesh.emissionAtDepth))
-        flesh.skin = layers.top->Pigment;
+        flesh.skin = layer->Pigment;
+}
+
+// The layer whose flesh and skin light entering at a hit looks up: the first subsurface layer of the texture the hit's own
+// part has there, a pattern's texture picked as it is seen there and a blend's by its larger weight. Each part's texture is
+// placed with the part, so the lookups keep its pattern frame.
+const TEXTURE *Trace::SubsurfaceEntryLayer(const Intersection& hit)
+{
+    ObjectPtr object = hit.Object;
+    const TEXTURE *texture = object->Texture;
+    if (Test_Flag(object, MULTITEXTURE_FLAG) || ((texture == nullptr) && Test_Flag(object, CUTAWAY_TEXTURES_FLAG)))
+    {
+        Intersection copy(hit);
+        WeightedTextureVector textures;
+        object->Determine_Textures(&copy, false, textures, threadData);
+        texture = nullptr;
+        double most = 0.0;
+        for (const WeightedTexture& weighted : textures)
+            if ((weighted.texture != nullptr) && (weighted.weight > most))
+            {
+                most = weighted.weight;
+                texture = weighted.texture;
+            }
+    }
+    Vector3d point = hit.IPoint, tpoint;
+    if (Test_Flag(object, UV_FLAG))
+    {
+        Vector2d uv;
+        object->UVCoord(uv, &hit);
+        point = Vector3d(uv[U], uv[V], 0.0);
+    }
+    while ((texture != nullptr) && (texture->Type != PLAIN_PATTERN))
+    {
+        const std::vector<TextureBlendMapEntry>& entries = texture->Blend_Map->Blend_Map_Entries;
+        if (texture->Type == UV_MAP_PATTERN)
+            texture = entries[0].Vals;
+        else if (texture->Type == BITMAP_PATTERN)
+        {
+            Warp_EPoint(tpoint, point, texture);
+            point = tpoint;
+            texture = material_map(point, texture);
+        }
+        else if (texture->Type == AVERAGE_PATTERN)
+        {
+            const TextureBlendMapEntry *most = &entries[0];
+            for (const TextureBlendMapEntry& entry : entries)
+                if (entry.value > most->value)
+                    most = &entry;
+            texture = most->Vals;
+        }
+        else
+        {
+            Warp_EPoint(tpoint, point, texture);
+            point = tpoint;
+            const TextureBlendMapEntry *prev, *cur;
+            DBL prevWeight, curWeight;
+            texture->Blend_Map->Search(Evaluate_TPat(texture, point, &hit, nullptr, threadData), prev, cur, prevWeight, curWeight);
+            texture = (prevWeight > curWeight) ? prev->Vals : cur->Vals;
+        }
+    }
+    for (; texture != nullptr; texture = texture->Next)
+        if ((texture->Finish != nullptr) && texture->Finish->UseSubsurface)
+            return texture;
+    return nullptr;
+}
+
+// Whether any subsurface layer a part can show looks up flesh or skin where light enters; a part whose textures are chosen
+// per hit (a mesh's own) is taken to.
+bool Trace::SubsurfaceLooksUpEntry(ConstObjectPtr part) const
+{
+    if (Test_Flag(part, MULTITEXTURE_FLAG) || ((part->Texture == nullptr) && Test_Flag(part, CUTAWAY_TEXTURES_FLAG)))
+        return true;
+    std::vector<const TEXTURE*> stack(1, part->Texture);
+    while (!stack.empty())
+    {
+        const TEXTURE *texture = stack.back();
+        stack.pop_back();
+        for (; texture != nullptr; texture = texture->Next)
+        {
+            if ((texture->Finish != nullptr) && texture->Finish->UseSubsurface)
+            {
+                SubsurfaceFlesh flesh;
+                SetUpEntryFlesh(flesh, texture);
+                if (flesh.PerEntry())
+                    return true;
+            }
+            for (const TEXTURE *material : texture->Materials)
+                stack.push_back(material);
+            if (texture->Blend_Map)
+                for (const TextureBlendMapEntry& entry : texture->Blend_Map->Blend_Map_Entries)
+                    stack.push_back(entry.Vals);
+        }
+    }
+    return false;
+}
+
+// The flesh and skin at a shading point; the flesh's reference and nearby values are means of a few lookups spread
+// around it, so that nothing is read from under the exit point alone.
+void Trace::SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
+                                 std::uint64_t key)
+{
+    SetUpEntryFlesh(flesh, layers.top);
+    const FINISH *finish = flesh.finish;
+    if (!finish->SubsurfaceHasColour && !finish->SubsurfaceEmits)
+        return;
+    bool skin = finish->SubsurfaceHasColour && ((finish->SubsurfaceThicknessPigment != nullptr) || (finish->SubsurfaceThickness != 0.0));
 
     TransColour colour;
     if (skin)
