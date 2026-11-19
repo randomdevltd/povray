@@ -130,6 +130,7 @@ class Lathe final : public ObjectBase
     protected:
         bool Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread);
         bool test_hit(const Ray&, IStack&, DBL, DBL, int, TraceThreadData *Thread);
+        bool precise_segment(const Ray&, IStack&, const DBL *, int, int, const Vector3d&, const Vector3d&, DBL, DBL&, TraceThreadData *);
 };
 
 /// @}

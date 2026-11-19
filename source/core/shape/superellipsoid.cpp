@@ -274,7 +274,11 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
     v0 = evaluate_superellipsoid(P0);
 
-    if (fabs(v0) < ZERO_TOLERANCE)
+    // a precise query takes a sample as a crossing only where the field is exactly zero; any band in its value is a long
+    // stretch of a ray running almost along the surface
+    const auto onSurface = [precise](DBL v) { return precise ? (v == 0.0) : (fabs(v) < ZERO_TOLERANCE); };
+
+    if (onSurface(v0))
     {
         if (insert_hit(ray, dists[0] / len, Depth_Stack, Thread))
         {
@@ -295,7 +299,7 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
 
         v1 = evaluate_superellipsoid(P1);
 
-        if (fabs(v1) < ZERO_TOLERANCE)
+        if (onSurface(v1))
         {
             if (insert_hit(ray, dists[i] / len, Depth_Stack, Thread))
             {
@@ -441,7 +445,9 @@ bool Superellipsoid::Inside(const Vector3d& IPoint, TraceThreadData *Thread) con
 
     val = evaluate_superellipsoid(P);
 
-    if (val < EPSILON)
+    // a precise query's crossings are where the field changes sign, so its inside has no band either: where a ray runs
+    // almost along the surface, a band in the field's value is a long stretch of the ray
+    if (val < (((Thread != nullptr) && Thread->preciseInside) ? 0.0 : EPSILON))
     {
         return(!Test_Flag(this, INVERTED_FLAG));
     }

@@ -127,6 +127,8 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -201,6 +203,23 @@ void PolishRoots(const DBL *c, int order, DBL *roots, int n)
     }
     for (int i = 0; i < n; i++)
         roots[i] = polished[i];
+}
+
+// The root of f between a and b, where its values fa and fb differ in sign, halving down to the spline parameter's
+// precision on [0, 1].
+template <class F>
+DBL BisectRoot(const F& f, DBL a, DBL b, DBL fa, DBL fb)
+{
+    for (;;)
+    {
+        const DBL middle = a + 0.5 * (b - a);
+        if (!((middle > a) && (middle < b)) || (b - a <= std::numeric_limits<DBL>::epsilon()))
+            return (fabs(fa) <= fabs(fb)) ? a : b;
+        const DBL fm = f(middle);
+        if (fm == 0.0)
+            return middle;
+        if ((fm < 0.0) == (fa < 0.0)) { a = middle; fa = fm; } else { b = middle; fb = fm; }
+    }
 }
 
 }
@@ -382,7 +401,6 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[1] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[2] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
                 order = 2;
-                n1 = precise ? Solve_Polynomial_Precise(2, x1, y1, Thread->Stats()) : Solve_Polynomial(2, x1, y1, false, 0.0, Thread->Stats());
                 break;
             // Quadratic spline
             case QUADRATIC_SPLINE:
@@ -393,7 +411,6 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[3] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[4] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
                 order = 4;
-                n1 = precise ? Solve_Polynomial_Precise(4, x1, y1, Thread->Stats()) : Solve_Polynomial(4, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
                 break;
             // Cubic spline
             case BEZIER_SPLINE:
@@ -407,64 +424,30 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[5] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[6] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
                 order = 6;
-                n1 = precise ? Solve_Polynomial_Precise(6, x1, y1, Thread->Stats()) : Solve_Polynomial(6, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
                 break;
         }
 
-        // The depth below is (y(w) - P[Y]) / D[Y], which multiplies any error in w by 1 / D[Y]. A precise query's roots
-        // are already at the rounding of their polynomial.
-        if (!precise)
-            PolishRoots(x1, order, y1, n1);
+        if (order == 0)
+            continue;
+
+        if (precise)
+        {
+            if (precise_segment(ray, Depth_Stack, x1, order, intervals[j].n, P, D, len, best, Thread))
+                found = true;
+            continue;
+        }
+
+        // The linear spline has always been solved without Sturm sequences.
+        n1 = Solve_Polynomial(order, x1, y1, (order > 2) && Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
+
+        // The depth below is (y(w) - P[Y]) / D[Y], which multiplies any error in w by 1 / D[Y].
+        PolishRoots(x1, order, y1, n1);
 
         // Test roots for valid intersections.
         while(n1--)
         {
             w = y1[n1];
-            if (precise && (w >= 0.0) && (w <= 1.0))
-            {
-                // the depth from the height at w or from the radius at w, whichever magnifies the rounding of w less:
-                // y'(w) / D[Y] against x x'(w) over the rate the ray's squared radius changes there
-                const DBL height = w * (w * (w * Entry->A[Y] + Entry->B[Y]) + Entry->C[Y]) + Entry->D[Y];
-                const DBL radius = w * (w * (w * Entry->A[X] + Entry->B[X]) + Entry->C[X]) + Entry->D[X];
-                const DBL rise = w * (3.0 * w * Entry->A[Y] + 2.0 * Entry->B[Y]) + Entry->C[Y];
-                const DBL spread = radius * (w * (3.0 * w * Entry->A[X] + 2.0 * Entry->B[X]) + Entry->C[X]);
-                DBL depth = HUGE_VAL, gain = HUGE_VAL;
-                if (D[Y] != 0.0)
-                {
-                    depth = (height - P[Y]) / D[Y];
-                    gain = fabs(rise / D[Y]);
-                }
-                x2[0] = r;
-                x2[1] = 2.0 * m;
-                x2[2] = P[X] * P[X] + P[Z] * P[Z] - radius * radius;
-                n2 = (r != 0.0) ? Solve_Polynomial_Precise(2, x2, y2, Thread->Stats()) : 0;
-                // a horizontal ray meets the circle at w twice, at the same height; otherwise only the root at w's height
-                const bool level = (D[Y] == 0.0);
-                for (int k2 = 0; k2 < n2; k2++)
-                {
-                    const DBL t = y2[k2];
-                    const DBL rate = fabs(m + r * t);
-                    const DBL radial = (rate > 0.0) ? fabs(spread) / rate : HUGE_VAL;
-                    if (level)
-                    {
-                        if (test_hit(ray, Depth_Stack, t / len, w, intervals[j].n, Thread))
-                            found = true;
-                        continue;
-                    }
-                    const DBL other = (k2 + 1 < n2) ? y2[k2 + 1] : (k2 > 0 ? y2[k2 - 1] : HUGE_VAL);
-                    if ((fabs(t - depth) <= fabs(other - depth)) && (radial < gain))
-                    {
-                        depth = t;
-                        gain = radial;
-                    }
-                }
-                if (!level && (gain < HUGE_VAL) && test_hit(ray, Depth_Stack, depth / len, w, intervals[j].n, Thread))
-                {
-                    found = true;
-                    best = std::min(best, depth);
-                }
-            }
-            else if((w >= 0.0) && (w <= 1.0))
+            if((w >= 0.0) && (w <= 1.0))
             {
                 if(fabs(D[Y]) > EPSILON)
                 {
@@ -502,6 +485,124 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
         }
     }
 
+    return found;
+}
+
+// Every crossing of a precise boundary query's ray with segment `segment`, whose squared polynomial in w is c[0] w^order
+// + ... + c[order]. The ray meets the surface at w where it meets the circle of radius x(w) at height y(w). Squared into
+// one polynomial, its crossings on the two sides of its closest approach to the axis become two roots that meet as the
+// ray turns square to the axis, and they are lost in the coefficients' rounding long before. Each side is solved on its
+// own instead: H(w) = y(w) - P[Y] - D[Y] t(w), t(w) that side's depth on the circle, has simple roots there. Between
+// turning points of the polynomial no side crosses twice, and where r x(w)^2 < (P x D)_y^2 the circle is out of reach.
+bool Lathe::precise_segment(const Ray& ray, IStack& Depth_Stack, const DBL *c, int order, int segment, const Vector3d& P,
+                            const Vector3d& D, DBL len, DBL& best, TraceThreadData *Thread)
+{
+    const LATHE_SPLINE_ENTRY& e = Spline->Entry[segment];
+    const auto height = [&](DBL w) { return w * (w * (w * e.A[Y] + e.B[Y]) + e.C[Y]) + e.D[Y]; };
+    const auto radius = [&](DBL w) { return w * (w * (w * e.A[X] + e.B[X]) + e.C[X]) + e.D[X]; };
+    const auto rise = [&](DBL w) { return w * (3.0 * w * e.A[Y] + 2.0 * e.B[Y]) + e.C[Y]; };
+    const auto spread = [&](DBL w) { return w * (3.0 * w * e.A[X] + 2.0 * e.B[X]) + e.C[X]; };
+    const DBL r = D[X] * D[X] + D[Z] * D[Z], m = D[X] * P[X] + D[Z] * P[Z], q = P[X] * P[X] + P[Z] * P[Z];
+    const DBL across = P[X] * D[Z] - P[Z] * D[X];
+    // x(w)^2, highest power first
+    const DBL square[7] = {e.A[X] * e.A[X], 2.0 * e.A[X] * e.B[X], e.B[X] * e.B[X] + 2.0 * e.A[X] * e.C[X],
+                           2.0 * (e.A[X] * e.D[X] + e.B[X] * e.C[X]), e.C[X] * e.C[X] + 2.0 * e.B[X] * e.D[X],
+                           2.0 * e.C[X] * e.D[X], e.D[X] * e.D[X]};
+    bool found = false;
+    DBL roots[6];
+
+    if (r == 0.0)
+    {
+        // along the axis the ray meets each circle once, at its own height
+        DBL reach[7];
+        for (int i = 0; i < 7; ++i)
+            reach[i] = square[i];
+        reach[6] -= q;
+        const int n = Solve_Polynomial_Precise(6, reach, roots, Thread->Stats());
+        for (int i = 0; i < n; ++i)
+        {
+            const DBL w = roots[i], depth = (height(w) - P[Y]) / D[Y];
+            if ((w >= 0.0) && (w <= 1.0) && test_hit(ray, Depth_Stack, depth / len, w, segment, Thread))
+            {
+                found = true;
+                best = min(best, depth);
+            }
+        }
+        return found;
+    }
+
+    // the stretches: [0, 1] cut where the circle comes into the ray's reach and where the polynomial turns
+    DBL cuts[2 + 6 + 5];
+    int count = 0;
+    cuts[count++] = 0.0;
+    cuts[count++] = 1.0;
+    DBL reach[7];
+    for (int i = 0; i < 7; ++i)
+        reach[i] = r * square[i];
+    reach[6] -= across * across;
+    int n = Solve_Polynomial_Precise(6, reach, roots, Thread->Stats());
+    for (int i = 0; i < n; ++i)
+        if ((roots[i] > 0.0) && (roots[i] < 1.0))
+            cuts[count++] = roots[i];
+    DBL slope[6];
+    for (int i = 0; i < order; ++i)
+        slope[i] = c[i] * (order - i);
+    n = Solve_Polynomial_Precise(order - 1, slope, roots, Thread->Stats());
+    for (int i = 0; i < n; ++i)
+        if ((roots[i] > 0.0) && (roots[i] < 1.0))
+            cuts[count++] = roots[i];
+    std::sort(cuts, cuts + count);
+
+    for (int side = -1; side <= 1; side += 2)
+    {
+        // this side's depth on the circle of radius x(w): (-m + side s) / r, or where that cancels, the product of the two
+        // depths, (q - x^2) / r, over the other
+        const auto depth = [&](DBL w)
+        {
+            const DBL x = radius(w);
+            const DBL s = sqrt(max(0.0, r * x * x - across * across));
+            if ((side > 0) ? (m <= 0.0) : (m >= 0.0))
+                return (side * s - m) / r;
+            const DBL other = -m - side * s;
+            return (other != 0.0) ? (q - x * x) / other : -m / r;
+        };
+        const auto H = [&](DBL w) { return (height(w) - P[Y]) - D[Y] * depth(w); };
+        DBL last = -1.0;
+        for (int k = 0; k + 1 < count; ++k)
+        {
+            const DBL a = cuts[k], b = cuts[k + 1];
+            if (!(b > a))
+                continue;
+            const DBL x = radius(a + 0.5 * (b - a));
+            if (r * x * x < across * across)
+                continue;
+            const DBL fa = H(a), fb = H(b);
+            DBL w;
+            if (fa == 0.0)
+                w = a;
+            else if (fb == 0.0)
+                w = b;
+            else if ((fa < 0.0) != (fb < 0.0))
+                w = BisectRoot(H, a, b, fa, fb);
+            else
+                continue;
+            if (w == last)
+                continue;
+            last = w;
+            // the depth on the circle or from the height, whichever magnifies the rounding of w less: x x'(w) over the
+            // rate the ray's squared radius changes there, against y'(w) / D[Y]
+            DBL t = depth(w);
+            const DBL rate = fabs(m + r * t);
+            const DBL radial = (rate > 0.0) ? fabs(radius(w) * spread(w)) / rate : HUGE_VAL;
+            if ((D[Y] != 0.0) && (fabs(rise(w) / D[Y]) < radial))
+                t = (height(w) - P[Y]) / D[Y];
+            if (test_hit(ray, Depth_Stack, t / len, w, segment, Thread))
+            {
+                found = true;
+                best = min(best, t);
+            }
+        }
+    }
     return found;
 }
 

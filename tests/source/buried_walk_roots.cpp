@@ -3,10 +3,9 @@
 // precise all-roots query must reproduce the inside test everywhere along the ray, and the real exit search
 // (Trace::SubsurfaceInternalBoundaryAt) must find the first place the material ends. A shape is modelled three ways in
 // each unit: with the unit in its own parameters, unit sized under an even scale, and under an uneven scale and turn.
-// Run with a shape name to test that one alone: buried_walk_roots_test torus. Lathes and the superellipsoid run only by
-// name: a lathe's ray polynomial in its spline parameter has a pair of roots closer than its rounding for a ray almost
-// square to the axis (the crossings either side of the axis at one height), and a superellipsoid seen along an axis
-// can report its crossing early; neither is fixed yet.
+// Run with a shape name to test that one alone: buried_walk_roots_test torus. A lathe seen almost square to its axis
+// meets the surface either side of the axis at nearly one height, and a superellipsoid seen along an axis runs almost
+// along its surface: both are among the headings.
 // A height field (name height-field) is checked apart: its sides and floor are no surface, so only its top's crossings
 // are asked for, in its own inside test and cut from a cylinder.
 #include "core/lighting/subsurfaceinternalboundary.h"
@@ -229,7 +228,6 @@ struct Kind final
     std::function<ObjectPtr(double)> make;
     bool baked;                // whether the unit can live in the shape's own parameters
     bool placed = true;        // whether its box follows a transform
-    bool byName = false;       // tested only when named
 };
 
 void Place(ObjectPtr object, double unit, int placing)
@@ -629,15 +627,15 @@ int main(int argc, char** argv)
         {"thin-torus", MakeThinTorus, true},
         {"quartic-torus", MakeQuarticTorus, true, false},
         {"sor", MakeSor, true},
-        {"lathe-linear", [](double u) { return MakeLathe(u, LINEAR_SPLINE); }, true, true, true},
-        {"lathe-quadratic", [](double u) { return MakeLathe(u, QUADRATIC_SPLINE); }, true, true, true},
-        {"lathe-cubic", [](double u) { return MakeLathe(u, CUBIC_SPLINE); }, true, true, true},
-        {"lathe-bezier", [](double u) { return MakeLathe(u, BEZIER_SPLINE); }, true, true, true},
+        {"lathe-linear", [](double u) { return MakeLathe(u, LINEAR_SPLINE); }, true},
+        {"lathe-quadratic", [](double u) { return MakeLathe(u, QUADRATIC_SPLINE); }, true},
+        {"lathe-cubic", [](double u) { return MakeLathe(u, CUBIC_SPLINE); }, true},
+        {"lathe-bezier", [](double u) { return MakeLathe(u, BEZIER_SPLINE); }, true},
         {"prism-linear", [](double u) { return MakePrism(u, LINEAR_SPLINE, LINEAR_SWEEP); }, true},
         {"prism-cubic", [](double u) { return MakePrism(u, CUBIC_SPLINE, LINEAR_SWEEP); }, true},
         {"prism-linear-conic", [](double u) { return MakePrism(u, LINEAR_SPLINE, CONIC_SWEEP); }, true},
         {"prism-cubic-conic", [](double u) { return MakePrism(u, CUBIC_SPLINE, CONIC_SWEEP); }, true},
-        {"superellipsoid", MakeSuperellipsoid, false, true, true},
+        {"superellipsoid", MakeSuperellipsoid, false},
         {"sweep-linear", [](double u) { return MakeSweep(u, LINEAR_SPHERE_SWEEP); }, true},
         {"sweep-catmull-rom", [](double u) { return MakeSweep(u, CATMULL_ROM_SPLINE_SPHERE_SWEEP); }, true},
         {"sweep-b-spline", [](double u) { return MakeSweep(u, B_SPLINE_SPHERE_SWEEP); }, true},
@@ -647,7 +645,7 @@ int main(int argc, char** argv)
     const int rays = 60;
     for (const Kind& kind : kinds)
     {
-        if ((argc > 1) ? (std::strcmp(argv[1], kind.name) != 0) : kind.byName) continue;
+        if ((argc > 1) && (std::strcmp(argv[1], kind.name) != 0)) continue;
         for (double unit : units)
             for (int placing = 0; placing < 3; ++placing)
             {
