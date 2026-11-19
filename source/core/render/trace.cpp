@@ -7226,9 +7226,23 @@ const LightSource* Trace::LightOnObject(const LightSource& light, ConstObjectPtr
     return light.ownLight.get();
 }
 
-bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId)
+// The one body an object is or belongs to: a member names it, and so does the body as its members name it; null outside one.
+static ObjectPtr SubsurfaceBodyOf(ConstObjectPtr object)
+{
+    if (object->subsurfaceBody != nullptr)
+        return object->subsurfaceBody;
+    if (!(object->Type & IS_COMPOUND_OBJECT))
+        return nullptr;
+    const std::vector<ObjectPtr>& children = static_cast<const CompoundObject*>(object)->children;
+    return (!children.empty() && (children.front()->subsurfaceBody == object)) ? const_cast<ObjectPtr>(object) : nullptr;
+}
+
+bool Trace::ContainsSubsurfaceMaterial(const Vector3d& point, ConstObjectPtr object, PreparedSetId preparedSetId)
 {
     const PreciseInsideScope precision(threadData);
+    if (const ObjectPtr body = SubsurfaceBodyOf(object))
+        return InsideByBounds(point, body);
+    const Interior* interior = object->interior.get();
     RayInteriorVector containing;
     FindContainingInteriors(point, containing, preparedSetId);
     return std::find(containing.begin(), containing.end(), interior) != containing.end();
@@ -7298,9 +7312,14 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
 {
     const PreciseInsideScope precision(threadData);
     const Interior* material = object->interior.get();
-    const double extent = (material->boundsHigh - material->boundsLow).length();
+    // A one body's material is all of its members, whose interiors are each their own copy of it, and runs to the body's bounds.
+    const ObjectPtr body = SubsurfaceBodyOf(object);
+    Vector3d low = material->boundsLow, high = material->boundsHigh;
+    if (body != nullptr)
+        Make_min_max_from_BBox(low, high, body->BBox);
+    const double extent = (high - low).length();
     const double shift = std::max(2.0 * MIN_ISECT_DEPTH, std::max(InterfaceTolerance(point, material), 4.0e-6 * extent));
-    const double reach = SubsurfaceBoundsReach(point, direction, material->boundsLow, material->boundsHigh);
+    const double reach = SubsurfaceBoundsReach(point, direction, low, high);
     const std::vector<ObjectPtr>& bodies = SubsurfaceMaterialBodies(material, whole, ticket.preparedSetId);
     auto find = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& query)
     {
@@ -7317,8 +7336,8 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
         }
         return f;
     };
-    auto owns = [&](const Intersection& hit) { return IsSameSSLTObject(hit.Object, object); };
-    auto contains = [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, material, ticket.preparedSetId); };
+    auto owns = [&](const Intersection& hit) { return (body != nullptr) ? (hit.Object->subsurfaceBody == body) : IsSameSSLTObject(hit.Object, object); };
+    auto contains = [&](const Vector3d& probe) { return ContainsSubsurfaceMaterial(probe, object, ticket.preparedSetId); };
     auto outward = [&](Intersection& hit, Vector3d& normal)
     {
         hit.Object->Normal(normal, &hit, threadData);
@@ -7350,7 +7369,7 @@ bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3
     const double faceLength = face.length();
     if ((faceLength > 0.0) && (std::abs(dot(face, toward)) / faceLength * distance <= tolerance)) return false;
     if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, tolerance, extent),
-        material, ticket.preparedSetId)) return false;
+        object, ticket.preparedSetId)) return false;
     return distance < SubsurfaceInternalBoundaryAt(point, toward, object, const_cast<ObjectPtr>(whole), ticket).distance;
 }
 
@@ -7391,7 +7410,7 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     if (!SSLTComputeRefractedDirection(eye.Direction, normal, 1.0 / eta, inward)) return result;
     const double extent = (material->boundsHigh - material->boundsLow).length();
     const double tolerance = InterfaceTolerance(out.IPoint, material);
-    if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(out.IPoint, inward, tolerance, extent), material, eye.GetPreparedSetId()))
+    if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(out.IPoint, inward, tolerance, extent), out.Object, eye.GetPreparedSetId()))
         return result;
     auto boundary = [&](const Vector3d& point, const Vector3d& direction)
     {

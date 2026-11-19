@@ -1474,7 +1474,8 @@ class Trace
         /// face: the surface normal when point lies on the material's surface, zero for a start inside it.
         bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
             double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket, const Vector3d& face);
-        bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
+        /// Whether point lies in object's material: inside its one body when it has one, else in its interior.
+        bool ContainsSubsurfaceMaterial(const Vector3d& point, ConstObjectPtr object, PreparedSetId preparedSetId);
         /// The placed objects that carry a material, whose union ContainsSubsurfaceMaterial tests; `whole` always among them.
         const std::vector<ObjectPtr>& SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
         std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr>, std::vector<ObjectPtr>> ssltMaterialBodies;
