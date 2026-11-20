@@ -1469,8 +1469,9 @@ class Trace
         bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
+        /// Where the material ends along the ray; with a limit, the first crossing at or past it may stand in for the exit.
         SubsurfaceInternalBoundary SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
-            ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket);
+            ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket, double limit = HUGE_VAL);
         /// face: the surface normal when point lies on the material's surface, zero for a start inside it.
         bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
             double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket, const Vector3d& face);

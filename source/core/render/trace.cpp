@@ -7308,7 +7308,7 @@ bool Trace::SubsurfaceSourceOverlaps(const LightSource& light, const Interior* i
 }
 
 SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
-    ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket)
+    ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket, double limit)
 {
     const PreciseInsideScope precision(threadData);
     const Interior* material = object->interior.get();
@@ -7352,7 +7352,7 @@ SubsurfaceInternalBoundary Trace::SubsurfaceInternalBoundaryAt(const Vector3d& p
         throw POV_EXCEPTION(kUncategorizedError, "Internal subsurface light found no exit from " + DescribeSubsurfaceObject(object) +
                             ((whole != object) ? " (part of " + DescribeSubsurfaceObject(whole) + ")" : std::string()) + ": " + text);
     };
-    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, extent, reach, find, owns, contains, outward, fail);
+    return FindSubsurfaceInternalBoundary(point, direction, ticket, shift, extent, reach, find, owns, contains, outward, fail, limit);
 }
 
 bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
@@ -7370,7 +7370,7 @@ bool Trace::SubsurfaceInternalConnection(const LightSource& light, const Vector3
     if ((faceLength > 0.0) && (std::abs(dot(face, toward)) / faceLength * distance <= tolerance)) return false;
     if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(point, toward, tolerance, extent),
         object, ticket.preparedSetId)) return false;
-    return distance < SubsurfaceInternalBoundaryAt(point, toward, object, const_cast<ObjectPtr>(whole), ticket).distance;
+    return distance < SubsurfaceInternalBoundaryAt(point, toward, object, const_cast<ObjectPtr>(whole), ticket, distance).distance;
 }
 
 MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
@@ -7412,9 +7412,9 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     const double tolerance = InterfaceTolerance(out.IPoint, material);
     if (!ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(out.IPoint, inward, tolerance, extent), out.Object, eye.GetPreparedSetId()))
         return result;
-    auto boundary = [&](const Vector3d& point, const Vector3d& direction)
+    auto boundary = [&](const Vector3d& point, const Vector3d& direction, double limit)
     {
-        return SubsurfaceInternalBoundaryAt(point, direction, out.Object, SubsurfaceObject(out), eye.GetTicket());
+        return SubsurfaceInternalBoundaryAt(point, direction, out.Object, SubsurfaceObject(out), eye.GetTicket(), limit);
     };
     // Samples are the receiver's: the shaded point draws each buried light's samples times its finish's light_samples, as
     // any receiver of that light does; one path connects to every source, so the source asking most sets the count.
@@ -7458,7 +7458,7 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                     const Vector3d delta = light.position - point;
                     const double distance = delta.length();
                     if (!(distance > 0.0)) continue;
-                    const auto hit = boundary(point, delta / distance);
+                    const auto hit = boundary(point, delta / distance, distance);
                     if (distance >= hit.distance) continue;
                     radiance += from.scale[channel] * light.weight[channel] * std::exp(-extinction * distance) / (4.0 * M_PI);
                 }
