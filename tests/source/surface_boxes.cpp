@@ -20,6 +20,8 @@
 #include <limits>
 #include <memory>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -227,6 +229,19 @@ int main()
     cut->Compute_BBox();
     clipped->Clip.push_back(cut);
     assert(All(clipped).size() == 2);
+
+    // a NaN surface box stops the walk, whether a leaf reports it or a nested union's own box (entered before its members)
+    for (bool unionBox : {false, true})
+    {
+        Sphere *bad = Ball(Vector3d(0.0), 1);
+        CSGUnion *member = Group(new CSGUnion(), {Ball(Vector3d(3, 0, 0), 0.5), bad});
+        CSGUnion *outer = Group(new CSGUnion(), {Ball(Vector3d(-3, 0, 0), 0.5), member});
+        (unionBox ? member->BBox : bad->BBox).lowerLeft[X] = std::numeric_limits<BBoxScalar>::quiet_NaN();
+        bool stopped = false;
+        try { All(outer); }
+        catch (const std::runtime_error& e) { stopped = std::string(e.what()).find("NaN corner") != std::string::npos; }
+        assert(stopped);
+    }
 
     // every hit belongs to exactly one piece and lands in that piece's own boxes; unprepared, then with child trees
     const unsigned rays = 4000;
