@@ -98,8 +98,9 @@ wide, write the product over the axes of `ceil(extent / w)` of the container's b
 A volume `light` whose container overlaps a closed subsurface method 2 solid lights it
 from within, with no new syntax: the transport is the homogeneous isotropic radiative
 transport equation of the material, with exact Fresnel reflection at its boundary, and
-takes emission only from the material along a path. The second count of
-`global_settings { subsurface { samples D, S } }` is the internal paths per shaded point.
+takes emission only from the material along a path. Each shaded point traces the buried
+light's `samples` times the finish's `light_samples` internal paths; the second count of
+`global_settings { subsurface { samples D, S } }` does not reach them.
 Where the subsurface block gives the flesh its own colour, the texture pigment is a skin
 crossed at the exit, twice at each internal reflection and at the far end of a straight
 path through a thin wall. A surface `light { emission }` on the host exports the flux
