@@ -24,7 +24,7 @@ for cloud in 0 1; do
     [ "$scaled" -eq "$many" ] || fail "finish multiplier drew $scaled versus $many in cloud mode $cloud"
     same_pixels ssem_many.ppm ssem_scaled.ppm || fail "equivalent budgets produced different pixels in cloud mode $cloud"
     tr -d ' \r\n' < ssem_four.log > ssem_four.txt
-    if [ "$cloud" -eq 0 ]; then
+    if [ "$cloud" -eq 0 ]; then  # an unbounded host whose diffusion stays within a pixel
         grep -q ';0cells,0pointsbuilt' ssem_four.txt || fail "the local case built a cloud"
     else
         grep -q ';[1-9][0-9]*cells,[1-9][0-9]*pointsbuilt' ssem_four.txt || fail "the stored case built no cloud"

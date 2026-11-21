@@ -18,7 +18,12 @@ light_source { <-2,5,-3> rgb 1.3
   #if (Source = 2) area_light x,z,4,4 #end
 }
 #end
+// A bounded host always reads its points from a surface map; only an unbounded one keeps the within-a-pixel shortcut.
+#if (Cloud)
 box { <-0.6,0,-0.6>, <0.6,1,0.6>
+#else
+plane { y, 1
+#end
   pigment { rgb <0.8,0.4,0.25> }
   finish { ambient 0 diffuse 0.7 light_samples Multiplier
     subsurface { translucency <3,2,1.5> minimum_influence 0 }
