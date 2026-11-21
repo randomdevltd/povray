@@ -660,6 +660,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/prepared_fields_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/bounce_preparation.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/bounce_adaptive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/bounce_no_surface.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_optical_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/clear_containers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/texture_filter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -771,6 +772,7 @@ check-quick: all
 	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior.o" \\
 	  PREPARED_BINARY="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior_test"
 	mkdir -p \$(top_builddir)/tests/emitter-light-law
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/emitter_light_law.cpp" \\
 	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/emitter-light-law/emitter_light_law.o" \\
 	  PREPARED_BINARY="\$(abs_top_builddir)/tests/emitter-light-law/emitter_light_law_test"

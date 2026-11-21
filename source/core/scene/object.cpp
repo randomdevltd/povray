@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 // POV-Ray header files (base module)
@@ -1017,9 +1018,16 @@ void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& h
     class Within final : public SurfaceBoxVisitor
     {
         public:
-            Within(const Vector3d& l, const Vector3d& h, std::vector<SurfaceBox>& o) : low(l), high(h), out(o) {}
+            Within(ConstObjectPtr ob, const Vector3d& l, const Vector3d& h, std::vector<SurfaceBox>& o) : object(ob), low(l), high(h), out(o) {}
             bool Enter(const Vector3d& a, const Vector3d& b) override
             {
+                // a NaN corner fails every comparison and would drop the box, or a member's whole subtree, unseen: a shape
+                // bug, so stop on it
+                for (int k = X; k <= Z; ++k)
+                    if (std::isnan(a[k]) || std::isnan(b[k]))
+                        throw std::runtime_error(std::string("The ") + ShapeName(object) +
+                                                 (object->source ? " at " + *object->source : std::string()) +
+                                                 " reports a surface box with a NaN corner.");
                 return (a.x() <= high.x()) && (a.y() <= high.y()) && (a.z() <= high.z()) &&
                        (b.x() >= low.x()) && (b.y() >= low.y()) && (b.z() >= low.z());
             }
@@ -1031,9 +1039,10 @@ void Surface_Boxes(ConstObjectPtr object, const Vector3d& low, const Vector3d& h
                     out.push_back(box);
             }
         private:
+            ConstObjectPtr object;
             const Vector3d low, high;
             std::vector<SurfaceBox>& out;
-    } within(low, high, out);
+    } within(object, low, high, out);
     SurfaceQuery query;
     query.low = low;
     query.high = high;

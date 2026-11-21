@@ -354,8 +354,10 @@ private:
             // Isotropic lines cross a surface at a mean |cos| of a half (Cauchy-Crofton): a root stands for 2 pi r^2 / lines.
             const double radius = (r->hi - r->lo).length() * 0.5;
             r->crofton = 2.0 * kPi * (radius / unit) * (radius / unit);
-            if (!(r->crofton > 0.0)) continue;
-            if (!std::isfinite(r->crofton)) throw std::runtime_error("Surface map region has non-finite measure.");
+            if (r->crofton == 0.0) continue;   // a single point: no line can cross it
+            if (!std::isfinite(r->crofton))
+                throw std::runtime_error(std::string("Surface map region has a non-finite measure on the ") + ShapeName(object) +
+                                         (object->source ? " at " + *object->source : std::string()) + ".");
             // The region's key: integers only, so the lines are the same at any scale.
             auto& piece = pieces[r->piece];
             const std::uint32_t ordinal = piece.first++;
