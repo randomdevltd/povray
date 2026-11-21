@@ -8790,7 +8790,7 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     std::vector<float>& tapRow = cell.tapRows[job];
     std::vector<const void*> *layerRow = cell.layerRows.empty() ? nullptr : &cell.layerRows[job];
     std::vector<Vector3d>& taps = ssltScratchTaps;
-    size_t capacity = row.capacity(), tapCapacity = tapRow.capacity();
+    size_t capacity = row.capacity(), tapCapacity = tapRow.capacity(), layerCapacity = (layerRow != nullptr) ? layerRow->capacity() : 0;
     std::vector<Intersection> crossings;
     for (int j = 0; (j < steps) && !cell.failed; j++)
     {
@@ -8876,13 +8876,20 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             threadData->subsurfaceCache->Stage(cell, (row.capacity() - capacity) * sizeof(SubsurfacePoint));
         if (tapRow.capacity() > tapCapacity)
             threadData->subsurfaceCache->Stage(cell, (tapRow.capacity() - tapCapacity) * sizeof(float));
+        if ((layerRow != nullptr) && (layerRow->capacity() > layerCapacity))
+        {
+            threadData->subsurfaceCache->Stage(cell, (layerRow->capacity() - layerCapacity) * sizeof(const void*));
+            layerCapacity = layerRow->capacity();
+        }
         capacity = row.capacity();
         tapCapacity = tapRow.capacity();
         std::lock_guard<std::mutex> lock(cell.mutex);
         cell.found += kept;
         cell.tapBytes += addedTapBytes;
         const size_t tapPeak = 2 * cell.tapBytes + (cell.tapBytes ? cell.found * sizeof(size_t) : 0);
-        if (!threadData->subsurfaceCache->CellFits(cell.found * sizeof(SubsurfacePoint) + tapPeak))
+        // each point found also holds its entry layer where the body looks flesh up per entry
+        const size_t pointBytes = sizeof(SubsurfacePoint) + ((layerRow != nullptr) ? sizeof(const void*) : 0);
+        if (!threadData->subsurfaceCache->CellFits(cell.found * pointBytes + tapPeak))
             cell.failed = true;
     }
 }
