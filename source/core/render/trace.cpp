@@ -7788,8 +7788,8 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
 
 // Light entering at the exit point, shadowed as the disc's points agree or else by its own shadow test; keeps each light's
 // shadowed colour and direction, and whether its shadow holds around the point, for single scattering; see doc/PERF.md.
-MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
-                                             TraceTicket& ticket, std::uint64_t key)
+MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Vector3d& n, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud,
+                                             bool coarse, TraceTicket& ticket, std::uint64_t key)
 {
     MathColour irradiance;
     size_t count = cloud.exitSlot.size();
@@ -7859,7 +7859,8 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
             if (k == 0)
                 cloud.exitLight[i] = lightcolour;
             irradiance += lightcolour * (lit / float(points));
-            facing = facing || (lit > 0.0f);
+            // only a light on the outer side of the face (n points out) can be blocked from it; one behind it is no shadow
+            facing = facing || ((lit > 0.0f) && (dot(n, lightsourceray.Direction) > 0.0));
             reached = reached || ((lit > 0.0f) && !lightcolour.IsZero());
         }
     }
@@ -9983,7 +9984,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     {
         entryTaps(cloud.reach);
         ssltScratchVisibility.Reset(cloud.lights.size());
-        MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, false, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
+        MathColour here = ComputeCloudExitIrradiance(out, n, ssltScratchVisibility, cloud, false, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
         if (cloud.photons)
             here += ComputeCloudExitPhotons(out, n, cloud, ticket);
         if (cloud.medium != nullptr)
@@ -10238,7 +10239,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
 
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     entryTaps(core);
-    MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, coarse, ticket, key);
+    MathColour here = ComputeCloudExitIrradiance(out, n, visibility, cloud, coarse, ticket, key);
     // A shadow edge between coarse points, a shadow at the exit point its neighbours do not share, or an edge of the
     // surface within the disc, is drawn near the exit point.
     bool nearField = coarse && (acrossNear || cloud.edge);
@@ -10468,7 +10469,7 @@ bool Trace::ComputeMapDiffusion(const Intersection& out, const Vector3d& base, c
     }
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     ssltScratchVisibility.Reset(cloud.lights.size());
-    const MathColour lit = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, true, ticket, key);
+    const MathColour lit = ComputeCloudExitIrradiance(out, n, ssltScratchVisibility, cloud, true, ticket, key);
     MathColour rest = ComputeCloudExitAmbient(out, n, cloud, ticket);
     if (cloud.photons)
         rest += ComputeCloudExitPhotons(out, n, cloud, ticket);

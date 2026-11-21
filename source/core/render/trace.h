@@ -1334,7 +1334,7 @@ class Trace
             std::vector<char> exitAgreed; ///< whether the light's shadow holds around the exit point
             bool edge = false; ///< the surface runs out within the ring
             std::vector<char> exitStray; ///< on a coarse cloud, whether the light's shadow at the exit point differs from its neighbours'
-            bool exitShadowed = false; ///< every light the exit point faces is blocked there
+            bool exitShadowed = false; ///< every light on the exit point's outer side is blocked there
             mutable std::vector<double> entryEtas; ///< per light of the exit point's part, its entry IOR, while entryEtasKept
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
@@ -1441,8 +1441,8 @@ class Trace
         bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
                                                const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,
                                                TraceTicket& ticket, std::uint64_t key, MathColour& diffuse);
-        MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
-                                              TraceTicket& ticket, std::uint64_t key);
+        MathColour ComputeCloudExitIrradiance(const Intersection& out, const Vector3d& n, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud,
+                                              bool coarse, TraceTicket& ticket, std::uint64_t key);
         PreciseMathColour ComputeCloudNearField(const Intersection& out, const Vector3d& base, const Vector3d& n, SubsurfaceCloud& cloud,
                                                 const SubsurfaceProfile& profile, double radius, TraceTicket& ticket, std::uint64_t key);
         MathColour ComputeCloudExitPhotons(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);
