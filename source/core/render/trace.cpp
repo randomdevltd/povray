@@ -8865,7 +8865,7 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             point.axis = a;
             row.push_back(point);
             if (layerRow != nullptr)
-                layerRow->push_back(SubsurfaceEntryLayer(in));
+                layerRow->push_back(SubsurfaceEntryLayer(in, n));
             kept++;
         }
         if (kept == 0)
@@ -9047,7 +9047,7 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
             // a map point's place, shading normal, entry taps and flesh come from its hit
             Intersection in(hits[k - first]);
             if (!cell.entry.empty())
-                layer = SubsurfaceEntryLayer(in);
+                layer = SubsurfaceEntryLayer(in, normal);
             point.position = in.IPoint;
             ComputeSSLTNormal(in);
             shading = in.INormal.normalized();
@@ -11047,17 +11047,29 @@ void Trace::SetUpEntryFlesh(SubsurfaceFlesh& flesh, const TEXTURE *layer) const
 }
 
 // The layer whose flesh and skin light entering at a hit looks up: the first subsurface layer of the texture the hit's own
-// part has there, a pattern's texture picked as it is seen there and a blend's by its larger weight. Each part's texture is
-// placed with the part, so the lookups keep its pattern frame.
-const TEXTURE *Trace::SubsurfaceEntryLayer(const Intersection& hit)
+// part shows outside there (its interior_texture where the surface's own normal points in, as a ray from outside shades
+// it), a pattern's texture picked as it is seen there and a blend's by its larger weight. Each part's texture is placed
+// with the part, so the lookups keep its pattern frame.
+const TEXTURE *Trace::SubsurfaceEntryLayer(const Intersection& hit, const Vector3d& outward)
 {
     ObjectPtr object = hit.Object;
-    const TEXTURE *texture = object->Texture;
-    if (Test_Flag(object, MULTITEXTURE_FLAG) || ((texture == nullptr) && Test_Flag(object, CUTAWAY_TEXTURES_FLAG)))
+    const bool multi = Test_Flag(object, MULTITEXTURE_FLAG) || ((object->Texture == nullptr) && Test_Flag(object, CUTAWAY_TEXTURES_FLAG));
+    bool inside = false;
+    if (multi || (object->Interior_Texture != nullptr))
+    {
+        Intersection copy(hit);
+        Vector3d raw;
+        object->Normal(raw, &copy, threadData);
+        if (Test_Flag(object, INVERTED_FLAG))
+            raw.invert();
+        inside = dot(raw, outward) < 0.0;
+    }
+    const TEXTURE *texture = (inside && (object->Interior_Texture != nullptr)) ? object->Interior_Texture : object->Texture;
+    if (multi)
     {
         Intersection copy(hit);
         WeightedTextureVector textures;
-        object->Determine_Textures(&copy, false, textures, threadData);
+        object->Determine_Textures(&copy, inside, textures, threadData);
         texture = nullptr;
         double most = 0.0;
         for (const WeightedTexture& weighted : textures)
@@ -11116,6 +11128,8 @@ bool Trace::SubsurfaceLooksUpEntry(ConstObjectPtr part) const
     if (Test_Flag(part, MULTITEXTURE_FLAG) || ((part->Texture == nullptr) && Test_Flag(part, CUTAWAY_TEXTURES_FLAG)))
         return true;
     std::vector<const TEXTURE*> stack(1, part->Texture);
+    if (part->Interior_Texture != nullptr)
+        stack.push_back(part->Interior_Texture);
     while (!stack.empty())
     {
         const TEXTURE *texture = stack.back();

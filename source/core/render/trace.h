@@ -1496,7 +1496,7 @@ class Trace
         /// Whether a part of a subsurface body may look up flesh or skin where light enters.
         bool SubsurfaceLooksUpEntry(ConstObjectPtr part) const;
         /// The texture layer whose flesh light entering at a hit looks up, from the hit's own part; null for none.
-        const TEXTURE *SubsurfaceEntryLayer(const Intersection& hit);
+        const TEXTURE *SubsurfaceEntryLayer(const Intersection& hit, const Vector3d& outward);
         /// While lighting a job of cloud points: the entry flesh of each layer met, so that it is set up once.
         std::vector<std::pair<const TEXTURE*, SubsurfaceFlesh>> ssltEntryFlesh;
         MathColour ComputeSubsurfaceSkin(const SubsurfaceFlesh& flesh, const Vector3d& point);
