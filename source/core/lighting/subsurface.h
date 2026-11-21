@@ -197,7 +197,7 @@ struct SubsurfaceCell final
     std::vector<float> visibility; ///< per point, per light, per channel: shadowed over unshadowed light
     std::vector<float> ambient; ///< while lighting a radiosity cell: per point and channel, the cache's light, or NaN if none
     std::vector<float> photonEntry; ///< entry-filtered photons, in point id order, for core reconstruction
-    std::vector<float> entry; ///< with a medium: per point, the flesh times skin its light enters by, then its emission, per channel
+    std::vector<float> entry; ///< where the body looks up flesh: per point, the flesh times skin its light enters by, then its emission, per channel
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
@@ -225,6 +225,8 @@ struct SubsurfaceCell final
     std::vector<std::vector<SubsurfacePoint>> rows; ///< points found by each row of lines while casting
     std::vector<std::vector<float>> tapRows; ///< the perturbed normals over each row's points' areas, in point order
     std::vector<float> taps; ///< while lighting, those of all points in point order, three floats a normal
+    std::vector<std::vector<const void*>> layerRows; ///< where the body looks up flesh, each row's points' texture layers while casting
+    std::vector<const void*> layers; ///< while lighting, those of all cast points in point order
     std::vector<size_t> tapStart; ///< while lighting, where each point's normals begin in taps
     /// On the surface map, while lighting: the read its points came from, and each point's part, chunk in the part and record
     /// in the chunk, from which its hit is rebuilt when it is lit.
@@ -241,7 +243,6 @@ struct SubsurfaceCellKey final
     std::int64_t x, y, z;
     bool photons;
     bool radiosity; ///< whether its points carry the radiosity cache's light as well as the lights'
-    const void *medium; ///< the texture layer whose flesh and skin its points look up where light enters, or null
     size_t preparedSetId;
     int depthLevel; ///< where the diffusion would set too coarse a step for its depth, the step is 2^depthLevel scene units
     double lightSamples = 1.0;
@@ -249,7 +250,7 @@ struct SubsurfaceCellKey final
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
-               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples && normals == o.normals;
+               photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples && normals == o.normals;
     }
 };
 

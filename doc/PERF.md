@@ -902,8 +902,9 @@ that nothing depends on the flesh under the exit point alone. What varies betwee
 light entering there: the looked-up flesh over the reference (divided once, at the end), times the skin's transmittance
 there, plus the flesh's emission times its colour. The lookups are made at a depth drawn from a normal curve (see
 `volume_sampling` above): method 1 at each diffuse sample point, from the shading point's keyed draws; method 2 once per
-cloud point as it is lit, from an R3 lattice over the grid squares so that neighbouring points' depths spread evenly,
-into a cube keyed by the texture layer as well as the object. Method 2's core, which is lit as the exit point is,
+cloud point as it is lit, from an R3 lattice over the grid squares so that neighbouring points' depths spread evenly.
+Each cloud point looks up the flesh and skin of its own part's texture there, in that part's pattern frame, so a body of
+many parts keeps one set of cubes whichever part is shaded, and each part's light enters by its own material. Method 2's core, which is lit as the exit point is,
 takes the multiplier and emission of the disc's points, weighted by the profile, instead of those under the exit
 point; the local path takes the four spread lookups. Emission the same at every entry point is added in closed form
 (the profile's integral over the plane). Without the new keywords none of this runs: `subsurface.pov`,

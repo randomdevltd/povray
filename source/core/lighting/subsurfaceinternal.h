@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 
 namespace pov
 {
@@ -31,6 +32,16 @@ inline double SubsurfaceInternalFresnel(double cosine, double relativeIor)
 
 // Source is the attenuated line integral; connect is ∫j(y) exp(-σt r) / (4π r²) dV(y); bounce(p) is what an internal
 // reflection at boundary point p keeps (the skin it crosses there).
+// The boundary along a ray; one that takes a limit may stop at the first crossing past it, the material holding till there.
+template<typename Boundary>
+SubsurfaceInternalBoundary SubsurfaceInternalExit(Boundary& boundary, const Vector3d& position, const Vector3d& direction, double limit)
+{
+    if constexpr (std::is_invocable<Boundary&, const Vector3d&, const Vector3d&, double>::value)
+        return boundary(position, direction, limit);
+    else
+        return boundary(position, direction);
+}
+
 template<typename Boundary, typename Source, typename Connect, typename Draw, typename Bounce>
 double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     double absorption, double scattering, double relativeIor,
@@ -50,13 +61,24 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
         if (events == 4096)
             throw std::runtime_error("Internal subsurface walk reached 4096 scattering and reflection events, which roulette "
                                      "makes impossible for a correct walk: this is a renderer bug, not a scene limit; please report it");
-        const auto hit = boundary(position, direction);
+        // a segment that gathers needs its whole length; otherwise only whether the material outlasts the free flight
+        double distance = 0.0;
+        auto freeFlight = [&]()
+        {
+            const double uniform = std::min(std::nextafter(1.0, 0.0), std::max(0.5 * std::numeric_limits<double>::epsilon(), draw()));
+            distance = -std::log1p(-uniform) / extinction;
+        };
+        if (!gatherSegment)
+            freeFlight();
+        const auto hit = SubsurfaceInternalExit(boundary, position, direction,
+                                                gatherSegment ? std::numeric_limits<double>::infinity() : distance);
         if (!(hit.distance >= 0.0) || !std::isfinite(hit.distance))
             throw std::runtime_error("Internal subsurface transport requires an enclosing boundary");
         if (gatherSegment)
+        {
             radiance += throughput * source(position, direction, hit.distance, extinction);
-        const double uniform = std::min(std::nextafter(1.0, 0.0), std::max(0.5 * std::numeric_limits<double>::epsilon(), draw()));
-        const double distance = -std::log1p(-uniform) / extinction;
+            freeFlight();
+        }
         if (distance < hit.distance)
         {
             position += direction * distance;

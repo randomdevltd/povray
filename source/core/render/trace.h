@@ -1300,6 +1300,7 @@ class Trace
             std::unordered_map<const void*, int> setOf;
             std::unordered_set<const void*> sheets; ///< parts with no inside (discs, meshes with a border): no subsurface
             bool anyCollects = false;
+            bool anyEntry = false; ///< whether any part's material looks up flesh or skin where light enters, so its points keep their own
             std::shared_ptr<const surface_map::Instance> map; ///< the object's surface map, which its points come from; null for an unbounded object
             double area = 0.0; ///< on the map: the object's surface area from the map's coarsest read that finds any, in scene units squared; 0 if none does
             int depthLevel = 0; ///< on the map: the level its points are read at, from its domain_cells over its area
@@ -1314,7 +1315,7 @@ class Trace
             bool bumps = false; ///< whether the exit point's texture perturbs the normal light enters by
             std::vector<Vector3d> bumped; ///< perturbed normals over the area the exit point's own light enters, on its INormal's side
             std::vector<double> bumpedShare; ///< each one's share of that light, by the profile at its offset
-            const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
+            const void *medium = nullptr; ///< the exit point's layer where it looks up flesh where light enters; null for nothing
             int sizeLevel = 0, depthLevel = kCloudNoDepthLevel; ///< on the map: depthLevel is the points' map level
             const surface_map::Instance *map = nullptr; ///< the object's surface map, for a bounded object
             int litLevel = 0; ///< on the map: the level whose cubes are the lit cells
@@ -1333,6 +1334,7 @@ class Trace
             std::vector<char> exitAgreed; ///< whether the light's shadow holds around the exit point
             bool edge = false; ///< the surface runs out within the ring
             std::vector<char> exitStray; ///< on a coarse cloud, whether the light's shadow at the exit point differs from its neighbours'
+            bool exitShadowed = false; ///< every light on the exit point's outer side is blocked there
             mutable std::vector<double> entryEtas; ///< per light of the exit point's part, its entry IOR, while entryEtasKept
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
@@ -1439,8 +1441,8 @@ class Trace
         bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
                                                const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,
                                                TraceTicket& ticket, std::uint64_t key, MathColour& diffuse);
-        MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
-                                              TraceTicket& ticket, std::uint64_t key);
+        MathColour ComputeCloudExitIrradiance(const Intersection& out, const Vector3d& n, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud,
+                                              bool coarse, TraceTicket& ticket, std::uint64_t key);
         PreciseMathColour ComputeCloudNearField(const Intersection& out, const Vector3d& base, const Vector3d& n, SubsurfaceCloud& cloud,
                                                 const SubsurfaceProfile& profile, double radius, TraceTicket& ticket, std::uint64_t key);
         MathColour ComputeCloudExitPhotons(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);
@@ -1467,12 +1469,14 @@ class Trace
         bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
+        /// Where the material ends along the ray; with a limit, the first crossing at or past it may stand in for the exit.
         SubsurfaceInternalBoundary SubsurfaceInternalBoundaryAt(const Vector3d& point, const Vector3d& direction,
-            ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket);
+            ConstObjectPtr object, ObjectPtr whole, TraceTicket& ticket, double limit = HUGE_VAL);
         /// face: the surface normal when point lies on the material's surface, zero for a start inside it.
         bool SubsurfaceInternalConnection(const LightSource& light, const Vector3d& point, const Vector3d& toward,
             double distance, ConstObjectPtr object, ConstObjectPtr whole, TraceTicket& ticket, const Vector3d& face);
-        bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
+        /// Whether point lies in object's material: inside its one body when it has one, else in its interior.
+        bool ContainsSubsurfaceMaterial(const Vector3d& point, ConstObjectPtr object, PreparedSetId preparedSetId);
         /// The placed objects that carry a material, whose union ContainsSubsurfaceMaterial tests; `whole` always among them.
         const std::vector<ObjectPtr>& SubsurfaceMaterialBodies(const Interior* interior, ObjectPtr whole, PreparedSetId preparedSetId);
         std::map<std::tuple<PreparedSetId, const Interior*, ObjectPtr>, std::vector<ObjectPtr>> ssltMaterialBodies;
@@ -1487,6 +1491,14 @@ class Trace
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
                                   std::uint64_t key);
+        /// The part of a layer's flesh that light entering anywhere on it looks up: its finish, depths and skin pigment.
+        void SetUpEntryFlesh(SubsurfaceFlesh& flesh, const TEXTURE *layer) const;
+        /// Whether a part of a subsurface body may look up flesh or skin where light enters.
+        bool SubsurfaceLooksUpEntry(ConstObjectPtr part) const;
+        /// The texture layer whose flesh light entering at a hit looks up, from the hit's own part; null for none.
+        const TEXTURE *SubsurfaceEntryLayer(const Intersection& hit, const Vector3d& outward);
+        /// While lighting a job of cloud points: the entry flesh of each layer met, so that it is set up once.
+        std::vector<std::pair<const TEXTURE*, SubsurfaceFlesh>> ssltEntryFlesh;
         MathColour ComputeSubsurfaceSkin(const SubsurfaceFlesh& flesh, const Vector3d& point);
         void ComputeSubsurfaceEntry(const SubsurfaceFlesh& flesh, const Vector3d& point, const Vector3d& inward, double draw, SubsurfaceEntry& entry);
         bool SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, double eta, Vector3d& refracted);

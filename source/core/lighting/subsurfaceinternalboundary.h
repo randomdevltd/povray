@@ -64,11 +64,13 @@ inline double SubsurfaceBoundsReach(const Vector3d& point, const Vector3d& direc
 // its length times the cosine there) has no decidable side and takes its neighbours'; on a grazing ray that covers the
 // start surface found again a rounding error ahead. The exit is the crossing that opens the first run without material.
 // Shift moves only the geometry query backwards; physical distances are measured from point. `fail` throws with the
-// caller's description.
+// caller's description. A caller asking only whether the material reaches `limit` gets the first crossing past it
+// once every run before it holds material, without the walk to the exit.
 template<typename Find, typename Owns, typename Contains, typename Outward, typename Fail>
 SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point, const Vector3d& direction,
     TraceTicket& ticket, double shift, double extent, double reach,
-    Find&& find, Owns&& owns, Contains&& contains, Outward&& outward, Fail&& fail)
+    Find&& find, Owns&& owns, Contains&& contains, Outward&& outward, Fail&& fail,
+    double limit = std::numeric_limits<double>::infinity())
 {
     SubsurfaceInternalRootQuery query(point, direction, shift);
     Ray ray(ticket, query.origin, direction, Ray::SubsurfaceRay);
@@ -109,6 +111,8 @@ SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point,
         const bool material = decided && contains(point + direction * (0.5 * (start + end)));
         if (decided && !material)
             return leave(crossing);
+        if (found && (end > limit) && (!opened || material))
+            return SubsurfaceInternalBoundary{end, point + direction * end, direction};
         if (!found)
         {
             if (!opened)
