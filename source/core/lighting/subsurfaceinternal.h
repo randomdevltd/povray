@@ -47,6 +47,25 @@ SubsurfaceInternalBoundary SubsurfaceInternalExit(Boundary& boundary, const Vect
 /// for every starting ray, as the collision forgets it). The two parts sum to the whole in expectation.
 enum class SubsurfaceInternalPart { kAll, kUncollided, kCollided };
 
+/// Russian roulette at every event: a path survives with its weight relative to the weight it started with, at most
+/// certainly, and divides by that chance, so it is unbiased and the weight it carries never falls below its start. A
+/// path whose weight has not fallen draws nothing.
+template<typename Draw>
+bool SubsurfaceInternalSurvives(double& throughput, double start, Draw& draw)
+{
+    const double survival = throughput / start;
+    if (survival >= 1.0) return true;
+    if (draw() >= survival) return false;
+    throughput = start;
+    return true;
+}
+
+// The walk ends by physics alone: absorption ends it through roulette, and a walk in a body of finite bounds leaves it
+// through its surface, where Fresnel transmission is above zero for some directions at any finite relative index. With
+// little absorption in an optically large body a walk is long (about the square of the body's optical size in
+// scattering events); that is the cost of the light diffusing out, and the boundary search lets the render stop meanwhile.
+// The one walk that cannot end is a boundary that returns the start point under total internal reflection with no
+// loss, which makes no progress; that is a boundary fault and throws.
 template<typename Boundary, typename Source, typename Connect, typename Draw, typename Bounce>
 double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     double absorption, double scattering, double relativeIor,
@@ -59,14 +78,10 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
         throw std::invalid_argument("Internal subsurface transport requires finite homogeneous coefficients");
     const double albedo = scattering / extinction;
     double radiance = 0.0, throughput = 1.0;
+    const double start = throughput;
     bool gatherSegment = true, collided = false;
-    size_t events = 0;
     for (;;)
     {
-        // Survival is at most 0.95 from event 16, so a correct walk reaches 4096 events with probability below 1e-90.
-        if (events == 4096)
-            throw std::runtime_error("Internal subsurface walk reached 4096 scattering and reflection events, which roulette "
-                                     "makes impossible for a correct walk: this is a renderer bug, not a scene limit; please report it");
         // a segment that gathers needs its whole length; otherwise only whether the material outlasts the free flight
         double distance = 0.0;
         auto freeFlight = [&]()
@@ -87,18 +102,15 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
             radiance += throughput * source(position, direction, hit.distance, extinction);
             const double cosine = dot(direction, hit.normal);
             if (!(cosine > 0.0)) throw std::runtime_error("Internal subsurface normal must point outwards");
-            throughput *= std::exp(-extinction * hit.distance) * SubsurfaceInternalFresnel(cosine, relativeIor);
-            if (!(throughput > 0.0)) return radiance;
-            throughput *= bounce(hit.position);
+            const double kept = std::exp(-extinction * hit.distance) * SubsurfaceInternalFresnel(cosine, relativeIor) * bounce(hit.position);
+            if (!(kept < 1.0) && !(hit.distance > 0.0))
+                throw std::runtime_error("Internal subsurface walk reflected without loss where it started, so it makes no progress: "
+                                         "the boundary search returned its start point");
+            throughput *= kept;
             if (!(throughput > 0.0)) return radiance;
             position = hit.position;
             direction -= hit.normal * (2.0 * cosine);
-            // its weight only falls, so roulette, at the walk's own survival cap, starts at its first reflection: a chain
-            // trapped by total internal reflection would otherwise query the boundary sixteen times for almost nothing
-            ++events;
-            const double survival = std::min(0.95, throughput);
-            if (draw() >= survival) return radiance;
-            throughput /= survival;
+            if (!SubsurfaceInternalSurvives(throughput, start, draw)) return radiance;
             continue;
         }
         if (gatherSegment)
@@ -124,19 +136,19 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
         {
             const double cosine = dot(direction, hit.normal);
             if (!(cosine > 0.0)) throw std::runtime_error("Internal subsurface normal must point outwards");
-            if (draw() >= SubsurfaceInternalFresnel(cosine, relativeIor)) return radiance;
-            throughput *= bounce(hit.position);
+            const double fresnel = SubsurfaceInternalFresnel(cosine, relativeIor);
+            if (draw() >= fresnel) return radiance;
+            const double kept = bounce(hit.position);
+            if (!(fresnel < 1.0) && !(kept < 1.0) && !(hit.distance > 0.0))
+                throw std::runtime_error("Internal subsurface walk reflected without loss where it started, so it makes no progress: "
+                                         "the boundary search returned its start point");
+            throughput *= kept;
             if (!(throughput > 0.0)) return radiance;
             position = hit.position;
             direction -= hit.normal * (2.0 * cosine);
             gatherSegment = true;
         }
-        if (++events >= 16)
-        {
-            const double survival = std::min(0.95, throughput);
-            if (draw() >= survival) return radiance;
-            throughput /= survival;
-        }
+        if (!SubsurfaceInternalSurvives(throughput, start, draw)) return radiance;
     }
 }
 

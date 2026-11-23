@@ -122,26 +122,33 @@ int main()
             [] { return 0.99; }), -std::expm1(-2.0) / 2.0);
     }
 
-    // Collision NEE owns the next straight segment; a reflected continuation owns its new segment.
-    const std::vector<double> sequence{0.1, 0.5, 0.5, 0.99, 0.0, 0.99, 0.99};
+    // Collision NEE owns the next straight segment; a reflected continuation owns its new segment. Roulette follows each
+    // event at the weight's fall since the start (here the albedo 0.5, survived by the draw 0.0), and restores the weight.
+    const std::vector<double> sequence{0.1, 0.5, 0.5, 0.0, 0.99, 0.0, 0.99, 0.99};
     size_t index = 0, segments = 0, connections = 0;
     const double reflected = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
         1.0, 1.0, 1.5, boundary,
         [&](const Vector3d&, const Vector3d&, double, double) { ++segments; return 1.0; },
         [&](const Vector3d&, double) { ++connections; return 2.0; },
         [&] { assert(index < sequence.size()); return sequence[index++]; });
-    Near(reflected, 2.5);
+    Near(reflected, 3.0);
     assert(segments == 2 && connections == 1 && index == sequence.size());
 
-    // An internal reflection keeps what the skin it crosses there passes.
-    index = 0;
-    const double skinned = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
-        1.0, 1.0, 1.5, boundary,
-        [&](const Vector3d&, const Vector3d&, double, double) { return 1.0; },
-        [&](const Vector3d&, double) { return 2.0; },
-        [&] { assert(index < sequence.size()); return sequence[index++]; },
-        [](const Vector3d&) { return 0.25; });
-    Near(skinned, 2.0 + 0.5 * 0.25);
+    // An internal reflection keeps what the skin it crosses there passes, as the walk's chance to go on: the draw 0.0
+    // survives the skin's 0.25 and gathers the reflected segment, the draw 0.3 ends the walk there.
+    for (double survive : {0.0, 0.3})
+    {
+        const std::vector<double> skinSequence{0.1, 0.5, 0.5, 0.0, 0.99, 0.0, survive, 0.99, 0.99};
+        index = 0;
+        const double skinned = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
+            1.0, 1.0, 1.5, boundary,
+            [&](const Vector3d&, const Vector3d&, double, double) { return 1.0; },
+            [&](const Vector3d&, double) { return 2.0; },
+            [&] { assert(index < skinSequence.size()); return skinSequence[index++]; },
+            [](const Vector3d&) { return 0.25; });
+        Near(skinned, (survive < 0.25) ? 3.0 : 2.0);
+        assert(index == ((survive < 0.25) ? skinSequence.size() : 7));
+    }
 
     // In an infinite homogeneous source, L=j/sigma_a, independent of scattering.
     std::mt19937_64 generator(736411);
@@ -166,16 +173,19 @@ int main()
     }
     catch (const std::invalid_argument&) { rejected = true; }
     assert(rejected);
-    // A defective stream that always survives roulette must throw, never hang or return a truncated estimate.
+    // A lossless reflection where the walk started makes no progress (the boundary returned its start under total internal
+    // reflection): it must throw, never hang.
     rejected = false;
     try
     {
-        SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1), 0.0, 1.0, 1.0,
-            distant, source, zero, [] { return 0.0; });
+        auto stuck = [](const Vector3d& p, const Vector3d& d)
+        { return SubsurfaceInternalBoundary{0.0, p, (d + Vector3d(d[Y], d[Z], d[X]) * 10.0).normalized()}; };
+        SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1), 0.0, 1.0, 1.5,
+            stuck, source, zero, [] { return 0.5; }, [](const Vector3d&) { return 1.0; }, SubsurfaceInternalPart::kUncollided);
     }
     catch (const std::runtime_error& e)
     {
-        rejected = std::string(e.what()).find("this is a renderer bug") != std::string::npos;
+        rejected = std::string(e.what()).find("makes no progress") != std::string::npos;
     }
     assert(rejected);
     std::cout << "Internal subsurface analytical transport passed\n";
