@@ -913,7 +913,10 @@ void View::StartRender(POVMS_Object& renderOptions)
     // a failure in an early entry must not be cleared by AppendTask while later entries are still queued
     const auto queuing = renderTasks.Hold();
 
-    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceMemory);
+    // every view of the scene shares its subsurface clouds, keeping apart only what depends on the view
+    if (!viewData.sceneData->subsurfaceStore)
+        viewData.sceneData->subsurfaceStore = std::make_shared<SubsurfaceStore>(viewData.sceneData->subsurfaceMemory);
+    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceStore);
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
     {
         // each view of the scene starts from the settings parsing left, which this one narrows below
@@ -1319,6 +1322,8 @@ void View::StartRender(POVMS_Object& renderOptions)
     const BackendSceneData::ShotPhotons* shot = photonScene.shotPhotons.get();
     const bool reusePhotons = shootPhotons && (shot != nullptr) && (shot->sets == viewData.photonSets) && (shot->seed == seed) &&
                               (shot->threads == maxRenderThreads);
+    // subsurface cells that gather photons are kept apart for each shooting of the maps
+    viewData.subsurfaceCache->PhotonsShot(!reusePhotons);
     if (reusePhotons)
     {
         photonScene.photonSettings = shot->settings;
@@ -1673,6 +1678,9 @@ void View::GetStatistics(POVMS_Object& renderStats)
                           cloud.termPoints[kStepDiffusion], cloud.termCells[kStepObject], cloud.termPoints[kStepObject],
                           cloud.termCells[kStepFinest], cloud.termPoints[kStepFinest], cloud.termCells[kStepMap], cloud.termPoints[kStepMap],
                           (unsigned long long)cloud.digest);
+            if (viewData.subsurfaceCache->View() > 1)
+                messages.Info("Method 2 point cloud shared by this scene's views: %.0f of the %.0f cells this view used were built for an "
+                              "earlier one; the memory above is theirs together.", cloud.reused, cloud.cells);
             if (viewData.sceneData->surfaceMaps)
             {
                 std::size_t mapCells, traced, found, maps;

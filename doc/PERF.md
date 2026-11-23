@@ -586,6 +586,16 @@ built take jobs from its building, so it does not hold them up; an exception in 
 instead of holding up the threads waiting on it, and the render stops. Every cube is built at its own spacing, from the pixel, diffusion and
 object rules alone, so the cloud, and with it the image, is the same whichever threads build it and in whatever order.
 
+**Cameras of one job.** A scene that renders several cameras from one parse keeps one set of clouds for all of them: a
+cube one camera built serves the cameras after it. A cube is keyed by what it depends on, so a camera never reads one
+built differently from what its own render alone would build. Cubes on a surface map, whose spacing comes from the
+object's `domain_cells`, depend on no camera and are shared. Cubes off the map (an unbounded object such as a plane) are
+spaced by the camera's pixel, so they are kept per camera position and pixel, and cameras that space points alike share
+them. Cubes carrying subsurface radiosity read their own view's radiosity cache and stay with that view, and cubes
+gathering photons are kept apart for each shooting of the photon maps (a camera that reuses the maps shares them). Each
+camera's statistics count the cubes it used, with the same digest as a render of it alone, and a line says how many of
+them an earlier camera built; the memory figures are those of all cameras' clouds together.
+
 Two global levers make a large render fit. `spacing` multiplies every cube's step (the pixel, diffusion and object terms
 alike; only the 1/1024-of-a-cube floor, a lower bound, is left as it is), so points and memory go about as
 1/spacing²: spacing 4 builds about a sixteenth of the points, and the cloud resolves the diffusion's detail that much
@@ -598,7 +608,7 @@ then gets cubes as large as itself with points three z_r apart, so its cloud can
 1024 steps of three z_r, its finest floor (a 1024th of the side) sets the step instead, a warning counts those cubes,
 and their edges are drawn near each exit point as on a coarse cloud.
 
-All clouds together may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`; without it they are
+All clouds together, those of every camera of the job, may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`; without it they are
 uncapped, and a machine that cannot hold them reports out of memory, as it does for any other part of the render).
 Each finished cube's footprint counts against it in real bytes, by the capacity of what it holds: the cube itself,
 points (about 56 bytes each), hierarchy nodes, per-light shadows (12 bytes per point and light), radiosity, entry and

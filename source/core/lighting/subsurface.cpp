@@ -369,7 +369,8 @@ size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
     size_t h = std::hash<const void*>()(k.object) ^
                (std::hash<size_t>()(k.preparedSetId) * 65599u) ^ std::hash<double>()(k.lightSamples);
-    for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel), std::int64_t(k.normals) })
+    for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel), std::int64_t(k.normals),
+                            std::int64_t(k.camera), std::int64_t(k.view), std::int64_t(k.photonShot) })
         h = h * 1000003u ^ std::hash<std::int64_t>()(v);
     return h;
 }
@@ -501,21 +502,120 @@ bool SubsurfacePhotonBoundaries::Unfold(const float folded[2], Vector3d& normal)
     return true;
 }
 
-std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey& key, bool& build)
+std::shared_ptr<SubsurfaceCell> SubsurfaceStore::Acquire(const SubsurfaceCellKey& key, bool& build, std::uint64_t view)
 {
     std::lock_guard<std::mutex> lock(mutex);
     std::shared_ptr<SubsurfaceCell>& slot = cells[key];
     build = (slot == nullptr);
     if (build)
+    {
         slot = std::make_shared<SubsurfaceCell>();
+        slot->view = view;
+    }
     return slot;
 }
 
-SubsurfaceCache::SubsurfaceCache(double capMB) :
+SubsurfaceStore::SubsurfaceStore(double capMB) :
     cap(capMB >= 1.0 ? size_t(capMB * 1048576.0) : std::numeric_limits<size_t>::max())
 {}
 
-void SubsurfaceCache::ChargeMap(const void *map, size_t bytes)
+std::uint64_t SubsurfaceStore::BeginView()
+{
+    // views of a scene render one after another, so no thread works on a cell here
+    std::vector<std::pair<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>>> all;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        progress = 0.0;
+        all.assign(cells.begin(), cells.end());
+    }
+    std::vector<std::pair<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>>> dropped;
+    for (const auto& slot : all)
+    {
+        SubsurfaceCell& cell = *slot.second;
+        std::lock_guard<std::mutex> cellLock(cell.mutex);
+        if ((cell.stage != SubsurfaceCell::kReady) || !cell.usable)
+            dropped.push_back(slot);
+        else if (cell.read)
+            for (size_t i = 0; i < (cell.nodes.size() + 31) / 32; i++)
+                cell.read[i].store(0, std::memory_order_relaxed);
+    }
+    std::lock_guard<std::mutex> lock(mutex);
+    for (const auto& slot : dropped)
+    {
+        SubsurfaceCell& cell = *slot.second;
+        charged -= std::min(charged, cell.charged);
+        staged -= std::min(staged, cell.staged);
+        cell.charged = cell.staged = 0;
+        cell.settled = true;
+        cells.erase(slot.first);
+    }
+    return ++views;
+}
+
+std::uint64_t SubsurfaceStore::CameraId(const Vector3d& location, double pixelSize, double pixelAngle)
+{
+    const std::array<double, 5> spacing = {{ location[X], location[Y], location[Z], pixelSize, pixelAngle }};
+    std::lock_guard<std::mutex> lock(mutex);
+    auto found = std::find(cameras.begin(), cameras.end(), spacing);
+    if (found == cameras.end())
+        found = cameras.insert(cameras.end(), spacing);
+    return std::uint64_t(found - cameras.begin()) + 1;
+}
+
+std::uint64_t SubsurfaceStore::PhotonShot(bool fresh)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (fresh || (photonShots == 0))
+        ++photonShots;
+    return photonShots;
+}
+
+void SubsurfaceStore::Progress(double fraction, size_t& held, size_t& capBytes)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    progress = fraction;
+    held = charged;
+    capBytes = cap;
+}
+
+void SubsurfaceStore::Totals(SubsurfaceCloudStatistics& stats) const
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (const auto& map : mapBytes)
+            stats.mapBytes += double(map.second);
+        stats.peakBytes = double(peak);
+        stats.chargedBytes = double(charged);
+    }
+    std::lock_guard<std::mutex> lock(tablesMutex);
+    stats.boundaries = double(tableBoundaries);
+    stats.layers = double(tableLayers);
+    stats.evicted = double(tablesEvicted);
+    stats.tablesPeakBytes = double(tableBytes->peak.load());
+}
+
+SubsurfaceCache::SubsurfaceCache(double capMB) :
+    store(std::make_shared<SubsurfaceStore>(capMB)), view(1)
+{}
+
+SubsurfaceCache::SubsurfaceCache(const std::shared_ptr<SubsurfaceStore>& store) :
+    store(store), view(store->BeginView())
+{}
+
+std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey& key, bool& build)
+{
+    std::shared_ptr<SubsurfaceCell> cell = store->Acquire(key, build, view);
+    std::lock_guard<std::mutex> lock(mutex);
+    used.emplace(cell.get(), cell);
+    return cell;
+}
+
+void SubsurfaceCache::PhotonsShot(bool fresh)
+{
+    photonShot = store->PhotonShot(fresh);
+}
+
+void SubsurfaceStore::ChargeMap(const void *map, size_t bytes)
 {
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -534,7 +634,7 @@ void SubsurfaceCache::ChargeMap(const void *map, size_t bytes)
     CheckCap();
 }
 
-void SubsurfaceCache::Charge(SubsurfaceCell& cell)
+void SubsurfaceStore::Charge(SubsurfaceCell& cell)
 {
     size_t bytes = cell.Bytes();
     {
@@ -558,7 +658,7 @@ void SubsurfaceCache::Charge(SubsurfaceCell& cell)
     CheckCap();
 }
 
-void SubsurfaceCache::Stage(SubsurfaceCell& cell, size_t bytes)
+void SubsurfaceStore::Stage(SubsurfaceCell& cell, size_t bytes)
 {
     std::lock_guard<std::mutex> lock(mutex);
     if (cell.settled)
@@ -568,7 +668,7 @@ void SubsurfaceCache::Stage(SubsurfaceCell& cell, size_t bytes)
     peak = std::max(peak, charged + staged);
 }
 
-void SubsurfaceCache::Refund(SubsurfaceCell& cell)
+void SubsurfaceStore::Refund(SubsurfaceCell& cell)
 {
     std::lock_guard<std::mutex> lock(mutex);
     charged -= std::min(charged, cell.charged);
@@ -577,12 +677,12 @@ void SubsurfaceCache::Refund(SubsurfaceCell& cell)
     cell.settled = true;
 }
 
-size_t SubsurfaceCache::TableKeyHash::operator()(const TableKey& key) const
+size_t SubsurfaceStore::TableKeyHash::operator()(const TableKey& key) const
 {
     return (std::hash<double>()(key.eta) * 1000003u ^ std::hash<int>()(key.step)) * 1000003u ^ std::hash<int>()(key.k);
 }
 
-std::shared_ptr<const void> SubsurfaceCache::Table(const TableKey& key, size_t bytes, const std::function<std::shared_ptr<const void>()>& build)
+std::shared_ptr<const void> SubsurfaceStore::Table(const TableKey& key, size_t bytes, const std::function<std::shared_ptr<const void>()>& build)
 {
     {
         std::lock_guard<std::mutex> lock(tablesMutex);
@@ -619,7 +719,7 @@ std::shared_ptr<const void> SubsurfaceCache::Table(const TableKey& key, size_t b
     return table;
 }
 
-std::shared_ptr<const float> SubsurfaceCache::Layer(const SubsurfaceBoundary& boundary, int step, int k)
+std::shared_ptr<const float> SubsurfaceStore::Layer(const SubsurfaceBoundary& boundary, int step, int k)
 {
     const size_t bytes = SubsurfaceBoundary::kLayerFloats * sizeof(float);
     std::shared_ptr<TableBytes> counted = tableBytes;
@@ -666,7 +766,7 @@ bool SubsurfaceCache::Help(Trace& trace, std::chrono::milliseconds wait)
     return ran;
 }
 
-std::shared_ptr<const SubsurfaceBoundary> SubsurfaceCache::Boundary(double eta)
+std::shared_ptr<const SubsurfaceBoundary> SubsurfaceStore::Boundary(double eta)
 {
     const size_t bytes = SubsurfaceBoundary::Bytes();
     std::shared_ptr<TableBytes> counted = tableBytes;
@@ -680,7 +780,7 @@ std::shared_ptr<const SubsurfaceBoundary> SubsurfaceCache::Boundary(double eta)
     }));
 }
 
-bool SubsurfaceCache::CellFits(size_t bytes)
+bool SubsurfaceStore::CellFits(size_t bytes)
 {
     if (bytes <= cap)
         return true;
@@ -732,7 +832,7 @@ std::vector<SubsurfaceCache::BudgetObject> SubsurfaceCache::Budgets() const
     return list;
 }
 
-bool SubsurfaceCache::ClosedMesh(const void *mesh, const std::function<bool()>& compute)
+bool SubsurfaceStore::ClosedMesh(const void *mesh, const std::function<bool()>& compute)
 {
     std::lock_guard<std::mutex> lock(closedMeshesMutex);
     auto found = closedMeshes.find(mesh);
@@ -741,7 +841,7 @@ bool SubsurfaceCache::ClosedMesh(const void *mesh, const std::function<bool()>& 
     return closedMeshes[mesh] = compute();
 }
 
-void SubsurfaceCache::CheckCap() const
+void SubsurfaceStore::CheckCap() const
 {
     size_t needed;
     double at;
@@ -766,12 +866,14 @@ void SubsurfaceCache::CheckCap() const
 
 bool SubsurfaceCache::Progress(double fraction, double& heldMB, double& projectedMB, double& capMB)
 {
+    size_t charged, cap;
+    store->Progress(fraction, charged, cap);
     std::lock_guard<std::mutex> lock(mutex);
-    progress = fraction;
     if (projected || !(fraction >= 0.25))
         return false;
     // Cells already built serve the rest of the image, so the clouds grow more slowly as it goes: the projection takes
     // the rate between a quarter and a half of the image, which still overshoots, rather than the first quarter's mean.
+    // The clouds held include earlier views', which the cap counts too.
     if (firstFraction == 0.0)
     {
         firstFraction = fraction;
@@ -790,23 +892,13 @@ bool SubsurfaceCache::Progress(double fraction, double& heldMB, double& projecte
 SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
 {
     SubsurfaceCloudStatistics stats;
+    store->Totals(stats);
     std::vector<std::shared_ptr<SubsurfaceCell>> all;
     {
         std::lock_guard<std::mutex> lock(mutex);
-        for (const auto& map : mapBytes)
-            stats.mapBytes += double(map.second);
-        stats.peakBytes = double(peak);
-        stats.chargedBytes = double(charged);
-        all.reserve(cells.size());
-        for (const auto& slot : cells)
+        all.reserve(used.size());
+        for (const auto& slot : used)
             all.push_back(slot.second);
-    }
-    {
-        std::lock_guard<std::mutex> lock(tablesMutex);
-        stats.boundaries = double(tableBoundaries);
-        stats.layers = double(tableLayers);
-        stats.evicted = double(tablesEvicted);
-        stats.tablesPeakBytes = double(tableBytes->peak.load());
     }
     for (const std::shared_ptr<SubsurfaceCell>& cell : all)
     {
@@ -815,6 +907,7 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
         {
             double points = double(cell->points.size());
             stats.cells += 1.0;
+            stats.reused += (cell->view != view) ? 1.0 : 0.0;
             stats.points += points;
             stats.read += double(cell->PointsRead());
             stats.termCells[cell->term] += 1.0;
@@ -849,15 +942,17 @@ void SubsurfaceCache::SetCamera(const Vector3d& location, double pixelSize, doub
     cameraLocation = location;
     cameraPixelSize = pixelSize;
     cameraPixelAngle = pixelAngle;
+    cameraId = store->CameraId(location, pixelSize, pixelAngle);
     cameraSet = true;
 }
 
-bool SubsurfaceCache::GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const
+bool SubsurfaceCache::GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle, std::uint64_t& id) const
 {
     std::lock_guard<std::mutex> lock(mutex);
     location = cameraLocation;
     pixelSize = cameraPixelSize;
     pixelAngle = cameraPixelAngle;
+    id = cameraId;
     return cameraSet;
 }
 

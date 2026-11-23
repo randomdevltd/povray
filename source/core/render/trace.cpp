@@ -9954,7 +9954,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
         return false;
     cloud.unserved = kUnservedCoordinates;
     if (!ssltCameraKnown)
-        ssltCameraKnown = threadData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle);
+        ssltCameraKnown = threadData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle, ssltCameraId);
 
     // Diffusion that stays within about a pixel is taken as lit like the exit point.
     SurfaceDifferentials diff;
@@ -10069,6 +10069,10 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     {
         SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(cx), std::int64_t(cy), std::int64_t(cz), cloud.photons,
                                   cloud.radiosity, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
+        // what of the view the cell depends on: the camera off the map, the radiosity cache, the photon maps
+        key.camera = cloud.map ? 0 : ssltCameraId;
+        key.view = cloud.radiosity ? threadData->subsurfaceCache->View() : 0;
+        key.photonShot = cloud.photons ? threadData->subsurfaceCache->PhotonShot() : 0;
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
