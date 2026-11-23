@@ -165,6 +165,39 @@ int main()
                 [&] { return uniform(generator); });
         Near(sum / 100000, 1.0, 0.008);
     }
+    // In a sphere of radius 1 with internal reflection, the uncollided and collided parts sum to the whole walk in
+    // expectation; the collided part's first collision is drawn within each segment, so in an optically thin sphere every
+    // path collides and none returns zero.
+    auto sphere = [](const Vector3d& p, const Vector3d& d)
+    {
+        const double b = dot(p, d), c = p.lengthSqr() - 1.0;
+        const double t = -b + std::sqrt(std::max(0.0, b * b - c));
+        const Vector3d at = p + d * t;
+        return SubsurfaceInternalBoundary{t, at, at.normalized()};
+    };
+    auto falling = [](const Vector3d& p, double extinction) { return (1.0 - 0.5 * p.length()) / extinction; };
+    for (double depth : {0.6, 6.0})
+    {
+        const Vector3d entry(0.0, 0.0, 1.0), inward = Vector3d(0.3, 0.0, -1.0).normalized();
+        const size_t walks = 200000;
+        double mean[3] = {}, square[3] = {};
+        size_t zeros = 0;
+        const SubsurfaceInternalPart parts[3] = {SubsurfaceInternalPart::kAll, SubsurfaceInternalPart::kUncollided, SubsurfaceInternalPart::kCollided};
+        for (int k = 0; k < 3; ++k)
+            for (size_t w = 0; w < walks; ++w)
+            {
+                const double value = SampleSubsurfaceInternalRadiance(entry, inward, 0.1 * depth, 0.9 * depth, 1.3, sphere, source, falling,
+                    [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, parts[k]);
+                mean[k] += value / walks;
+                square[k] += value * value / walks;
+                if ((k == 2) && !(value > 0.0)) ++zeros;
+            }
+        double spread = 0.0;
+        for (int k = 0; k < 3; ++k) spread += (square[k] - mean[k] * mean[k]) / walks;
+        std::cout << "sphere of optical radius " << depth << ": whole " << mean[0] << ", parts " << mean[1] << " + " << mean[2] << '\n';
+        Near(mean[1] + mean[2], mean[0], 4.0 * std::sqrt(spread));
+        assert(zeros == 0);
+    }
     bool rejected = false;
     try
     {
