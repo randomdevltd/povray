@@ -42,10 +42,16 @@ SubsurfaceInternalBoundary SubsurfaceInternalExit(Boundary& boundary, const Vect
         return boundary(position, direction);
 }
 
+/// Which of a path's light a walk returns: all of it, only the emission it gathers before its first collision (along the
+/// starting ray and its internal reflections, which depends on that ray), or only what follows a collision (nearly the same
+/// for every starting ray, as the collision forgets it). The two parts sum to the whole in expectation.
+enum class SubsurfaceInternalPart { kAll, kUncollided, kCollided };
+
 template<typename Boundary, typename Source, typename Connect, typename Draw, typename Bounce>
 double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     double absorption, double scattering, double relativeIor,
-    Boundary&& boundary, Source&& source, Connect&& connect, Draw&& draw, Bounce&& bounce)
+    Boundary&& boundary, Source&& source, Connect&& connect, Draw&& draw, Bounce&& bounce,
+    SubsurfaceInternalPart part = SubsurfaceInternalPart::kAll)
 {
     const double extinction = absorption + scattering;
     if (!(absorption >= 0.0) || !(scattering >= 0.0) || !(extinction > 0.0) ||
@@ -53,7 +59,7 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
         throw std::invalid_argument("Internal subsurface transport requires finite homogeneous coefficients");
     const double albedo = scattering / extinction;
     double radiance = 0.0, throughput = 1.0;
-    bool gatherSegment = true;
+    bool gatherSegment = true, collided = false;
     size_t events = 0;
     for (;;)
     {
@@ -74,15 +80,38 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
                                                 gatherSegment ? std::numeric_limits<double>::infinity() : distance);
         if (!(hit.distance >= 0.0) || !std::isfinite(hit.distance))
             throw std::runtime_error("Internal subsurface transport requires an enclosing boundary");
+        if (part == SubsurfaceInternalPart::kUncollided)
+        {
+            // the uncollided part is carried in expectation: the segment's emission, then on at the chance of crossing it
+            // unscattered and of reflecting where it ends
+            radiance += throughput * source(position, direction, hit.distance, extinction);
+            const double cosine = dot(direction, hit.normal);
+            if (!(cosine > 0.0)) throw std::runtime_error("Internal subsurface normal must point outwards");
+            throughput *= std::exp(-extinction * hit.distance) * SubsurfaceInternalFresnel(cosine, relativeIor);
+            if (!(throughput > 0.0)) return radiance;
+            throughput *= bounce(hit.position);
+            if (!(throughput > 0.0)) return radiance;
+            position = hit.position;
+            direction -= hit.normal * (2.0 * cosine);
+            // its weight only falls, so roulette, at the walk's own survival cap, starts at its first reflection: a chain
+            // trapped by total internal reflection would otherwise query the boundary sixteen times for almost nothing
+            ++events;
+            const double survival = std::min(0.95, throughput);
+            if (draw() >= survival) return radiance;
+            throughput /= survival;
+            continue;
+        }
         if (gatherSegment)
         {
-            radiance += throughput * source(position, direction, hit.distance, extinction);
+            if (collided || (part == SubsurfaceInternalPart::kAll))
+                radiance += throughput * source(position, direction, hit.distance, extinction);
             freeFlight();
         }
         if (distance < hit.distance)
         {
             position += direction * distance;
             throughput *= albedo;
+            collided = true;
             if (!(throughput > 0.0)) return radiance;
             radiance += throughput * connect(position, extinction);
             const double cosine = 1.0 - 2.0 * draw();

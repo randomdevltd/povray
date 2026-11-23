@@ -335,6 +335,8 @@ typedef enum INTSTATS
     Subsurface_Cloud_Hidden,
     Subsurface_Cloud_Near_Field, ///< shading points that sampled the near field for a shadow edge between coarse points
     Subsurface_Cloud_Near_Rays, ///< the shadow rays that took
+    Subsurface_Cloud_Internal_Read, ///< shading points that read their buried lights' light from the cloud
+    Subsurface_Cloud_Internal_Walked, ///< shading points of a body with a buried light that walked their own paths for it
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample
