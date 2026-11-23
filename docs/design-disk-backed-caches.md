@@ -148,20 +148,26 @@ bytes, its state (building, resident, spilled, pinned), a use clock and a pin co
 duration of one lookup, the way subsurface cells are acquired today. Eviction is least-recently-used with a second
 chance (CLOCK) over unpinned, complete blocks. An evicted block's memory is released; the next pin loads it again.
 
-**What a block is, per cache.**
+**What a block is, per cache.** A block is a section of the cache's file (section 2): it has its own world-space
+bounds, offset, length and checksum, so it loads, maps or verifies alone. A large cache that covers the whole image,
+such as a fine media grid or a 13 GB subsurface cloud, is never held whole: a region loads only the sections it
+touches.
 
 | Cache | Block |
 |---|---|
 | Subsurface clouds | One cell (the existing integer-cube key) |
 | Surface maps | One cube chunk |
-| Media density, optical and refraction grids | One z slab of 16 to 64 slices, so a lookup touches at most 2 slabs |
-| Light source lattices and bounce grids | A z slab |
+| Media density, optical and refraction grids | A 3D brick of up to 32 x 32 x 32 cells; the brick size is in the index |
+| Light source lattices and bounce grids | A brick of up to 32 cells a side of the lattice's own nodes or cells |
 | Bounce surface nodes | A spatial bucket of the node index |
 | Method 2 photons | One receiver partition |
-| Meshes | One mesh: triangles plus tree |
+| Meshes | One mesh; a mesh above a size limit splits into subtrees of its BVH, each with its box |
 | Image maps | Rows in bands of 64 |
 | Ray-map images | Bands, so a screen tile maps to known bands |
-| Classic photon map | The whole kd-tree array, mapped as one file (see below) |
+| Classic photon map | A subtree of the kd-tree below a fixed depth, each with its box |
+
+Bricks rather than z slabs: a slab spans the whole grid in x and y, so a region at one side of the image would load
+the width of the volume; a brick bounds what it holds on every axis.
 
 **Two ways to page.**
 
@@ -173,17 +179,25 @@ chance (CLOCK) over unpinned, complete blocks. An evicted block's memory is rele
 - *Built lazily during the trace* covers subsurface cells, surface map chunks and optical grids. A block becomes
   spillable when it is complete. Until then it is pinned and charged.
 
-**Caches that cannot be divided.**
+**Caches that stay whole.** Every cache with a spatial layout is sectioned, however large. Only structures that are
+not spatial stay whole and pinned, each for its own reason:
 
-- The scene BVH is small.
-- The radiosity octree is pointer-linked and grows during the final trace.
-- A single huge classic photon kd-tree has no natural sub-blocks, so it is mapped from its file as a whole and the
-  kernel pages it.
+- The scene BVH: every ray starts at its root and descends through its top levels, so every region touches it; it is
+  small in every scene measured.
+- The subsurface layer and boundary tables: they are keyed by material parameters, not by position, and already evict
+  under their own 32 MB cap.
+- A light's sampling tables, the cumulative distribution over its cells and lobes that chooses where a sample lands:
+  a draw anywhere in the image may pick any cell, so the table is needed whole. It is one number or a few per cell,
+  far smaller than the light's own colour lattice, which is sectioned.
+- The cache index itself: the map from section ids to bounds and offsets that selective loading reads first.
 
-These are charged to the budget as pinned. When the pinned total alone exceeds the budget, the render stops before
-the first pixel with an error that lists each pinned cache and its size. This follows today's photon and subsurface
-cap errors, and the render never thrashes silently. Making the radiosity octree spillable (offset-linked, append-only
-blocks) is left for later: no recent production render used radiosity.
+The radiosity octree is spatial but pointer-linked and grows during the final trace. It becomes sectionable once its
+nodes are offset-linked in append-only blocks per top-level octant; until then it is pinned. No recent production
+render used radiosity.
+
+Pinned caches are charged to the budget. When the pinned total alone exceeds the budget, the render stops before the
+first pixel with an error that lists each pinned cache and its size. This follows today's photon and subsurface cap
+errors, and the render never thrashes silently.
 
 **Enforcement order.** Each charge checks resident + charge <= budget. If the check fails, the registry evicts
 unpinned blocks. If it still fails, it waits briefly for pins to drop. As a last resort it overshoots by up to one
@@ -202,11 +216,19 @@ RAM. They keep their behaviour of failing early with a clear message.
 
 - **Directory.** `<state file>.caches/` beside the `.pov-state`, or `Cache_Path=<dir>` when given. It must be on a
   local disk. A network mount is not acceptable, because page faults would turn into network round trips.
-- **File layout.** One file per cache and prepared set. Each file has:
-  - a 4 KiB header: magic, format version, the build ID, the cache key (see section 4), and a digest of the settings
-    that shaped the cache;
-  - blocks aligned to 64 KiB, little-endian, holding offsets, never pointers;
-  - a trailing block index of id, offset, length, bounds and a 64-bit content hash.
+- **File layout.** One file per cache; sections are never split into files of their own. Each file has:
+  - a 4 KiB header: magic, format version, byte order, the build ID, the cache key (see section 4), the section
+    count, the index's offset and checksum, the cache's name and a checksum of the header;
+  - the sections, little-endian, holding offsets, never pointers. A section of a page or more starts on a 4 KiB page
+    boundary, so it can be mapped from the file alone; a smaller one is aligned to 16 bytes. (The first draft said
+    64 KiB; a page is what mapping needs on the platforms in use, and 64 KiB padding bloated the many small bounce
+    sections.);
+  - a trailing section index: per section its offset, length, 64-bit checksum, id, first cell and cell counts, its
+    world-space bounds and a label. A brick's id is its grid's number in the file (high 32 bits) and its brick
+    number; a section that is not part of a grid has an id of all ones and no cells.
+- **Partial loading.** The index is read and checked on its own, and then any subset of sections is read and its
+  checksums checked, without reading the rest. Increment 1 loads every section; increments 3 and 5 load selectively
+  with no format change.
 - **Writes.** Files are written through a temporary file and a rename. That is the pattern the `.povt` mesh tree
   cache already uses (parser/parser_povm.cpp:934), so a file is either complete or absent.
 - **The spill file is the save file.** No second format exists.
@@ -284,8 +306,8 @@ snapshot cannot take, which is a similar check.
 **When.** Each preparation phase writes its caches when it finishes: meshes, media, lights, bounce, photons. Lazily
 built blocks are appended as they complete, and the block index is rewritten at each state-file checkpoint.
 
-**Load.** Before building a cache the engine looks for a file with its key in the cache directory, then in
-`Cache_Path`. It validates the header and the hash of each block. A mismatch means a rebuild and a one-line warning;
+**Load.** Before building a cache the engine looks for a file with its key in the cache directory (`Cache_Path`
+when given, else beside the state file). It validates the header and the hash of each block. A mismatch means a rebuild and a one-line warning;
 a cache is never used silently. A `Cache_Verify=on` mode builds anyway and compares digests, for tests.
 
 **Resume on rented machines.** The job runner carries `<state file>.caches/` the way it carries the state file:
