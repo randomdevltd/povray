@@ -1,6 +1,6 @@
 # Disk-backed render caches: design
 
-Status: design for review. Nothing here is implemented.
+Status: increment 1 (saving and loading prepared caches) is implemented; the rest is design for review.
 
 ## Goal
 
@@ -227,8 +227,17 @@ RAM. They keep their behaviour of failing early with a clear message.
     world-space bounds and a label. A brick's id is its grid's number in the file (high 32 bits) and its brick
     number; a section that is not part of a grid has an id of all ones and no cells.
 - **Partial loading.** The index is read and checked on its own, and then any subset of sections is read and its
-  checksums checked, without reading the rest. Increment 1 loads every section; increments 3 and 5 load selectively
-  with no format change.
+  checksums checked, without reading the rest. Sections are read with `pread` at 64-bit offsets as the preparation asks
+  for them, so a load holds one section beyond the cache it fills. Increment 1 still checks every section's checksum
+  before using any, so that a damaged file is rebuilt rather than failing part way; increments 3 and 5 load selectively
+  with no format change, checking each section as it is read.
+- **Future format work.** Not implemented, needed before increment 3 can slice them:
+  - surface point sets (the `internal`, `o1` and `shade` records of the bounce caches) are stored as whole records and
+    need new layouts, cut into world cells, before they can be loaded by region;
+  - `PreparedCacheFile::Find()` addresses bricks by id; a whole record cannot be found by its label, which a selective
+    load of mixed files will need;
+  - `VolumeIncident` bricks are variable-length, so their size cannot be derived from their cells and they cannot be
+    mapped as fixed-size sections.
 - **Writes.** Files are written through a temporary file and a rename. That is the pattern the `.povt` mesh tree
   cache already uses (parser/parser_povm.cpp:934), so a file is either complete or absent.
 - **The spill file is the save file.** No second format exists.
@@ -242,7 +251,9 @@ RAM. They keep their behaviour of failing early with a clear message.
     proposed reserve is 40 GB; the expected spill is taken from its last run or its declaration.
   - Spill directories are deleted when the job ends.
   - Saved caches kept for a resumable job are deleted when the job finishes or is cancelled.
-  - Saved caches kept for reuse across jobs are pruned nightly, least recently used first, down to a cap of 50 GB.
+  - Saved caches kept for reuse across jobs are pruned least recently used first, down to a cap. Increment 1 does this
+    in the engine with `Cache_Max_Size`, default 20 GiB per directory; the owner's 50 GB disk cap for the host is still
+    open.
   - A host should keep at least 60 GB free in total. The workstation measured here has 11 GB free and needs clean-up
     first.
 
@@ -288,20 +299,42 @@ byte-identical images, with the build digests the engine already prints as the s
 ### 4. Saving caches
 
 **Key.** The parser records every file it opens (scene, includes, images, `.povm`, data files) and hashes its
-contents as it reads. A cache key is the hash of:
+contents as it opens it, with the file's size, modification and change times and inode. When the parse ends each file
+is checked again: one written to in between, by the scene or anything else, turns saving off for that render, so a cache
+is never saved under contents the parse did not read. A cache key is the hash of:
 
-- that input digest;
-- the build ID;
+- each input as a pair of its name as the scene gave it and its contents hash, so swapping the contents of two files
+  changes the key while the same files in another folder do not;
+- the build ID and the versions of the image and compression libraries in use;
 - the `Declare` values;
-- the tag filter;
+- renderer values (`image_width`, `frame_number` and the like) that the scene actually read, by name, through
+  `global`, or from a 4.0 scene. Every symbol lookup passes one point in the symbol table, which records them;
+- the tag filter and the other parse settings;
 - the settings that shape this cache (for example `domain_cells`, bounce passes, photon quality).
 
-A deterministic parser makes this sound without serialising the scene. View-independent caches (fields, bounce,
-lights, media, photons, subsurface cells, meshes) leave the camera out of the key, so other cameras, other jobs and
-later renders of the same scene can reuse them. View-dependent ones (screen pretraces, ray maps) include it. A scene
-that reads the clock or other environment-dependent values makes its caches uncacheable: the parser marks the input
-digest unstable when such a built-in is evaluated. The eager-preparation code already tracks which functions a
-snapshot cannot take, which is a similar check.
+A deterministic parser makes this sound without serialising the scene. A scene that reads the clock (`now`) saves
+nothing.
+
+**Camera-independent keys: future work.** Increment 1 does not deliver them. The camera is written in the scene file,
+so any camera change changes that file's hash and therefore every cache's key. Sharing view-independent caches
+(fields, bounce, lights, media, photons, subsurface cells, meshes) across cameras and jobs needs a key built from what
+each cache actually read, not from the files. A way to get there: key each cache by a hash of the parsed objects,
+lights and media it depends on, computed after the parse, leaving the camera out; view-dependent ones (screen
+pretraces, ray maps) would keep the camera. Until then other cameras rebuild.
+
+**Directory upkeep.** Each cache file is named `<kind><n>-<scene key>-<cache key>.povc`. A build under a new key never
+deletes another key's file, since another job sharing the directory may use it. `Cache_Max_Size` (GiB, default 20)
+caps the directory: past it, the least recently used files go first, a load counting as a use, never a file the
+current render uses. Old keys' files are removed by this cap, not by a rebuild. A writer's temporary file is named
+with its process id and 64 random bits mixed with the time, and created exclusively, so writers in containers sharing
+a directory (all of them process 1) never share one. Temporary files over a day old are removed when the directory
+is opened.
+
+**Eager builds.** Eager media builds run during the parse, before the key is known. A small manifest,
+`scene-<pre-key>.povk`, records under a key known before the parse (build, library versions, settings, every declare,
+the scene file's name) the scene key the last parse gave and the files it read with their stamps and hashes. A render
+whose recorded files are unchanged expects that key, and skips the eager media builds only when media caches of that
+key are saved. Files the manifest shows unchanged are not hashed a second time.
 
 **When.** Each preparation phase writes its caches when it finishes: meshes, media, lights, bounce, photons. Lazily
 built blocks are appended as they complete, and the block index is rewritten at each state-file checkpoint.
@@ -387,6 +420,11 @@ instruction counts from the hardware counters, and peak resident memory as `VmHW
 | 3 | `Max_Cache_Memory` with the CacheBudget registry. Immutable caches become file-backed and mapped. Subsurface cells, surface map chunks and image bands spill. The photon rename ships in this increment | Peak resident memory capped at the budget. For example, a subsurface scene with a 13 GB cloud under a 2 GB budget runs without swap. Instruction overhead at most 5% when the budget is not binding | `tests/render/subsurface_photons_method2.pov` scaled up with `domain_cells`; a dense media scene | 3 to 5 days | Page-fault overhead in hot lookups. Pointer-linked structures need an offset form |
 | 4 | Parallelise volume light preparation across lights, measure and widen the bounce look-ahead, and build photon indexes in parallel | Instructions unchanged, phase wall/CPU ratio towards the thread count. The light stall case finishes in roughly 1/k of the time | `light_emission.pov` with several volume lights; `bounce_adaptive.pov` | 1 to 2 days | Determinism: the bounce sequence must stay thread-count independent |
 | 5 | Footprint recording in the coarse passes, the greedy schedule with MIN eviction, cluster-major final passes, and a per-tile level in the state file | With the budget binding, bytes loaded within 1.5x of the footprint union, and footprint misses under 1% of lookups | A wide scene whose subsurface or media cache is 4x the budget | 4 to 6 days | Progressive behaviour and the state-file format change. A lazily built cell that depends on tile order would change pixels |
+
+What increment 1 delivered (povray PR 146): saving and loading of media density, optical-depth and refraction grids,
+interior light lattices, surface light sampling and surface and volume bounce fields, with the key, directory upkeep
+and partial-read format described above. Not delivered, and carried forward: camera-independent keys (section 4),
+method 2 photons through `Cache_Path`, the mesh tree written to `Cache_Path`, and the future format work in section 2.
 
 Order rationale:
 
