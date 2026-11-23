@@ -592,6 +592,8 @@ void MeshBuildTask::Run()
             for (ObjectPtr child : compound->children)
                 changed = rebound(child) || changed;
             CSG *csg = dynamic_cast<CSG *>(object);
+            if ((csg != nullptr) && changed)
+                csg->Drop_Child_Tree();
             if ((csg != nullptr) && (changed || (views.count(object) != 0)) && csg->Bound.empty())
             {
                 Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);

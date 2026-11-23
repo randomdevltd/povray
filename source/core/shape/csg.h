@@ -96,6 +96,13 @@ class CSG : public CompoundObject
         /// Box trees over the children for rays and inside tests; null until Prepare_Child_Tree, below the size where they pay,
         /// and again after any change to the geometry.
         std::shared_ptr<const CSGChildTree> childTree;
+        /// Prepare_CSG_Child_Trees has run here and in every CSG below since the geometry here or below last changed (a tree may
+        /// still be null); every change below clears it up the chain.
+        bool childTreesPrepared = false;
+        /// Parse-time trace() and inside() calls on this CSG since its geometry last changed; the second builds its trees.
+        unsigned parseQueries = 0;
+        /// Drops the child tree after a change to the children or their geometry.
+        void Drop_Child_Tree() { childTree.reset(); childTreesPrepared = false; parseQueries = 0; }
 
         /// Builds `childTree` from the children's certified boxes when `minimum` of them can go in a tree (0: never);
         /// returns whether it did.
@@ -143,6 +150,10 @@ unsigned CSG_Child_Tree_Minimum();
 /// Gives every CSG reachable from `object` its child tree; one thread, once the scene's geometry is final.
 /// Adds the CSGs that got one to `built`.
 void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_set<ConstObjectPtr>& visited, unsigned& built);
+
+/// Prepare_CSG_Child_Trees for a parse-time trace() or inside(): passes over the CSGs already prepared since their last change,
+/// so repeated queries on one object build its trees once. Returns the trees built.
+unsigned Prepare_Query_Child_Trees(ObjectPtr object, unsigned minimum);
 
 class CSGUnion : public CSG
 {
