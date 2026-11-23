@@ -1761,6 +1761,11 @@
    "code": "fn Rename() { global Count = \"renamed\"; return 0; }",
    "from": "tests/pov4/ok_param_shadows_input.pov4:10"
   },
+  "global_lights": {
+   "rank": 1017,
+   "code": "global_lights off",
+   "from": "doc/html/r3_4.html"
+  },
   "global_settings": {
    "code": "global_settings { assumed_gamma 1.0 }",
    "from": "tests/pov4/default_media.pov4:3"
