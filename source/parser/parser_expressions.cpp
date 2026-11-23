@@ -177,7 +177,7 @@ void Parser::Parse_Trace(Vector3d& Res)
 
     if (Object == nullptr)
         Error ("Object identifier expected.");
-    Resolve_Mesh_Geometry(Object);
+    Prepare_Query_Geometry(Object);
 
     Parse_Comma();
 
@@ -224,7 +224,7 @@ int Parser::Parse_Inside()
 
     if (Object == nullptr)
         Error ("Object identifier expected.");
-    Resolve_Mesh_Geometry(Object);
+    Prepare_Query_Geometry(Object);
     if ((Object->Type & PATCH_OBJECT) == PATCH_OBJECT)
         Error ("Solid object identifier expected.");
 

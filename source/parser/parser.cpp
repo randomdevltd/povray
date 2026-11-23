@@ -435,6 +435,10 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
     {
         for (ObjectPtr child : compound->children)
             changed = Resolve_Mesh_Geometry(child) || changed;
+        // a child's box changed, so its index in a child tree did
+        if (changed)
+            if (CSG *csg = dynamic_cast<CSG *>(compound))
+                csg->Drop_Child_Tree();
         // CSG bounds only shrink, so a box taken around a pending mesh must be reset before it can grow.
         if (changed && compound->Bound.empty())
         {
@@ -444,6 +448,19 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
         }
     }
     return changed;
+}
+
+void Parser::Prepare_Query_Geometry(ObjectPtr object)
+{
+    // a CSG queried since its last change has its meshes built and its trees made: both walks visit every child
+    if (const CSG *csg = dynamic_cast<const CSG *>(object))
+        if (csg->childTreesPrepared)
+            return;
+    Resolve_Mesh_Geometry(object);
+    // the render's policy: Bounding=off and POV_CSG_CHILD_TREE=0 leave every CSG a linear scan
+    if (mQueryChildTreeMinimum < 0)
+        mQueryChildTreeMinimum = (sceneData->boundingMethod != 0) ? int(CSG_Child_Tree_Minimum()) : 0;
+    mQueryChildTrees += Prepare_Query_Child_Trees(object, unsigned(mQueryChildTreeMinimum));
 }
 
 /* Parse the file. */
@@ -558,6 +575,8 @@ void Parser::Run()
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
                       "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
             Make_Portal_Lights();
+            if (mQueryChildTrees > 0)
+                mMessageFactory.Info("CSG child trees: %u made for parse-time trace() and inside() queries.", mQueryChildTrees);
             mMessageFactory.Info("Preparation: parse finished %.1fs",
                                  std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
         }
@@ -3452,8 +3471,12 @@ static void DropShutPortals(ObjectPtr object)
 {
     if (((object->Type & HOLDS_PORTAL_OBJECT) == 0) || (dynamic_cast<CSGUnion *>(object) == nullptr))
         return;
-    std::vector<ObjectPtr>& children = static_cast<CSGUnion *>(object)->children;
+    CSGUnion *csg = static_cast<CSGUnion *>(object);
+    std::vector<ObjectPtr>& children = csg->children;
+    const size_t before = children.size();
     children.erase(std::remove_if(children.begin(), children.end(), DropShutPortal), children.end());
+    if (children.size() != before)
+        csg->Drop_Child_Tree();
 }
 
 static void CollectPortals(ObjectPtr object, std::vector<const Portal *>& portals)
@@ -11274,6 +11297,9 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         }
         mPostProcessPath.pop_back();
         CompoundObject *compound = dynamic_cast<CompoundObject *>(Object);
+        if (mMeshResolvedBelow)
+            if (CSG *csg = dynamic_cast<CSG *>(Object))
+                csg->Drop_Child_Tree();
         if (mMeshResolvedBelow && (compound != nullptr) && compound->Bound.empty())
         {
             Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);

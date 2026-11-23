@@ -730,7 +730,7 @@ void CSG::Translate(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Translate_Object (*Current_Sib, Vector, tr) ;
 
-    childTree.reset();
+    Drop_Child_Tree();
     RecomputeCSGBounds(this, tr);
     Carry_Cells(this, tr);
 }
@@ -769,7 +769,7 @@ void CSG::Rotate(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Rotate_Object (*Current_Sib, Vector, tr) ;
 
-    childTree.reset();
+    Drop_Child_Tree();
     RecomputeCSGBounds(this, tr);
     Carry_Cells(this, tr);
 }
@@ -808,7 +808,7 @@ void CSG::Scale(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Scale_Object (*Current_Sib, Vector, tr) ;
 
-    childTree.reset();
+    Drop_Child_Tree();
     RecomputeCSGBounds(this, tr);
     Carry_Cells(this, tr);
 }
@@ -847,7 +847,7 @@ void CSG::Transform(const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Transform_Object(*Current_Sib, tr);
 
-    childTree.reset();
+    Drop_Child_Tree();
     RecomputeCSGBounds(this, tr);
     Carry_Cells(this, tr);
 }
@@ -1039,7 +1039,7 @@ ObjectPtr CSGUnion::Copy()
     CSGUnion *New = new CSGUnion();
     Destroy_Transform(New->Trans);
     *New = *this;
-    New->childTree.reset();
+    New->Drop_Child_Tree();
     New->surfaceIndex.reset();
 
     New->children.clear();
@@ -1062,7 +1062,7 @@ ObjectPtr CSGMerge::Copy()
     CSGMerge *New = new CSGMerge();
     Destroy_Transform(New->Trans);
     *New = *this;
-    New->childTree.reset();
+    New->Drop_Child_Tree();
     New->surfaceIndex.reset();
 
     New->children.clear();
@@ -1085,7 +1085,7 @@ ObjectPtr CSGIntersection::Copy()
     CSGIntersection *New = new CSGIntersection(false);
     Destroy_Transform(New->Trans);
     *New = *this;
-    New->childTree.reset();
+    New->Drop_Child_Tree();
     New->surfaceIndex.reset();
 
     New->children.clear();
@@ -1524,24 +1524,55 @@ bool CSG::Prepare_Child_Tree(unsigned minimum)
     return any;
 }
 
-void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_set<ConstObjectPtr>& visited, unsigned& built)
+namespace
+{
+
+void Prepare_Child_Trees(ObjectPtr object, unsigned minimum, bool keepPrepared, std::unordered_set<ConstObjectPtr>& visited,
+                         unsigned& built)
 {
     // a leaf without clips or bounds holds no CSG: the common case, and cheap to pass over
     if ((object == nullptr) || (!(object->Type & IS_COMPOUND_OBJECT) && object->Clip.empty() && object->Bound.empty()))
         return;
+    CSG *csg = dynamic_cast<CSG *>(object);
+    if (keepPrepared && (csg != nullptr) && csg->childTreesPrepared)
+        return;
     if (!visited.insert(object).second)
         return;
     for (ObjectPtr o : object->Clip)
-        Prepare_CSG_Child_Trees(o, minimum, visited, built);
+        Prepare_Child_Trees(o, minimum, keepPrepared, visited, built);
     for (ObjectPtr o : object->Bound)
-        Prepare_CSG_Child_Trees(o, minimum, visited, built);
+        Prepare_Child_Trees(o, minimum, keepPrepared, visited, built);
     if (LightSource *light = dynamic_cast<LightSource *>(object))
-        Prepare_CSG_Child_Trees(light->Projected_Through_Object, minimum, visited, built);
+        Prepare_Child_Trees(light->Projected_Through_Object, minimum, keepPrepared, visited, built);
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
-            Prepare_CSG_Child_Trees(child, minimum, visited, built);
-    if (CSG *csg = dynamic_cast<CSG *>(object))
+            Prepare_Child_Trees(child, minimum, keepPrepared, visited, built);
+    if (csg != nullptr)
+    {
         built += csg->Prepare_Child_Tree(minimum) ? 1 : 0;
+        csg->childTreesPrepared = true;
+    }
+}
+
+}
+
+void Prepare_CSG_Child_Trees(ObjectPtr object, unsigned minimum, std::unordered_set<ConstObjectPtr>& visited, unsigned& built)
+{
+    Prepare_Child_Trees(object, minimum, false, visited, built);
+}
+
+unsigned Prepare_Query_Child_Trees(ObjectPtr object, unsigned minimum)
+{
+    // the common query, on a leaf or a CSG already prepared, allocates nothing
+    if ((object == nullptr) || (!(object->Type & IS_COMPOUND_OBJECT) && object->Clip.empty() && object->Bound.empty()))
+        return 0;
+    if (const CSG *csg = dynamic_cast<const CSG *>(object))
+        if (csg->childTreesPrepared)
+            return 0;
+    std::unordered_set<ConstObjectPtr> visited;
+    unsigned built = 0;
+    Prepare_Child_Trees(object, minimum, true, visited, built);
+    return built;
 }
 
 BoxClass Classify_By_Certified_Box(ConstObjectPtr object, const Vector3d& lo, const Vector3d& hi, const TRANSFORM *toWorld)

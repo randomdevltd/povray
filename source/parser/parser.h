@@ -466,6 +466,12 @@ class Parser final
         void RecordMediaField(Media& medium, bool allowEager);
         void LeaveMediaField(const Media& medium);
         bool Resolve_Mesh_Geometry(ObjectPtr object);
+        /// Readies an object for a parse-time trace() or inside(): its meshes built, its large CSGs' child trees made.
+        void Prepare_Query_Geometry(ObjectPtr object);
+        /// The child count from which parse-time queries index a CSG's children (0: never); -1 until first asked.
+        int mQueryChildTreeMinimum = -1;
+        /// Child trees made for parse-time queries.
+        unsigned mQueryChildTrees = 0;
         void QueueMeshBuild(const std::shared_ptr<DeferredMeshState>& state);
         /// Queues the eager builds of the meshes a kept top-level object holds, when a filter set from the start gates them.
         void QueuePlacedMeshes(ObjectPtr object);

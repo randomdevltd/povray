@@ -136,6 +136,7 @@ void CollectLights(ObjectPtr object, std::vector<LightSource*>& lights)
 
 void Rebound(CSG *csg)
 {
+    csg->Drop_Child_Tree();
     if (!csg->Bound.empty())
         return;
     Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
