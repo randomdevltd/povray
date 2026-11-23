@@ -16,7 +16,7 @@ parse every 2
 grep -q "CSG child trees: [1-9][0-9]* made for parse-time" default.log ||
     { cat default.log; echo "csg_child_tree_parse: the queries made no child tree" >&2; exit 1; }
 ! grep -q "CSG child trees" linear.log || { echo "csg_child_tree_parse: POV_CSG_CHILD_TREE=0 still made trees" >&2; exit 1; }
-[ "$(wc -l < linear.txt)" -eq 2700 ] || { echo "csg_child_tree_parse: expected 2700 queries" >&2; exit 1; }
+[ "$(wc -l < linear.txt)" -eq 3100 ] || { echo "csg_child_tree_parse: expected 3100 queries" >&2; exit 1; }
 cmp -s linear.txt default.txt || { echo "csg_child_tree_parse: child trees changed a parse-time answer" >&2; exit 1; }
 cmp -s linear.txt every.txt || { echo "csg_child_tree_parse: trees on small CSGs changed a parse-time answer" >&2; exit 1; }
 echo "csg_child_tree_parse: parse-time trace() and inside() answer the same through child trees and the linear scan"

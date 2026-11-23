@@ -1,7 +1,8 @@
 #version 3.7;
 // Parse-time trace() and inside() on large CSGs, written to csg_child_tree_parse.txt: the file must match the linear scan's
 // (POV_CSG_CHILD_TREE=0) byte for byte. Unions, a merge, a difference with many cutters, an intersection of many lenses,
-// nested unions, children inverted, clipped, bounded and meshes among them, and copies transformed between queries.
+// nested unions, children inverted, clipped, bounded and meshes among them, a deferred mesh the first query builds,
+// copies transformed between queries, and fresh copies each queried once.
 #ifndef (N) #declare N = 6; #end
 #declare R = seed(11);
 #declare Cube = mesh {
@@ -27,7 +28,7 @@
     #end
   #end #end #end
 #end
-#declare Shapes = array[7];
+#declare Shapes = array[8];
 #declare Shapes[0] = union { Bricks() sphere { 3, 1.5 inverse clipped_by { box { 0, 6 } } } }
 #declare Shapes[1] = merge { #for (I, 0, N * N * 3) sphere { <rand(R), rand(R), rand(R)> * 6, 0.5 + rand(R) * 0.4 } #end }
 #declare Shapes[2] = difference {
@@ -47,6 +48,12 @@
 #declare Shapes[5] = union { #for (I, 0, N * N * 2) sphere { <rand(R), rand(R), rand(R)> * 6, 0.3 } #end inverse }
 // a copy moved after the original was queried: its tree must follow the move
 #declare Shapes[6] = union { Bricks() }
+// a deferred mesh among spheres: the first query builds it, the second the union's tree
+#declare Blob = isosurface_mesh { function { sqrt(x * x + y * y + z * z) - 1 } contained_by { sphere { 0, 1.2 } } }
+#declare Shapes[7] = union {
+  object { Blob scale 1.5 translate 3 }
+  #for (I, 0, N * N) sphere { <rand(R), rand(R), rand(R)> * 6, 0.4 } #end
+}
 #declare Out = "csg_child_tree_parse.txt";
 #fopen F Out write
 #macro Query(Index, Count)
@@ -59,11 +66,18 @@
     #write (F, Index, " ", vstr(3, Hit, " ", 0, 17), " ", vstr(3, Normal, " ", 0, 17), " ", In, "\n")
   #end
 #end
-#for (S, 0, 6) Query(S, 300) #end
+#for (S, 0, 7) Query(S, 300) #end
 #declare Shapes[6] = object { Shapes[6] rotate <10, 20, 30> translate <0.5, -0.25, 1> }
 Query(6, 300)
 #declare Shapes[0] = object { Shapes[0] scale <1, 1.5, 1> }
 Query(0, 300)
+// fresh copies, each asked once and moved after
+#for (C, 1, 100)
+  #declare Shapes[1] = object { Shapes[1] translate <rand(R), rand(R), rand(R)> * 0.01 }
+  #declare Normal = <0, 0, 0>;
+  #declare Hit = trace(Shapes[1], <rand(R), rand(R), rand(R)> * 10 - 2, <rand(R), rand(R), rand(R)> - 0.5, Normal);
+  #write (F, "1 ", vstr(3, Hit, " ", 0, 17), " ", vstr(3, Normal, " ", 0, 17), "\n")
+#end
 #fclose F
 #debug "csg_child_tree_parse: queries written\n"
 camera { location <3, 3, -10> look_at <3, 3, 3> }

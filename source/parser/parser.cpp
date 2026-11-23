@@ -453,14 +453,24 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 void Parser::Prepare_Query_Geometry(ObjectPtr object)
 {
     // a CSG queried since its last change has its meshes built and its trees made: both walks visit every child
-    if (const CSG *csg = dynamic_cast<const CSG *>(object))
-        if (csg->childTreesPrepared)
-            return;
+    CSG *csg = dynamic_cast<CSG *>(object);
+    if ((csg != nullptr) && csg->childTreesPrepared)
+        return;
     Resolve_Mesh_Geometry(object);
+    // a CSG asked once, such as a fresh copy in a loop, costs less scanned than indexed: trees wait for its second query
+    if ((csg != nullptr) && (csg->parseQueries++ == 0))
+        return;
     // the render's policy: Bounding=off and POV_CSG_CHILD_TREE=0 leave every CSG a linear scan
     if (mQueryChildTreeMinimum < 0)
         mQueryChildTreeMinimum = (sceneData->boundingMethod != 0) ? int(CSG_Child_Tree_Minimum()) : 0;
     mQueryChildTrees += Prepare_Query_Child_Trees(object, unsigned(mQueryChildTreeMinimum));
+}
+
+void Parser::Drop_Path_Child_Trees()
+{
+    for (ConstObjectPtr ancestor : mPostProcessPath)
+        if (const CSG *csg = dynamic_cast<const CSG *>(ancestor))
+            const_cast<CSG *>(csg)->Drop_Child_Tree();
 }
 
 /* Parse the file. */
@@ -3467,16 +3477,18 @@ static bool DropShutPortal(ObjectPtr object)
     return true;
 }
 
-static void DropShutPortals(ObjectPtr object)
+static bool DropShutPortals(ObjectPtr object)
 {
     if (((object->Type & HOLDS_PORTAL_OBJECT) == 0) || (dynamic_cast<CSGUnion *>(object) == nullptr))
-        return;
+        return false;
     CSGUnion *csg = static_cast<CSGUnion *>(object);
     std::vector<ObjectPtr>& children = csg->children;
     const size_t before = children.size();
     children.erase(std::remove_if(children.begin(), children.end(), DropShutPortal), children.end());
-    if (children.size() != before)
-        csg->Drop_Child_Tree();
+    if (children.size() == before)
+        return false;
+    csg->Drop_Child_Tree();
+    return true;
 }
 
 static void CollectPortals(ObjectPtr object, std::vector<const Portal *>& portals)
@@ -10925,7 +10937,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             Post_Process(*Sib, Object);
         }
-        DropShutPortals(Object);
+        if (DropShutPortals(Object))
+            Drop_Path_Child_Trees();
         return;
     }
 
@@ -11309,7 +11322,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         mMeshResolvedBelow = mMeshResolvedBelow || resolvedBefore;
         if (group)
             mLightGroups.pop_back();
-        DropShutPortals(Object);
+        if (DropShutPortals(Object))
+            Drop_Path_Child_Trees();
     }
 
     // Test whether the object is finite or infinite. [DB 9/94]

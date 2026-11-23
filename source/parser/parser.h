@@ -967,6 +967,8 @@ class Parser final
         std::vector<ObjectPtr> mLightGroups;
         /// The compounds Post_Process is inside, outermost first.
         std::vector<ConstObjectPtr> mPostProcessPath;
+        /// Clears the child-tree marks of the CSGs Post_Process is inside, after a change below them.
+        void Drop_Path_Child_Trees();
         void Remove_Subsurface_Without_Inside(ObjectPtr Object);
 
         void Parse_Global_Settings();
