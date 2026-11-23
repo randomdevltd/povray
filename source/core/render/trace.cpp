@@ -48,6 +48,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <limits>
 
@@ -7476,6 +7477,8 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
             };
             auto connect = [&](const Vector3d& point, double extinction)
             {
+                if (cloud)
+                    threadData->Stats()[Subsurface_Cloud_Internal_Collisions]++;
                 double radiance = 0.0;
                 for (const auto& from : sources)
                 {
@@ -7506,7 +7509,10 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
                 const double radiance = SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
                     boundary, source, connect, draw, bounce, part);
                 if (cloud)
+                {
+                    threadData->Stats()[Subsurface_Cloud_Internal_Paths]++;
                     values[sample * MathColour::channels + channel] = radiance;
+                }
                 else
                     result[channel] += radiance / samples;
             }
@@ -9235,6 +9241,13 @@ static double CloudDepthDraw(const SubsurfaceCellKey& key, const SubsurfaceCell&
 // The light entering one run of a cell's points, and their shadow from each light.
 void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket)
 {
+    // the statistics' cloud lighting time, which the render's trace time includes, as each thread spends it
+    const auto started = std::chrono::steady_clock::now();
+    struct Clock
+    {
+        RenderStatistics& stats; std::chrono::steady_clock::time_point started;
+        ~Clock() { stats[Subsurface_Cloud_Light_Nanoseconds] += static_cast<POV_ULONG>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count()); }
+    } clock{threadData->Stats(), started};
     int stride = cell.lights * MathColour::channels;
     int first = job * kCloudLightBatch, last = min(int(cell.points.size()), first + kCloudLightBatch);
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
@@ -9367,7 +9380,12 @@ void Trace::LightCloudInternal(const SubsurfaceCloud& cloud, const SubsurfaceCel
         if (uses[l])
             own.push_back(cloud.lights[l]);
     MathColour internal, slope;
-    if (!CloudInternalRadiance(hit, outward, own, DeriveKey(CloudSeed(key, 2, k), kDrawPretrace, 0), ticket, internal, slope))
+    const auto started = std::chrono::steady_clock::now();
+    const bool carried = CloudInternalRadiance(hit, outward, own, DeriveKey(CloudSeed(key, 2, k), kDrawPretrace, 0), ticket, internal, slope);
+    threadData->Stats()[Subsurface_Cloud_Internal_Nanoseconds] +=
+        static_cast<POV_ULONG>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count());
+    threadData->Stats()[Subsurface_Cloud_Internal_Points]++;
+    if (!carried)
         return;
     // a point keeps its part, so that an exit point reads only points found with its own material, flesh and lights; one on
     // no part the walk of the parts met has none and serves nothing, its exit points walking their own paths
