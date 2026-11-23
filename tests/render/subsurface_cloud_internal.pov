@@ -1,6 +1,7 @@
 #version 3.8;
 // A method 2 body lit only by a volume light buried in it: a sphere lamp in a sphere (Vein=0), or a thin vein lamp just under
-// the top of a slab (Vein=1), seen from View degrees off the top's normal. Influence 1e9 sends every hit to the estimate path,
+// the top of a slab (Vein=1), seen from View degrees off the top's normal. Thick, Depth, Radius and Translucency set the slab's
+// thickness, the vein's depth and radius and the flesh's translucency, all in mm; Pigment its colour. Influence 1e9 sends every hit to the estimate path,
 // which walks the per-pixel internal paths; the default reads the buried light's scattered part from the point cloud.
 #ifndef (Influence) #declare Influence = 0.003; #end
 #ifndef (Samples) #declare Samples = 4; #end
@@ -9,19 +10,24 @@
 #ifndef (Cells) #declare Cells = 4096; #end
 #ifndef (Vein) #declare Vein = 0; #end
 #ifndef (View) #declare View = 0; #end
+#ifndef (Thick) #declare Thick = 1; #end
+#ifndef (Depth) #declare Depth = 0.15; #end
+#ifndef (Radius) #declare Radius = 0.04; #end
+#ifndef (Translucency) #declare Translucency = 0.3; #end
+#ifndef (Pigment) #declare Pigment = 0.9; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 / Scale max_trace_level 8
   subsurface { method 2 samples 4, 2 }
 }
 background { rgb 0 }
 #declare Flesh = material {
-  texture { pigment { rgb 0.9 } finish { ambient 0 diffuse 1 subsurface { translucency 0.3 minimum_influence Influence } } }
+  texture { pigment { rgb Pigment } finish { ambient 0 diffuse 1 subsurface { translucency Translucency minimum_influence Influence } } }
   interior { ior 1.3 }
 }
 #if (Vein)
 camera { orthographic location <0, 4, 0> look_at 0 right x * 2 up z * 2 rotate z * View scale Scale }
-box { <-2, -1, -2>, <2, 0, 2> material { Flesh } subsurface { domain_cells Cells } scale Scale }
-cylinder { <0, -0.15, -3>, <0, -0.15, 3>, 0.04
+box { <-2, -Thick, -2>, <2, 0, 2> material { Flesh } subsurface { domain_cells Cells } scale Scale }
+cylinder { <0, -Depth, -3>, <0, -Depth, 3>, Radius
   hollow no_image pigment { rgbt 1 } finish { ambient 0 diffuse 0 }
   interior { light { brightness 1 samples Samples attenuation { cutoff 0 } } }
   scale Scale
