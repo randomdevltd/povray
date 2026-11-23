@@ -105,6 +105,21 @@ While the parser runs, build each isosurface_mesh, skein_mesh and mesh2 povm,
 and fill method 4 media density grids, on \fBWT\fP \- 1 spare threads (none at
 \fB+WT1\fP); the rest is finished on all threads before the render. On by
 default; \fB\-WE\fP builds meshes after the parse and grids on the first ray.
+.TP
+\fBSave_Caches\fP=\fIbool\fP
+Save the media, light and bounce caches prepared before the first pixel in
+\fIoutput\fP.pov-state.caches, and load those a render of the same inputs saved
+before. Off by default.
+.TP
+\fBCache_Path\fP=\fIdirectory\fP
+Keep saved prepared caches in \fIdirectory\fP; giving it turns saving on.
+.TP
+\fBCache_Verify\fP=\fIbool\fP
+Rebuild every prepared cache that has a saved file and stop if they differ.
+.TP
+\fBCache_Max_Size\fP=\fIGiB\fP
+Keep the prepared cache directory within this size, removing the least recently
+used files first. 20 by default; 0 for no limit.
 .SS Output options:
 .TP
 \fBH\fP\fIn\fP or \fBHeight\fP=\fIinteger\fP

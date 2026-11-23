@@ -33,6 +33,7 @@ public:
     }
 
     const std::shared_ptr<const PreparedSourceDomain>& Domain() const { return domain; }
+    const std::vector<pov_base::MathColour>& Values() const { return values; }
     size_t StorageBytes() const { return values.capacity() * sizeof(pov_base::MathColour); }
 
 private:

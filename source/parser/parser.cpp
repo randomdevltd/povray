@@ -304,7 +304,8 @@ void Parser::RecordMediaField(Media& medium, bool allowEager)
         roots.push_back(slot.second);
     if (!SelfContained(roots))
         return LeaveMediaField(medium);
-    if (!allowEager || !sceneData->meshPool || !medium.fastCache)
+    // a saved grid is loaded instead, so building it ahead would be wasted
+    if (!allowEager || !sceneData->meshPool || !medium.fastCache || sceneData->preparedCachesFound)
         return;
     if (!slots.empty())
     {
@@ -531,6 +532,7 @@ void Parser::Run()
                         Temp_Entry->Data = Create_Float();
                         *(reinterpret_cast<DBL *>(Temp_Entry->Data)) = std::atof(i->second.c_str());
                     }
+                    Temp_Entry->readLog = SceneData::RendererDeclare(i->first) ? &sceneData->rendererDeclaresRead : nullptr;
                 }
             }
 

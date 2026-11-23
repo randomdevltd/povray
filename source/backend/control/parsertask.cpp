@@ -112,6 +112,8 @@ UCS2String ParserTask::FindFile(UCS2String parsedFileName, unsigned int fileType
 
 IStream* ParserTask::ReadFile(const UCS2String& parsedFileName, const UCS2String& foundFileName, unsigned int fileType)
 {
+    if (!mpBackendSceneData->preparedCacheDirectory.empty())
+        mpBackendSceneData->RecordInput(parsedFileName, foundFileName);
     return mpBackendSceneData->ReadFile(GetPOVMSContext(), parsedFileName, foundFileName, fileType);
 }
 

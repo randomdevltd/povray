@@ -641,6 +641,26 @@ void MainThreadFunction(const boost::function0<void>& threadExit)
 
 } // namespace
 
+std::string ImageLibraryVersions()
+{
+    std::string versions;
+#ifndef DONT_SHOW_IMAGE_LIB_VERSIONS
+#ifndef LIBZ_MISSING
+    versions += std::string("zlib ") + zlibVersion() + ";";
+#endif
+#ifndef LIBPNG_MISSING
+    versions += std::string("png ") + png_get_libpng_ver(nullptr) + ";";
+#endif
+#ifndef LIBJPEG_MISSING
+    versions += "jpeg " + std::to_string(JPEG_LIB_VERSION) + ";";
+#endif
+#ifndef LIBTIFF_MISSING
+    versions += std::string("tiff ") + TIFFGetVersion() + ";";
+#endif
+#endif
+    return versions;
+}
+
 std::thread *povray_init(const boost::function0<void>& threadExit, POVMSAddress *addr)
 {
     using namespace pov;

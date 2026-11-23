@@ -4372,6 +4372,7 @@ PValue Pov4Evaluator::CallBuiltin(BI id, const std::string& word, PValues& args,
         case B_version: return num(mScene.EffectiveLanguageVersion() / 100.0);
         case B_now:
         {
+            mScene.readsTime = true;
             using FractionalDays = std::chrono::duration<double, std::ratio<24 * 60 * 60>>;
             return num(std::chrono::duration_cast<FractionalDays>(std::chrono::system_clock::now() - mParser.mY2K).count());
         }

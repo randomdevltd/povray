@@ -83,6 +83,8 @@ public:
         Split(points, 0, points.size(), 0);
     }
     void SetShares(double cone, double leaf) { coneShare = cone; leafShare = leaf; generation = NextGeneration(); }
+    double ConeShare() const { return coneShare; }
+    double LeafShare() const { return leafShare; }
     Vector3d ConeCentre() const { return lower + size * 0.5; }
     double ConeReach() const { return std::sqrt(reach2); }
     // The bounding cone's, the leaf cones' and the kernels' densities; false where no leaf cone applies.

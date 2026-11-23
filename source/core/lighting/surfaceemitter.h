@@ -7,11 +7,19 @@
 #include "core/material/preparedsurface.h"
 #include "core/math/randomsequence.h"
 #include "core/render/trace.h"
+#include "core/support/preparedcache.h"
 #include <mutex>
 #include <set>
 
 namespace pov
 {
+
+inline void Serialize(CacheArchive& archive, SurfaceAngularGuide::ConePoint& point)
+{
+    Serialize(archive, point.point);
+    Serialize(archive, point.normal);
+    Serialize(archive, point.power);
+}
 
 class GeometrySurfaceEmitter final : public Emitter
 {
@@ -51,34 +59,48 @@ public:
         std::set<const TEXTURE*> validated;
         SurfaceAngularGuide preparedGuide(Vector3d(owner->BBox.lowerLeft), Vector3d(owner->BBox.size));
         MathColour integral;
-        double area = 0.0;
+        double area = 0.0, draws = 0.0, coneShare = 0.0, leafShare = 0.0;
         std::vector<SurfaceAngularGuide::ConePoint> points;
-        constexpr unsigned count = 16384;
-        const bool zero = prepared->IsConstant() && prepared->ConstantColour().IsZero();
-        // Bounds the surface fills sparsely take more rounds of draws, as many as a quarter round of landed draws needs.
-        std::uint64_t rounds = 1, landed = 0;
-        for (std::uint64_t round = 0; !zero && round < rounds; ++round)
+        // the area draws and the guide's chosen shares are what a saved cache holds
+        PreparedCacheUnit cache(td->GetSceneData()->preparedCaches.get(), "surfacelight",
+                                CacheKey().Add(Vector3d(owner->BBox.lowerLeft)).Add(Vector3d(owner->BBox.size)).Value());
+        cache.Record("emission", [&]()
         {
-            for (unsigned j = 0; j < count; ++j)
+            constexpr unsigned count = 16384;
+            const bool zero = prepared->IsConstant() && prepared->ConstantColour().IsZero();
+            // Bounds the surface fills sparsely take more rounds of draws, as many as a quarter round of landed draws needs.
+            std::uint64_t rounds = 1, landed = 0;
+            for (std::uint64_t round = 0; !zero && round < rounds; ++round)
             {
-                const std::uint64_t i = round * count + j;
-                if (cooperate && (i % 256 == 0)) cooperate();
-                SurfaceGeometrySample sample;
-                const auto key = DeriveKey(UINT64_C(0x736f757263656172), kDrawEmitter, i);
-                if (geometry.SampleArea(ray, td, (j + 0.5) / count, Draw(key, kDrawEmitter, 0),
-                                        Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), sample))
+                for (unsigned j = 0; j < count; ++j)
                 {
-                    ++landed;
-                    const MathColour power = prepared->Emission(sample.intersection, sample.normal, td, &validated) * sample.areaWeight;
-                    integral += power;
-                    area += sample.areaWeight;
-                    if (power.Greyscale() > 0.0) points.push_back({sample.intersection.IPoint, sample.normal, power.Greyscale()});
+                    const std::uint64_t i = round * count + j;
+                    if (cooperate && (i % 256 == 0)) cooperate();
+                    SurfaceGeometrySample sample;
+                    const auto key = DeriveKey(UINT64_C(0x736f757263656172), kDrawEmitter, i);
+                    if (geometry.SampleArea(ray, td, (j + 0.5) / count, Draw(key, kDrawEmitter, 0),
+                                            Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), sample))
+                    {
+                        ++landed;
+                        const MathColour power = prepared->Emission(sample.intersection, sample.normal, td, &validated) * sample.areaWeight;
+                        integral += power;
+                        area += sample.areaWeight;
+                        if (power.Greyscale() > 0.0) points.push_back({sample.intersection.IPoint, sample.normal, power.Greyscale()});
+                    }
                 }
+                if ((round == 0) && (landed > 0))
+                    rounds = (count / 4 + landed - 1) / landed;
             }
-            if ((round == 0) && (landed > 0))
-                rounds = (count / 4 + landed - 1) / landed;
-        }
-        const double draws = double(std::max<std::uint64_t>(rounds, 1)) * count;
+            draws = double(std::max<std::uint64_t>(rounds, 1)) * count;
+        }, [&](CacheArchive& archive)
+        {
+            Serialize(archive, points);
+            Serialize(archive, integral);
+            Serialize(archive, area);
+            Serialize(archive, draws);
+            if (archive.Reading() && !(draws > 0.0))
+                throw CacheFormatError("a surface light's draw count is not positive");
+        });
         for (const auto& point : points)
             preparedGuide.Add(point.point, point.power / draws, point.normal);
         integral /= draws;
@@ -103,7 +125,21 @@ public:
         }
         preparedGuide.PrepareCones(std::move(points));
         preparedGuide.Prepare();
-        ChooseShares(preparedGuide, *prepared, td, cooperate);
+        cache.Record("shares", [&]()
+        {
+            ChooseShares(preparedGuide, *prepared, td, cooperate);
+            coneShare = preparedGuide.ConeShare();
+            leafShare = preparedGuide.LeafShare();
+        }, [&](CacheArchive& archive)
+        {
+            Serialize(archive, coneShare);
+            Serialize(archive, leafShare);
+        });
+        // ChooseShares sets shares only where the cones reach somewhere
+        const double reach = preparedGuide.ConeReach();
+        if (cache.Loading() && (reach > 0.0) && std::isfinite(reach))
+            preparedGuide.SetShares(coneShare, leafShare);
+        cache.Finish();
         guide = std::move(preparedGuide);
         scale = preparedScale;
         intensity = integral * preparedScale;

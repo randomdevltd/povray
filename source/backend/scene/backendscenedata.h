@@ -44,7 +44,12 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <map>
+#include <mutex>
+#include <set>
+#include <string>
+#include <utility>
 #include <memory>
 #include <vector>
 
@@ -53,6 +58,7 @@
 
 // POV-Ray header files (core module)
 #include "core/scene/scenedata.h"
+#include "core/support/preparedcache.h"
 
 // POV-Ray header files (backend module)
 #include "backend/control/renderbackend.h"
@@ -68,6 +74,18 @@ class BackendSceneData final : public SceneData
     public:
 
         typedef std::map<UCS2String, UCS2String> FilenameToFilenameMap;
+
+        /// every file the parse read, by where it was found, with its hash and stamp when first read; under inputFilesLock
+        std::map<std::string, CacheInput> inputFiles;
+        /// the pairs of name in the scene and contents hash that key the prepared caches
+        std::set<std::pair<std::string, std::uint64_t>> inputNames;
+        /// files an earlier parse's manifest shows unchanged, whose contents need not be hashed again
+        std::map<std::string, CacheInput> knownInputs;
+        /// why the inputs cannot key caches, empty when they can
+        std::string inputProblem;
+        std::mutex inputFilesLock;
+        /// Hashes a file the parse is about to read, or checks that one it read before is unchanged; for the cache key.
+        void RecordInput(const UCS2String& referencedName, const UCS2String& foundName);
 
         /// scene id
         RenderBackend::SceneId sceneId;

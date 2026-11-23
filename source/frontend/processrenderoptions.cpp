@@ -159,6 +159,9 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Buffer_Output",       0,                             0 },
     { "Buffer_Size",         0,                             0 },
 
+    { "Cache_Max_Size",      kPOVAttrib_CacheMaxSize,       kPOVMSType_Float },
+    { "Cache_Path",          kPOVAttrib_CachePath,          kPOVMSType_UCS2String },
+    { "Cache_Verify",        kPOVAttrib_CacheVerify,        kPOVMSType_Bool },
     { "Clock",               kPOVAttrib_Clock,              kPOVMSType_Float },
     { "Clockless_Animation", kPOVAttrib_ClocklessAnimation, kPOVMSType_Bool },
     { "Compression",         kPOVAttrib_Compression,        kPOVMSType_Int },
@@ -253,6 +256,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Render_Pattern",      kPOVAttrib_RenderPattern,      kPOVMSType_Int },
 
     { "Sampling_Method",     kPOVAttrib_SamplingMethod,     kPOVMSType_Int },
+    { "Save_Caches",         kPOVAttrib_SaveCaches,         kPOVMSType_Bool },
     { "Snapshot_File",       kPOVAttrib_SnapshotFile,       kPOVMSType_UCS2String },
     { "Snapshot_From",       kPOVAttrib_SnapshotFrom,       kPOVMSType_UCS2String },
     { "Snapshot_Interval",   kPOVAttrib_SnapshotInterval,   kPOVMSType_Int },

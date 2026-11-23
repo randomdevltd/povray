@@ -136,6 +136,48 @@ UCS2String BackendSceneData::FindFile(POVMSContext ctx, const UCS2String& filena
     return foundfile;
 }
 
+void BackendSceneData::RecordInput(const UCS2String& referencedName, const UCS2String& foundName)
+{
+    const std::string path = UCS2toSysString(foundName), referenced = UCS2toSysString(referencedName);
+    CacheInput input;
+    {
+        std::lock_guard<std::mutex> guard(inputFilesLock);
+        const auto read = inputFiles.find(path);
+        if (read != inputFiles.end())
+        {
+            // read again: it must still hold what was hashed the first time
+            InputStamp now;
+            if ((!StampFile(path, now) || (now != read->second.stamp)) && inputProblem.empty())
+                inputProblem = "the input file " + path + " changed during the parse";
+            inputNames.insert(std::make_pair(referenced, read->second.hash));
+            return;
+        }
+        const auto known = knownInputs.find(path);
+        if (known != knownInputs.end())
+            input = known->second;
+    }
+    // hashed now, as the parse reads it; a write after this changes the stamp checked when the parse ends
+    InputStamp now;
+    const bool unchanged = !input.path.empty() && StampFile(path, now) && (now == input.stamp);
+    if (!unchanged)
+    {
+        input.path = path;
+        if (!HashFile(path, input.hash, input.stamp))
+        {
+            std::lock_guard<std::mutex> guard(inputFilesLock);
+            if (inputProblem.empty())
+                inputProblem = "the input file " + path + " could not be read whole, or changed while it was hashed";
+            return;
+        }
+    }
+    input.referenced = referenced;
+    std::lock_guard<std::mutex> guard(inputFilesLock);
+    const auto placed = inputFiles.emplace(path, input);
+    if ((placed.first->second.hash != input.hash) && inputProblem.empty())
+        inputProblem = "the input file " + path + " changed during the parse";
+    inputNames.insert(std::make_pair(referenced, placed.first->second.hash));
+}
+
 IStream *BackendSceneData::ReadFile(POVMSContext ctx, const UCS2String& origname, const UCS2String& filename, unsigned int stype)
 {
     UCS2String scenefile(filename);

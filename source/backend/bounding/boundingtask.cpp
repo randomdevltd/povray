@@ -40,8 +40,10 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -53,6 +55,7 @@
 #include <boost/bind.hpp>
 
 // POV-Ray header files (base module)
+#include "base/stringutilities.h"
 #include "base/timer.h"
 
 // POV-Ray header files (core module)
@@ -67,6 +70,10 @@
 #include "core/shape/mesh.h"
 #include "core/support/parallel.h"
 #include "core/support/preparationprogress.h"
+#include "core/support/preparedcache.h"
+
+// POV-Ray header files (backend module)
+#include "backend/povray.h"
 
 #include <algorithm>
 #include <cstring>
@@ -843,6 +850,66 @@ void MeshBuildTask::SendFatalError(Exception& e)
     POVMS_SendMessage(msg);
 }
 
+/// The scene's prepared caches, keyed by each file the parse read (its name in the scene and its contents when read), the
+/// declares and settings it read, the image libraries and the build; null when caches are off, an input changed during the
+/// parse or the scene reads the time.
+static std::shared_ptr<PreparedCaches> OpenPreparedCaches(BackendSceneData& scene, pov_base::GenericMessenger& messages)
+{
+    if (scene.preparedCacheDirectory.empty())
+        return nullptr;
+    if (scene.readsTime)
+    {
+        messages.Info("Prepared caches are off for this render: the scene reads the time of day (now), so what it prepares differs every time.");
+        return nullptr;
+    }
+    std::map<std::string, CacheInput> files;
+    std::set<std::pair<std::string, std::uint64_t>> names;
+    std::string problem;
+    {
+        std::lock_guard<std::mutex> guard(scene.inputFilesLock);
+        files = scene.inputFiles;
+        names = scene.inputNames;
+        problem = scene.inputProblem;
+    }
+    // a file written after the parse read it would key caches by contents the parse never saw
+    std::uint64_t bytes = 0;
+    for (const auto& file : files)
+    {
+        InputStamp now;
+        if (problem.empty() && (!StampFile(file.first, now) || (now != file.second.stamp)))
+            problem = "the input file " + file.first + " changed during the parse";
+        bytes += file.second.stamp.size;
+    }
+    if (!problem.empty())
+    {
+        messages.Warning(kWarningGeneral, "Prepared caches are off for this render: %s, so no key describes what it read.", problem.c_str());
+        return nullptr;
+    }
+    CacheKey key(BuildHash());
+    key.Add(ImageLibraryVersions());
+    key.Add(scene.preparedCacheSettings);
+    // a renderer-provided declare such as image_width counts only where the scene read it, so other image sizes share caches
+    for (const auto& declare : scene.declaredVariables)
+        if (!SceneData::RendererDeclare(declare.first) || (scene.rendererDeclaresRead.count(declare.first) != 0))
+            key.Add(declare.first).Add(declare.second);
+    // names as the scene gave them, so swapped contents change the key while another folder holding the same files does not
+    key.Add(std::uint64_t(names.size()));
+    for (const auto& name : names)
+        key.Add(name.first).Add(name.second);
+    std::shared_ptr<PreparedCaches> caches = std::make_shared<PreparedCaches>(scene.preparedCacheDirectory, key.Value(), scene.preparedCacheVerify,
+                                                                              scene.preparedCacheMaxBytes);
+    caches->SetMessenger(&messages);
+    std::vector<CacheInput> inputs;
+    for (const auto& file : files)
+        inputs.push_back(file.second);
+    // the next parse of this scene reads this to know, before it ends, whether its media grids will load
+    WriteSceneManifest(scene.preparedCacheDirectory, scene.preparedCachePreKey, key.Value(), inputs);
+    messages.Info("Prepared caches: key %016llx from %u input file(s) under %u name(s), %.2f MiB hashed as the parse read them%s; in %s.",
+                  static_cast<unsigned long long>(key.Value()), unsigned(files.size()), unsigned(names.size()), double(bytes) / (1024.0 * 1024.0),
+                  scene.preparedCacheVerify ? "; Cache_Verify rebuilds each saved cache and compares" : "", scene.preparedCacheDirectory.c_str());
+    return caches;
+}
+
 FieldPreparationTask::FieldPreparationTask(std::shared_ptr<BackendSceneData> sd, size_t sd_seed, TraceThreadData *pd) :
     SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), sd_seed, false), boost::bind(&FieldPreparationTask::SendFatalError, this, _1), "Fields", sd),
     sceneData(sd),
@@ -857,6 +924,7 @@ FieldPreparationTask::~FieldPreparationTask()
 
 void FieldPreparationTask::Run()
 {
+    sceneData->preparedCaches = OpenPreparedCaches(*sceneData, *mpMessageFactory);
     const std::vector<ObjectPtr> interiors = FieldInteriors(*sceneData);
     PreparationProgress progress(mpMessageFactory, std::strlen("Fields Info: "));
     TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
@@ -891,6 +959,12 @@ void FieldPreparationTask::Run()
     PrepareLightFields(&finalFields, cooperateFields);
     PrepareVolumeBounceLightFields(&finalFields, cooperateFields);
     cooperateFields();
+    if (sceneData->preparedCaches != nullptr)
+    {
+        sceneData->preparedCaches->Trim();
+        sceneData->preparedCaches->Summarise();
+        sceneData->preparedCaches->SetMessenger(nullptr);
+    }
     finalFields.preparationProgress = nullptr;
     parseData->Stats() += finalFields.Stats();
 }
