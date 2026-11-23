@@ -7410,13 +7410,12 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
     const double tolerance = InterfaceTolerance(out.IPoint, material);
     // The path starts on the refracted eye ray, or for a cloud point on its own viewing direction, cosine-weighted about the
     // outward normal and stratified over the paths; a start whose first step finds no material carries nothing.
-    auto start = [&](const Vector3d& direction, Vector3d& inward)
+    auto contains = [&](const Vector3d& inward)
     {
-        return SSLTComputeRefractedDirection(direction, normal, 1.0 / eta, inward) &&
-            ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(out.IPoint, inward, tolerance, extent), out.Object, eye.GetPreparedSetId());
+        return ContainsSubsurfaceMaterial(SubsurfaceBoundaryProbe(out.IPoint, inward, tolerance, extent), out.Object, eye.GetPreparedSetId());
     };
     Vector3d inward;
-    if (!cloud && !start(eye.Direction, inward)) return result;
+    if (!cloud && !(SSLTComputeRefractedDirection(eye.Direction, normal, 1.0 / eta, inward) && contains(inward))) return result;
     auto boundary = [&](const Vector3d& point, const Vector3d& direction, double limit)
     {
         return SubsurfaceInternalBoundaryAt(point, direction, out.Object, SubsurfaceObject(out), eye.GetTicket(), limit);
@@ -7431,18 +7430,24 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
             samples = max(samples, cloud ? max(1, int(std::lround(from.light->Area_Size1 * lightSamples))) :
                                            WeightedLightSamples(from.light->Area_Size1 * lightSamples));
     std::vector<Vector3d> inwards(samples, inward);
-    std::vector<char> starts(samples, 1);
+    std::vector<char> starts(samples, 1), refracted(samples, 1);
     std::vector<double> values(cloud ? samples * MathColour::channels : 0, 0.0);
     if (cloud)
     {
+        // Only a viewing direction that refracts in has radiance inside heading out to it, so only those are drawn: from a
+        // rarer outside (eta below 1) the cosine-weighted directions within the cone of sine eta, else all of them. One that
+        // still fails (by rounding at the cone's rim) is no viewing direction and is left out of the point's line; one whose
+        // first step finds no material is a viewing direction that sees none of this light, a zero at its own cosine.
         Vector3d outward = (dot(normal, eye.Direction) > 0.0) ? -normal : normal, t1, t2;
         ComputeSurfaceTangents(outward, t1, t2);
         const std::uint64_t viewKey = DeriveKey(key, kDrawEmitter, 0);
+        const double cone = SubsurfaceInternalCone(eta);
         for (int sample = 0; sample < samples; ++sample)
         {
-            const double u = SubsurfaceInternalDraw(viewKey, sample, samples, 0), v = SubsurfaceInternalDraw(viewKey, sample, samples, 1);
+            const double u = cone * SubsurfaceInternalDraw(viewKey, sample, samples, 0), v = SubsurfaceInternalDraw(viewKey, sample, samples, 1);
             const Vector3d toward = (t1 * cos(2.0 * M_PI * v) + t2 * sin(2.0 * M_PI * v)) * sqrt(u) + outward * sqrt(1.0 - u);
-            starts[sample] = start(-toward, inwards[sample]);
+            refracted[sample] = SSLTComputeRefractedDirection(-toward, normal, 1.0 / eta, inwards[sample]);
+            starts[sample] = refracted[sample] && contains(inwards[sample]);
         }
     }
     for (int channel = 0; channel < MathColour::channels; ++channel)
@@ -7500,9 +7505,10 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
             {
                 const double radiance = SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
                     boundary, source, connect, draw, bounce, part);
-                result[channel] += radiance / samples;
                 if (cloud)
                     values[sample * MathColour::channels + channel] = radiance;
+                else
+                    result[channel] += radiance / samples;
             }
             catch (const pov_base::Exception&)
             {
@@ -7518,28 +7524,7 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
         }
     }
     if (cloud)
-    {
-        // the paths' radiance against the cosine inside of their own directions, as a line about the pivot cosine: what is
-        // left of the light's direction once it has scattered, leaning out along the normal
-        const double pivot = SubsurfaceInternalPivot(eta);
-        double meanCosine = 0.0, spread = 0.0;
-        std::vector<double> cosines(samples);
-        for (int sample = 0; sample < samples; ++sample)
-            meanCosine += (cosines[sample] = clip(fabs(dot(inwards[sample], normal)), 0.0, 1.0)) / samples;
-        for (double c : cosines)
-            spread += Sqr(c - meanCosine);
-        for (int channel = 0; channel < MathColour::channels; ++channel)
-        {
-            double covariance = 0.0;
-            for (int sample = 0; sample < samples; ++sample)
-                covariance += (cosines[sample] - meanCosine) * values[sample * MathColour::channels + channel];
-            const double lean = (spread > 0.0) ? covariance / spread : 0.0;
-            result[channel] += float(lean * (pivot - meanCosine));
-            if (slope != nullptr)
-                (*slope)[channel] = float(lean);
-        }
-        return result;
-    }
+        return CloudInternalLine(inwards, refracted, values, normal, eta, slope);
     const double cosine = clip(fabs(dot(inward, normal)), 0.0, 1.0);
     return result * ((1.0 - SubsurfaceInternalFresnel(cosine, eta)) / Sqr(eta));
 }
@@ -7567,12 +7552,77 @@ MathColour Trace::ComputeInternalAtExit(const Intersection& out, Ray& eye, doubl
                                         SubsurfaceInternalPart::kUncollided);
 }
 
-// The mean cosine inside of directions cosine-weighted outside and refracted in: the integral of sqrt(1 - t / eta^2) over
-// t = 1 - cos^2 outside, from 0 to 1 or to where it reflects totally.
+// The share of cosine-weighted directions outside that refract in: t = 1 - cos^2 outside is uniform, and refracts while
+// t <= eta^2.
+double Trace::SubsurfaceInternalCone(double eta)
+{
+    return min(1.0, Sqr(eta));
+}
+
+// The least cosine inside of a direction refracted in from outside: that of the grazing direction, or 0 from a rarer outside.
+double Trace::SubsurfaceInternalLeast(double eta)
+{
+    return sqrt(max(0.0, 1.0 - 1.0 / Sqr(eta)));
+}
+
+// The mean cosine inside of those directions refracted in: sqrt(1 - t / eta^2) averaged over t uniform on the cone.
 double Trace::SubsurfaceInternalPivot(double eta)
 {
-    const double e2 = Sqr(eta);
-    return 2.0 / 3.0 * e2 * (1.0 - pow(max(0.0, 1.0 - 1.0 / e2), 1.5));
+    const double e2 = Sqr(eta), cone = SubsurfaceInternalCone(eta);
+    return 2.0 / 3.0 * e2 / cone * (1.0 - pow(max(0.0, 1.0 - cone / e2), 1.5));
+}
+
+// A cloud point's paths as a line in the cosine inside, over the viewing directions that refract in. Its value is their mean
+// radiance, which is an unbiased estimate of the radiance heading out over cosine-weighted viewing directions, since every
+// drawn direction refracts in and a direction that cannot refract in sends nothing to an eye. Its lean is their least-squares
+// slope against their cosines, bounded so that the line, kept through the paths' mean (which so stays the unbiased one), is
+// non-negative over the cosines a viewing direction can have inside, from SubsurfaceInternalLeast(eta) to 1, as radiance
+// is. The cosines span only that range, so a single heavy path otherwise sets the slope at its offset from their mean over
+// their variance, whatever the path count. The line is returned at the pivot cosine.
+MathColour Trace::CloudInternalLine(const std::vector<Vector3d>& inwards, const std::vector<char>& refracted, const std::vector<double>& values,
+                                    const Vector3d& normal, double eta, MathColour* slope)
+{
+    MathColour result;
+    if (slope != nullptr)
+        slope->Clear();
+    std::vector<int> paths;
+    std::vector<double> offsets;
+    double meanCosine = 0.0;
+    for (int sample = 0; sample < int(refracted.size()); ++sample)
+        if (refracted[sample])
+        {
+            paths.push_back(sample);
+            offsets.push_back(clip(fabs(dot(inwards[sample], normal)), 0.0, 1.0));
+            meanCosine += offsets.back();
+        }
+    const int n = int(paths.size());
+    if (n == 0)
+        return result;
+    meanCosine /= n;
+    double spread = 0.0;
+    for (double& d : offsets)
+        spread += Sqr(d -= meanCosine);
+    const double least = SubsurfaceInternalLeast(eta), pivot = SubsurfaceInternalPivot(eta);
+    for (int channel = 0; channel < MathColour::channels; ++channel)
+    {
+        double sum = 0.0, covariance = 0.0;
+        for (int i = 0; i < n; ++i)
+        {
+            const double v = values[paths[i] * MathColour::channels + channel];
+            sum += v;
+            covariance += offsets[i] * v;
+        }
+        const double mean = sum / n;
+        double lean = (spread > 0.0) ? covariance / spread : 0.0;
+        if ((lean > 0.0) && (meanCosine > least))
+            lean = min(lean, mean / (meanCosine - least));
+        else if ((lean < 0.0) && (meanCosine < 1.0))
+            lean = max(lean, -mean / (1.0 - meanCosine));
+        result[channel] = float(max(0.0, mean + lean * (pivot - meanCosine)));
+        if (slope != nullptr)
+            (*slope)[channel] = float(lean);
+    }
+    return result;
 }
 
 double Trace::SubsurfaceInternalExit(const Intersection& out, const Ray& eye, double eta, double* insideCosine)
@@ -7613,20 +7663,23 @@ PreciseMathColour Trace::CarriedTranslucency(const FINISH *finish)
 
 // The buried lights' radiance at a cloud point, found as the shading of that point would find it for an eye outside: the
 // point's own layer, flesh, relative index and coefficients, and the receiver's count of paths, each on its own viewing
-// direction. A layered texture or flesh looked up at depth stops the render as it does at a shading point.
-MathColour Trace::CloudInternalRadiance(const Intersection& hit, const Vector3d& outward, const std::vector<const LightSource*>& lights,
-                                        std::uint64_t key, TraceTicket& ticket, MathColour& slope)
+// direction. False where the cloud cannot carry it: a layered texture or flesh looked up at depth, which the internal paths
+// do not yet support. The shading points there then walk their own paths, as they do on a part with no cloud, and those
+// stop the render where such a part is seen and the light reaches it, but a part that is never seen costs nothing.
+bool Trace::CloudInternalRadiance(const Intersection& hit, const Vector3d& outward, const std::vector<const LightSource*>& lights,
+                                  std::uint64_t key, TraceTicket& ticket, MathColour& value, MathColour& slope)
 {
+    value.Clear();
     slope.Clear();
     const TEXTURE *layer = SubsurfaceEntryLayer(hit, outward);
     if ((layer == nullptr) || (layer->Finish == nullptr) || !layer->Finish->UseSubsurface)
-        return MathColour();
+        return true;
     const FINISH *finish = layer->Finish;
     if ((MathColour(1.0) - finish->SubsurfaceSurfaceChannels()).IsZero())
-        return MathColour();
+        return true;
     const Interior *interior = hit.Object->interior.get();
     if (interior == nullptr)
-        return MathColour();
+        return true;
     const double tolerance = InterfaceTolerance(hit.IPoint, interior);
     Ray eye(ticket, hit.IPoint + outward * tolerance, -outward, Ray::OtherRay);
     eye.SetKey(key);
@@ -7634,7 +7687,7 @@ MathColour Trace::CloudInternalRadiance(const Intersection& hit, const Vector3d&
     FindContainingInteriors(eye.Origin, containing);
     eye.AppendInteriors(containing);
     if (eye.IsInterior(interior))
-        return MathColour();
+        return true;
     TransColour pigment;
     Vector3d place = hit.IPoint;
     if (Test_Flag(hit.Object, UV_FLAG))
@@ -7648,7 +7701,7 @@ MathColour Trace::CloudInternalRadiance(const Intersection& hit, const Vector3d&
     SubsurfaceLayers layers;
     layers.Add(layer, pigment.colour(), MathColour(1.0));
     if (!layers.Finish())
-        return MathColour();
+        return true;
     double eta;
     ComputeRelativeIOR(eye, interior, hit.IPoint, outward, eta);
     SubsurfaceFlesh flesh;
@@ -7660,9 +7713,12 @@ MathColour Trace::CloudInternalRadiance(const Intersection& hit, const Vector3d&
         alpha_prime[j] = max(alpha_prime[j], kSubsurfaceAlbedoFloor);
     const PreciseMathColour sigma_prime_s = 1.0 / CarriedTranslucency(finish);
     const PreciseMathColour sigma_a = sigma_prime_s / alpha_prime - sigma_prime_s;
-    return ComputeSubsurfaceInternalSource(hit, eye, eta, sigma_a, sigma_prime_s, lights, finish->LightSamples, false,
-        DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && (layer->Next == nullptr), finish->SubsurfaceHasColour ? &flesh : nullptr,
+    if (flesh.fleshAtDepth || (layer->Next != nullptr))
+        return false;
+    value = ComputeSubsurfaceInternalSource(hit, eye, eta, sigma_a, sigma_prime_s, lights, finish->LightSamples, false,
+        DeriveKey(key, kDrawSubsurface, 7), true, finish->SubsurfaceHasColour ? &flesh : nullptr,
         SubsurfaceInternalPart::kCollided, true, &slope);
+    return true;
 }
 
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
@@ -8782,7 +8838,10 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             if (cloud.parts->anyEntry)
                 cell.entry.assign(count * 2 * MathColour::channels, 0.0f);
             if (cloud.parts->buried && !cell.mapRefs.empty())
+            {
                 cell.internal.assign(count * kSubsurfaceInternalStride, 0.0f);
+                cell.internalPart.assign(count, -1);
+            }
             if (key.photons)
                 cell.photonEntry.assign(count * MathColour::channels, 0.0f);
             if (key.radiosity)
@@ -9307,8 +9366,15 @@ void Trace::LightCloudInternal(const SubsurfaceCloud& cloud, const SubsurfaceCel
     for (size_t l = 0; l < cloud.lights.size(); l++)
         if (uses[l])
             own.push_back(cloud.lights[l]);
-    MathColour slope;
-    const MathColour internal = CloudInternalRadiance(hit, outward, own, DeriveKey(CloudSeed(key, 2, k), kDrawPretrace, 0), ticket, slope);
+    MathColour internal, slope;
+    if (!CloudInternalRadiance(hit, outward, own, DeriveKey(CloudSeed(key, 2, k), kDrawPretrace, 0), ticket, internal, slope))
+        return;
+    // a point keeps its part, so that an exit point reads only points found with its own material, flesh and lights; one on
+    // no part the walk of the parts met has none and serves nothing, its exit points walking their own paths
+    const auto part = cloud.parts->partOf.find(hit.Object);
+    if (part == cloud.parts->partOf.end())
+        return;
+    cell.internalPart[k] = part->second;
     for (int j = 0; j < MathColour::channels; j++)
     {
         cell.internal[k * kSubsurfaceInternalStride + j] = internal[j];
@@ -9316,22 +9382,31 @@ void Trace::LightCloudInternal(const SubsurfaceCloud& cloud, const SubsurfaceCel
     }
 }
 
-// The buried lights' scattered light at the exit point from the cloud points about it on its own face: each point keeps its own,
-// and the exit point takes the plane their values fit, weighted by area, facing and a Gaussian of their spacing, so that the
-// light is as localised as the points are close, and their lean with the cosine as a share of it; see doc/PERF.md. False where
-// a cell met does not carry it.
+// The buried lights' scattered light at the exit point from the cloud points about it on its own face and of its own part:
+// each point keeps its own, and the exit point takes the plane their values fit, weighted by area, facing and a Gaussian of
+// their spacing, so that the light is as localised as the points are close, and their lean with the cosine as a share of it;
+// see doc/PERF.md. False where a cell met does not carry it, or no point of its part is near.
 bool Trace::GatherCloudInternal(const Vector3d& x, const Vector3d& n, const Vector3d& u1, const Vector3d& u2, double farDepth,
-                                SubsurfaceCloud& cloud, MathColour result[2])
+                                ConstObjectPtr part, SubsurfaceCloud& cloud, MathColour result[2])
 {
+    // A point found on another part, even of one body, was lit with that part's flesh, skin and light set, so only the exit
+    // point's own part's points serve it; one part keeps one light set, so the part decides both.
+    const auto own = cloud.parts->partOf.find(part);
+    if (own == cloud.parts->partOf.end())
+        return false;
     const double mm = sceneData->mmPerUnit;
     // the Gaussian's width is the points' spacing; it reaches as far as its weight stays above float precision of its peak
     const double sigmaSqr = Sqr(cloud.spacing * mm), cutoffSqr = -2.0 * log(double(std::numeric_limits<float>::epsilon())) * sigmaSqr;
+    const double epsilon = std::numeric_limits<double>::epsilon();
     struct Sample { double w, t0, t1; float e[kSubsurfaceInternalStride]; };
     std::vector<Sample> samples;
     std::vector<int>& stack = ssltScratchStack;
+    // how far the points' tangent coordinates can be off, in mm: the stated accuracy of the surfaces they lie on, and no
+    // less than the coordinates' own rounding
+    double placing = epsilon * max(fabs(x[X]), max(fabs(x[Y]), fabs(x[Z]))) * mm;
     for (const SubsurfaceCell *cell : cloud.cells)
     {
-        if (cell->internal.size() != cell->points.size() * kSubsurfaceInternalStride)
+        if ((cell->internal.size() != cell->points.size() * kSubsurfaceInternalStride) || (cell->internalPart.size() != cell->points.size()))
             return false;
         stack.assign(1, 0);
         while (!stack.empty())
@@ -9353,6 +9428,8 @@ bool Trace::GatherCloudInternal(const Vector3d& x, const Vector3d& n, const Vect
             for (int i = node.first; i < node.first + node.count; i++)
             {
                 const SubsurfacePoint& p = cell->points[i];
+                if (cell->internalPart[p.id] != own->second)
+                    continue;
                 const Vector3d np(p.normal[0], p.normal[1], p.normal[2]);
                 const double distSqr = (x - p.position).lengthSqr() * Sqr(mm), facing = dot(np, n);
                 // a point on the far face of a thin part is not on this face
@@ -9363,54 +9440,86 @@ bool Trace::GatherCloudInternal(const Vector3d& x, const Vector3d& n, const Vect
                 for (int j = 0; j < kSubsurfaceInternalStride; j++)
                     sample.e[j] = cell->internal[p.id * kSubsurfaceInternalStride + j];
                 if (sample.w > 0.0)
+                {
                     samples.push_back(sample);
+                    placing = max(placing, max(double(p.tolerance), epsilon * max(fabs(p.position[X]), max(fabs(p.position[Y]), fabs(p.position[Z])))) * mm);
+                }
             }
         }
     }
     if (samples.empty())
         return false;
-    // the weighted least-squares plane through the points, in the tangent plane; a spread too narrow to place it, their mean
-    double m[3][3] = {}, wsum = 0.0;
+    // the points' weighted mean place and spread in the tangent plane, about that mean
+    double wsum = 0.0, mean0 = 0.0, mean1 = 0.0;
     for (const Sample& s : samples)
     {
-        const double v[3] = { 1.0, s.t0, s.t1 };
-        for (int a = 0; a < 3; a++)
-            for (int b = 0; b < 3; b++)
-                m[a][b] += s.w * v[a] * v[b];
         wsum += s.w;
+        mean0 += s.w * s.t0;
+        mean1 += s.w * s.t1;
     }
-    auto determinant = [](const double a[3][3])
+    mean0 /= wsum;
+    mean1 /= wsum;
+    double c00 = 0.0, c01 = 0.0, c11 = 0.0;
+    for (const Sample& s : samples)
     {
-        return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) +
-               a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
-    };
-    const double det = determinant(m);
-    const bool plane = (samples.size() >= 3) && (fabs(det) > std::numeric_limits<double>::epsilon() * m[0][0] * m[1][1] * m[2][2]);
+        c00 += s.w * Sqr(s.t0 - mean0);
+        c01 += s.w * (s.t0 - mean0) * (s.t1 - mean1);
+        c11 += s.w * Sqr(s.t1 - mean1);
+    }
+    c00 /= wsum;
+    c01 /= wsum;
+    c11 /= wsum;
+    // The plane needs the points to span two directions. The spread's smaller eigenvalue must exceed what the sums' own
+    // error could make of it: a sum of n terms carries a relative error up to n epsilon / (1 - n epsilon) of the spread, and
+    // coordinates off by up to their placing change the spread by up to 2 placing sqrt(larger) + placing^2 (Weyl's bound
+    // on a symmetric matrix's eigenvalues). A single row of points has no more than that across it: it takes their mean.
+    const double half = 0.5 * (c00 + c11), larger = half + sqrt(Sqr(0.5 * (c00 - c11)) + Sqr(c01));
+    const double det = c00 * c11 - Sqr(c01), smaller = (larger > 0.0) ? det / larger : 0.0;
+    const double count = double(samples.size()), summing = count * epsilon / (1.0 - count * epsilon);
+    const bool plane = (samples.size() >= 3) && (summing < 1.0) &&
+                       (smaller > summing * larger + 2.0 * placing * sqrt(larger) + Sqr(placing));
+    // The plane's value is clipped to the range of the points that carry the Gaussian's own central weight: the heaviest
+    // points holding the share of it within one standard deviation of its centre, 1 - exp(-1/2) in two dimensions. The far
+    // points out to the cutoff carry almost nothing and would leave extrapolation at a face's edge free.
+    std::vector<int> order(samples.size());
+    for (size_t i = 0; i < order.size(); i++)
+        order[i] = int(i);
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return samples[a].w > samples[b].w; });
+    const double central = -std::expm1(-0.5) * wsum;
+    size_t held = 0;
+    for (double acc = 0.0; (held < order.size()) && ((held == 0) || (acc < central)); held++)
+        acc += samples[order[held]].w;
     for (int j = 0; j < MathColour::channels; j++)
     {
-        double r[3] = {}, lo = HUGE_VAL, hi = -HUGE_VAL, lean = 0.0;
+        double sum = 0.0, lean = 0.0, b0 = 0.0, b1 = 0.0, lo = HUGE_VAL, hi = -HUGE_VAL;
         for (const Sample& s : samples)
         {
-            const double v[3] = { 1.0, s.t0, s.t1 };
-            for (int a = 0; a < 3; a++)
-                r[a] += s.w * v[a] * s.e[j];
-            lo = min(lo, double(s.e[j]));
-            hi = max(hi, double(s.e[j]));
+            sum += s.w * s.e[j];
             lean += s.w * s.e[MathColour::channels + j];
         }
-        double value = r[0] / wsum;
+        const double mean = sum / wsum;
+        double value = mean;
         if (plane)
         {
-            // the plane's value at the exit point, by Cramer's rule
-            double a[3][3];
-            for (int row = 0; row < 3; row++)
-                for (int col = 0; col < 3; col++)
-                    a[row][col] = (col == 0) ? r[row] : m[row][col];
-            value = determinant(a) / det;
+            for (const Sample& s : samples)
+            {
+                b0 += s.w * (s.t0 - mean0) * (s.e[j] - mean);
+                b1 += s.w * (s.t1 - mean1) * (s.e[j] - mean);
+            }
+            b0 /= wsum;
+            b1 /= wsum;
+            // the plane's gradient from the spread, and its value at the exit point, the tangent origin
+            const double g0 = (c11 * b0 - c01 * b1) / det, g1 = (c00 * b1 - c01 * b0) / det;
+            value = mean - g0 * mean0 - g1 * mean1;
+        }
+        for (size_t i = 0; i < held; i++)
+        {
+            lo = min(lo, double(samples[order[i]].e[j]));
+            hi = max(hi, double(samples[order[i]].e[j]));
         }
         // the lean is taken as a share of the light, their weighted sums' ratio, whose noise mostly cancels
         result[0][j] = clip(value, lo, hi);
-        result[1][j] = (r[0] > 0.0) ? result[0][j] * lean / r[0] : 0.0;
+        result[1][j] = (sum > 0.0) ? result[0][j] * lean / sum : 0.0;
     }
     return true;
 }
@@ -9591,6 +9700,7 @@ const Trace::SubsurfaceParts& Trace::FindSubsurfaceParts(ObjectPtr object, Prepa
             mask[std::find(parts.lights.begin(), parts.lights.end(), light) - parts.lights.begin()] = 1;
         auto found = std::find(parts.sets.begin(), parts.sets.end(), mask);
         parts.setOf[leaves[i]] = int(found - parts.sets.begin());
+        parts.partOf[leaves[i]] = int(i);
         if (found == parts.sets.end())
             parts.sets.push_back(mask);
     }
@@ -10899,7 +11009,7 @@ bool Trace::ComputeMapDiffusion(const Intersection& out, const Vector3d& base, c
         }
     }
     if (cloud.parts->buried)
-        cloud.internalServed = GatherCloudInternal(x, n, u1, u2, through ? thin.depth : -1.0, cloud, cloud.internalRaw);
+        cloud.internalServed = GatherCloudInternal(x, n, u1, u2, through ? thin.depth : -1.0, out.Object, cloud, cloud.internalRaw);
     if (!own.any)
         CountSubsurfaceObject(cloud.object, kUnservedFarPoints);
     if (hidden)
@@ -11702,6 +11812,10 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         threadData->Stats()[Subsurface_Cloud_Unserved]++;
         CountSubsurfaceObject((cloudData.unserved == kUnservedSheet) ? ConstObjectPtr(out.Object) : ConstObjectPtr(SubsurfaceObject(out)), cloudData.unserved);
     }
+    // The buried lights' scattered light is the cloud's where its gather found it, unless this point's own layer is one the
+    // cloud cannot carry, whose own paths then decide it as on a part with no cloud.
+    const MathColour *cloudInternal = (cloud && cloudData.internalServed && !flesh.fleshAtDepth && (layers.top->Next == nullptr)) ?
+                                      cloudData.internalRaw : nullptr;
     const bool photonSamples = !pointCloud && SubsurfacePhotonsEnabled(out.Object, Eye.GetPreparedSetId());
     if (!pointCloud)
     {
@@ -11806,7 +11920,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
             if (pointCloud)
                 internal = ComputeInternalAtExit(out, eye, eta, sigma_a, sigma_s, lights, Finish->LightSamples, nested,
                     DeriveKey(pathKey, kDrawSubsurface, 0), !flesh.fleshAtDepth && layers.top->Next == nullptr,
-                    Finish->SubsurfaceHasColour ? &flesh : nullptr, (cloud && cloudData.internalServed) ? cloudData.internalRaw : nullptr);
+                    Finish->SubsurfaceHasColour ? &flesh : nullptr, cloudInternal);
             Vector3d refracted;
             const double cosine = clip(dot(toward, normal), 0.0, 1.0);
             if ((NumSamplesSingle > 0) && !estimate && SSLTComputeRefractedDirection(eye.Direction, out.INormal, 1.0 / eta, refracted))
@@ -11847,7 +11961,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     if (pointCloud)
         internalSource = ComputeInternalAtExit(out, Eye, eta, sigma_a, sigma_s, lights, Finish->LightSamples, nested,
             DeriveKey(key, kDrawSubsurface, 7), !flesh.fleshAtDepth && layers.top->Next == nullptr,
-            Finish->SubsurfaceHasColour ? &flesh : nullptr, (cloud && cloudData.internalServed) ? cloudData.internalRaw : nullptr);
+            Finish->SubsurfaceHasColour ? &flesh : nullptr, cloudInternal);
     if (Finish->SubsurfaceHasColour) internalSource *= flesh.exitSkin;
     Final_Colour += internalSource * layers.weight;
 

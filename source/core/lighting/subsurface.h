@@ -202,6 +202,7 @@ struct SubsurfaceCell final
     std::vector<float> photonEntry; ///< entry-filtered photons, in point id order, for core reconstruction
     std::vector<float> entry; ///< where the body looks up flesh: per point, the flesh times skin its light enters by, then its emission, per channel
     std::vector<float> internal; ///< where the body holds a buried volume light: per point, the scattered radiance inside heading out and its lean with the cosine, per channel
+    std::vector<std::int32_t> internalPart; ///< beside internal: per point, the part whose material and lights it was found with, or -1 where the cloud cannot carry it
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;

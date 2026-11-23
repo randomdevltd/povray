@@ -958,7 +958,7 @@ void SubsurfaceCell::BuildHierarchy()
 size_t SubsurfaceCell::Bytes() const
 {
     return sizeof(SubsurfaceCell) + points.capacity() * sizeof(SubsurfacePoint) + nodes.capacity() * sizeof(SubsurfaceNode) +
-           (visibility.capacity() + ambient.capacity() + photonEntry.capacity() + entry.capacity() + internal.capacity()) * sizeof(float) +
+           (visibility.capacity() + ambient.capacity() + photonEntry.capacity() + entry.capacity() + internal.capacity()) * sizeof(float) + internalPart.capacity() * sizeof(std::int32_t) +
            (read ? (nodes.size() + 31) / 32 * sizeof(std::uint32_t) : 0) + rows.capacity() * sizeof(std::vector<SubsurfacePoint>);
 }
 
@@ -971,6 +971,7 @@ void SubsurfaceCell::Release()
     std::vector<float>().swap(photonEntry);
     std::vector<float>().swap(entry);
     std::vector<float>().swap(internal);
+    std::vector<std::int32_t>().swap(internalPart);
     std::vector<float>().swap(taps);
     std::vector<size_t>().swap(tapStart);
     std::vector<std::vector<float>>().swap(tapRows);
