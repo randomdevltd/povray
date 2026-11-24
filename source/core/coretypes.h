@@ -182,6 +182,8 @@ class Media final
         int AA_Level;
         /// multiplies the light samples this medium receives (light_samples)
         DBL Light_Samples;
+        /// its own lit_by_tags query (SceneData::litByQueries), -1 for none; `litBy` is the one it takes, set once the scene is complete
+        int litByTags = -1, litBy = -1;
 
         std::vector<PIGMENT*> Density;
         /// the prepared grid's cell width, derived from domainCells and the container

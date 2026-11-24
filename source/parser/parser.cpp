@@ -544,9 +544,10 @@ void Parser::Run()
                 Parse_Frame();
             }
 
-            // the scene is complete: settle inherited tags, give out group lights, then dissolve the unions split for bounding
+            // the scene is complete: settle inherited tags and lit_by_tags, give out group lights, then dissolve the unions split for bounding
             for (ObjectPtr object : sceneData->objects)
                 ResolveInheritedTags(object);
+            Resolve_Lit_By_Tags();
             Assign_Scene_Lights();
             Check_Legacy_Transport();
             Check_Subsurface_Light_Hosts();
@@ -4841,6 +4842,8 @@ ObjectPtr Parser::Parse_Light_Source ()
         OTHERWISE
             if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
                 Error("A light block makes a shape's surface a light; a light_source cannot take one.");
+            if (CurrentTokenText() == "lit_by_tags")
+                Error("lit_by_tags chooses the lights that light an object; a light_source is not lit, so it cannot take one.");
             Reject_Nested_Item("light_source", "a light_source");
             UNGET
             EXIT
@@ -9202,7 +9205,13 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "light")
+            if (CurrentTokenText() == "lit_by_tags")
+            {
+                if (Object->Type & LIGHT_SOURCE_OBJECT)
+                    Error("lit_by_tags chooses the lights that light an object; a light_source is not lit, so it cannot take one.");
+                Object->litByTags = Parse_Lit_By_Tags();
+            }
+            else if (CurrentTokenText() == "light")
             {
                 if (Object->Type & LIGHT_SOURCE_OBJECT)
                     Error("A light block makes a shape's surface a light; a light_source cannot take one.");
@@ -10803,6 +10812,39 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
         sceneData->lightGroupLightSources.push_back(light);
         mGroupMediaLights.emplace_back(mLightGroups.back(), light);
     }
+}
+
+// Gives an object without a lit_by_tags query its parent's, and its interior's media without one of their own its query.
+void Parser::Resolve_Lit_By_Tags(ObjectPtr object, int inherited, const Interior *parentInterior, std::unordered_set<const Media *>& resolved)
+{
+    if (object->litByTags < 0)
+        object->litByTags = inherited;
+    // an interior a CSG hands its children is the CSG's, and so takes the CSG's query
+    if ((object->interior != nullptr) && (object->interior.get() != parentInterior))
+        for (Media& medium : object->interior->media)
+        {
+            const int query = (medium.litByTags >= 0) ? medium.litByTags : object->litByTags;
+            // a media shared through a declared interior is resolved once; no query (-1) differs from any query
+            if (!resolved.insert(&medium).second && (medium.litBy != query))
+                Error("A media shared by objects with different lit_by_tags cannot take both; give the media its own lit_by_tags.");
+            medium.litBy = query;
+        }
+    if (object->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : reinterpret_cast<CompoundObject *>(object)->children)
+            Resolve_Lit_By_Tags(child, object->litByTags, object->interior.get(), resolved);
+}
+
+void Parser::Resolve_Lit_By_Tags()
+{
+    std::unordered_set<const Media *> resolved;
+    for (ObjectPtr object : sceneData->objects)
+        Resolve_Lit_By_Tags(object, -1, nullptr, resolved);
+    for (Media& medium : sceneData->atmosphere)
+        medium.litBy = medium.litByTags;
+    // a light made from an object, its surface or its interior's medium, answers to that object's tags
+    for (LightSource *light : sceneData->mediaLights)
+        if ((light->emitterContainer != nullptr) && light->tags.empty())
+            light->tags = light->emitterContainer->tags;
 }
 
 void Parser::Assign_Scene_Lights()

@@ -1298,6 +1298,7 @@ class Trace
         struct SubsurfaceParts
         {
             std::vector<const LightSource*> lights;
+            std::uint64_t lightsKey = 0; ///< a hash of the lights' indices, for the cloud's cell keys
             std::vector<std::vector<char>> sets;
             std::unordered_map<const void*, int> setOf;
             std::unordered_map<const void*, int> partOf; ///< each part's place in the walk of the parts, which its cloud points keep for their buried light
@@ -1543,7 +1544,9 @@ class Trace
         bool ReadCloudInternal(const Intersection& out, const Ray& eye, const Vector3d& base, const SubsurfaceProfile& profile,
                                const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud, bool opened, TraceTicket& ticket,
                                const char*& reason);
-        void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
+        /// `finish` gives the subsurface lit_by_tags query; null takes the object's first subsurface finish's.
+        void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId,
+                                     const FINISH *finish = nullptr);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
                                   std::uint64_t key);

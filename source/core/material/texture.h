@@ -168,6 +168,8 @@ struct Finish_Struct final
     bool AlphaKnockout;   // whether pigment alpha knocks out finish effects
     DBL LightSamples;     ///< multiplies each light's samples for this surface's draws (light_samples)
     int LightSamplesMode; ///< a LightSamplesModes value: whether a hit's samples also scale with its contribution to the pixel
+    int LitByTags;            ///< the lit_by_tags query (SceneData::litByQueries) its surface shading takes, -1 for the object's
+    int SubsurfaceLitByTags;  ///< the one its subsurface light takes, -1 for the object's
     ~Finish_Struct();
 };
 

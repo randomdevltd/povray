@@ -370,7 +370,7 @@ size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
     size_t h = std::hash<const void*>()(k.object) ^
                (std::hash<size_t>()(k.preparedSetId) * 65599u) ^ std::hash<double>()(k.lightSamples);
     for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel), std::int64_t(k.normals),
-                            std::int64_t(k.camera), std::int64_t(k.view), std::int64_t(k.photonShot) })
+                            std::int64_t(k.camera), std::int64_t(k.view), std::int64_t(k.photonShot), std::int64_t(k.lights) })
         h = h * 1000003u ^ std::hash<std::int64_t>()(v);
     return h;
 }

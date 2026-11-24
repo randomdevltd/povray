@@ -1140,7 +1140,8 @@ FINISH_ITEMS:
   reflection { Color_Reflecting_Min [REFLECTION_ITEMS...] } |
   subsurface { translucency COLOR [SUBSURFACE_ITEMS...] } |
   irid { Irid_Amount [IRID_ITEMS...] |
-  use_alpha BOOL | light_samples Multiplier [full | by_contribution]
+  use_alpha BOOL | light_samples Multiplier [full | by_contribution] |
+  lit_by_tags { TAG_EXPRESSION }
   }
 REFLECTION_ITEMS:
   COLOR_REFLECTION_MAX | fresnel BOOL |
@@ -1396,7 +1397,8 @@ finish { crand 0.05 }
 <pre>
   #default { finish { subsurface { minimum_influence FLOAT } } }
 </pre>
-<p>Where <code>minimum_influence</code> is the only item of its block, it sets the value without switching subsurface on for that finish, so the default finish can carry it while other objects stay without subsurface. <code>minimum_influence</code> is matched by its text here and stays free as an identifier.</p>
+<p>A finish's <code>lit_by_tags</code> chooses the lights its surface receives, and the one in its <code>subsurface</code> block those its subsurface receives, which without one of its own is the object's, not the finish's; see <a href="r3_5.html#r3_5_1_5_15">Lit By Tags</a>.</p>
+<p>Where <code>minimum_influence</code> or <code>lit_by_tags</code> are the only items of their block, they set their values without switching subsurface on for that finish, so the default finish can carry them while other objects stay without subsurface. Both are matched by their text here and stay free as identifiers.</p>
 <p>A texture of several layers scatters once: the layers' pigments are blended as the viewer sees them, by each layer's opacity and filter, and the topmost subsurface layer's finish sets the translucency and the settings below. A half-transparent subsurface layer over another therefore adds only its share of light, instead of looking opaque.</p>
 <p>By default the pigment is also the colour of the material inside: a dark pigment makes a dark material throughout, which lets little light through. To give the inside, the <em>flesh</em>, a colour of its own, the finish's <code>subsurface</code> block takes further items:</p>
 <pre>
@@ -1404,7 +1406,7 @@ SUBSURFACE_ITEMS:
   method INT | colour COLOR | pigment { PIGMENT } |
   emission COLOR | emission pigment { PIGMENT } |
   thickness FLOAT | thickness pigment { PIGMENT } |
-  minimum_influence FLOAT |
+  minimum_influence FLOAT | lit_by_tags { TAG_EXPRESSION } |
   volume_sampling BOOL | volume_sampling { [depth FLOAT] [spread FLOAT] }
 </pre>
 <ul>

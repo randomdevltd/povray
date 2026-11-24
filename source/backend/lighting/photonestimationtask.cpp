@@ -169,7 +169,7 @@ void PhotonEstimationTask::SearchThroughObjectsEstimatePhotons(vector<ObjectPtr>
             !((*Sib)->Type & LIGHT_SOURCE_OBJECT))
         {
             /* do not shoot photons if global lights are turned off for ObjectPtr */
-            if (PhotonLightAffectsTarget(*Sib, Light))
+            if (PhotonLightAffectsTarget(*Sib, Light) && GetSceneData()->LightsSurface(*Light, *Sib))
             {
                 EstimatePhotonsForObjectAndLight((*Sib), Light);
             }

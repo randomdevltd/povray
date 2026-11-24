@@ -446,6 +446,10 @@
    "text": "The default if none is specified is linear_spline.",
    "doc": "r3_5.html#r3_5_1_1_8"
   },
+  "lit_by_tags": {
+   "text": "The lit_by_tags item chooses, by a tag expression over the lights' tags, which lights light an object, a surface, a subsurface or a medium.",
+   "doc": "r3_5.html#r3_5_1_5_15"
+  },
   "ln": {
    "text": "Natural logarithm of A.",
    "doc": "r3_3.html#r3_3_1_5_4"
@@ -1286,8 +1290,8 @@
    "from": "doc/html/r3_3.html"
   },
   "by_contribution": {
-   "rank": 1066,
-   "code": "use_alpha BOOL | light_samples Multiplier [full | by_contribution]",
+   "rank": 1068,
+   "code": "use_alpha BOOL | light_samples Multiplier [full | by_contribution] |",
    "from": "doc/html/r3_6.html"
   },
   "camera": {
@@ -1732,8 +1736,8 @@
    "from": "doc/html/r3_10.html"
   },
   "full": {
-   "rank": 1066,
-   "code": "use_alpha BOOL | light_samples Multiplier [full | by_contribution]",
+   "rank": 1068,
+   "code": "use_alpha BOOL | light_samples Multiplier [full | by_contribution] |",
    "from": "doc/html/r3_6.html"
   },
   "function": {
@@ -1999,6 +2003,11 @@
    "code": "SWEEP_TYPE : linear_sweep",
    "from": "doc/html/r3_5.html"
   },
+  "lit_by_tags": {
+   "rank": 30,
+   "code": "lit_by_tags { TAG_EXPRESSION }",
+   "from": "doc/html/r3_5.html"
+  },
   "ln": {
    "rank": 1032,
    "code": "atanh | ln | pwr( X_Val, Y_Val )",
@@ -2160,8 +2169,8 @@
    "from": "doc/html/r3_6.html"
   },
   "minimum_influence": {
-   "rank": 68,
-   "code": "finish { subsurface { translucency COLOR minimum_influence FLOAT } }",
+   "rank": 58,
+   "code": "minimum_influence FLOAT | lit_by_tags { TAG_EXPRESSION } |",
    "from": "doc/html/r3_6.html"
   },
   "minimum_reuse": {

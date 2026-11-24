@@ -273,6 +273,8 @@ class ObjectBase
         std::vector<std::string> tags;
         /// whether the parent's effective tags add to `tags`: true when omitted or written with `inherit`
         bool inheritTags = true;
+        /// the lit_by_tags query (SceneData::litByQueries) its blocks default to, -1 for none; once the scene is complete, inherited
+        int litByTags = -1;
         /// subsurface method 2's map points for this object as a whole (subsurface { domain_cells }); 0 takes its material's density over its area, at most kSubsurfacePointsPerMM2
         double subsurfaceDomainCells = 0.0;
         /// the placed union of subsurface members this object is part of, which diffuses light as one body; set once the scene is complete
@@ -309,7 +311,7 @@ class ObjectBase
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
-            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), subsurfaceDomainCells(o.subsurfaceDomainCells), photonTargetGroup(o.photonTargetGroup), source(o.source)
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), litByTags(o.litByTags), subsurfaceDomainCells(o.subsurfaceDomainCells), photonTargetGroup(o.photonTargetGroup), source(o.source)
         {
             if (transplant)
             {

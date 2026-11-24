@@ -433,7 +433,7 @@ camera { location <1, 1, -6> look_at Row }
 object { Row translate y }                  // copies; the originals stay
 ```
 
-`filter_tags`, `front_filter_tags`, `back_filter_tags` and `tagged` blocks take the full
+`filter_tags`, `front_filter_tags`, `back_filter_tags`, [`lit_by_tags`](render-tags.md#lighting-by-tags) and `tagged` blocks take the full
 tag expression grammar (`&`, `|`, `!`, `any`, `none`, wildcards and parentheses). Its
 operators are kept as written; its operands are string values, written as literals, names,
 calls such as `concat(...)`, members or indexes, and are evaluated like any other value. `tagged` is a keyword only when a `{` follows it, so it remains free

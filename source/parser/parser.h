@@ -57,6 +57,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Boost headers
@@ -618,6 +619,7 @@ class Parser final
         /// view_directions N: a positive integer count of view directions
         unsigned Parse_Bounce_Directions();
         double Parse_Light_Samples();
+        int Parse_Lit_By_Tags();
         /// domain_cells N: an integer cell count from 1 to 1000000000
         DBL Parse_Domain_Cells();
         void Parse_Light_Attenuation(MediaLight& light, bool surface);
@@ -952,6 +954,8 @@ class Parser final
         bool Subsurface_Members(ConstObjectPtr Object, const TEXTURE *inherited);
         void Split_Unions();
         void Split_Union(ObjectPtr Object);
+        void Resolve_Lit_By_Tags();
+        void Resolve_Lit_By_Tags(ObjectPtr object, int inherited, const Interior *parentInterior, std::unordered_set<const Media *>& resolved);
         void Assign_Scene_Lights();
         void Check_Legacy_Transport();
         void Check_Subsurface_Light_Hosts();

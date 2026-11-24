@@ -2747,8 +2747,15 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
 {
     Vector3d reye;
 
+    // the lights its lit_by_tags query selects in this view, resolved before rendering
+    const PreparedSet& view = sceneData->GetPreparedSet(eye.GetPreparedSetId());
+    const int litBy = (finish->LitByTags >= 0) ? finish->LitByTags : object->litByTags;
+    const std::vector<unsigned int>& lights = view.Lights(litBy);
+
     // crand draws a random number per evaluation, so its lights are tested one by one as before
-    if(eye.IsRadiosityRay() && (finish->Crand <= 0.0) && (threadData->lightSources.size() + object->LLights.size() > 1))
+    // without a query the choice counts the scene's lights, as before lit_by_tags
+    const size_t candidates = (litBy < 0) ? threadData->lightSources.size() : lights.size();
+    if(eye.IsRadiosityRay() && (finish->Crand <= 0.0) && (candidates + object->LLights.size() > 1))
     {
         ComputeSampledDiffuseLight(finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, &geometricNormal);
         return;
@@ -2759,29 +2766,29 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         reye = -eye.Direction;
 
     // global light sources, if not turned off for this object
-    const PreparedSet& view = sceneData->GetPreparedSet(eye.GetPreparedSetId());
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
-        for (unsigned int i : view.globalLights)
+        for (unsigned int i : lights)
             if (!ExportSkips(*threadData->lightSources[i]))
                 ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour,
                                        colour, attenuation, object, relativeIor, i, &geometricNormal);
     }
 
-    // local light sources from a light group, if any; a selected object's group is selected with it
+    // local light sources from a light group, if any and its query selects them; a selected object's group is selected with it
     for(LightSource *light : object->LLights)
-        if(view.UsesGroupLight(light->index) && !ExportSkips(*light))
+        if(view.UsesGroupLight(light->index, litBy) && !ExportSkips(*light))
             ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, -1, &geometricNormal);
 
     // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
     if(!sceneData->portalLights.empty() && !eye.IsRadiosityRay())
     {
         if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-            for(const LightSource *image : view.globalPortalImages)
+            for(const LightSource *image : view.PortalImages(litBy))
                 ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
         for(const LightSource *light : object->LLights)
-            for(const LightSource *image : view.groupPortalImages[light->index])
-                ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+            if(view.UsesGroupLight(light->index, litBy))
+                for(const LightSource *image : view.groupPortalImages[light->index])
+                    ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
 }
 
@@ -2867,13 +2874,14 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
     };
 
     const PreparedSet& view = sceneData->GetPreparedSet(eye.GetPreparedSetId());
+    const int litBy = (finish->LitByTags >= 0) ? finish->LitByTags : object->litByTags;
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
-        for(unsigned int i : view.globalLights)
+        for(unsigned int i : view.Lights(litBy))
             consider(*threadData->lightSources[i], i);
     }
     for(LightSource *light : object->LLights)
-        if(view.UsesGroupLight(light->index))
+        if(view.UsesGroupLight(light->index, litBy))
             consider(*light, -1);
 
     const size_t end = lightCandidates.size();
@@ -4614,7 +4622,7 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     if((sceneData->photonSettings.photonsEnabled == true) &&
         (sceneData->photonSettings.Progressive() ?
             !sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).progressiveSurface.photons.empty() &&
-                pov::PhotonLightAffectsObject(&lightsource, isect.Object) :
+                pov::PhotonLightAffectsObject(&lightsource, isect.Object) && sceneData->LightsSurface(lightsource, isect.Object) :
             sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0) &&
         (!threadData->litObjectIgnoresPhotons) &&
         (Test_Flag(isect.Object,PH_TARGET_FLAG)) &&
@@ -7238,18 +7246,39 @@ ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
     return (isect.Csg != nullptr) ? isect.Csg : isect.Object;
 }
 
-// The global lights unless the object turns them off, then those of its light group.
-void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId)
+// The first finish in these textures that uses subsurface, or null.
+static const FINISH *FirstSubsurfaceFinish(const TEXTURE *textures)
+{
+    for (const TEXTURE *layer = textures; layer != nullptr; layer = layer->Next)
+    {
+        if ((layer->Finish != nullptr) && layer->Finish->UseSubsurface)
+            return layer->Finish;
+        for (const TEXTURE *material : layer->Materials)
+            if (const FINISH *finish = FirstSubsurfaceFinish(material))
+                return finish;
+        if (layer->Blend_Map != nullptr)
+            for (const TextureBlendMapEntry& entry : layer->Blend_Map->Blend_Map_Entries)
+                if (const FINISH *finish = FirstSubsurfaceFinish(entry.Vals))
+                    return finish;
+    }
+    return nullptr;
+}
+
+// The global lights its subsurface lit_by_tags query selects, unless the object turns them off, then those of its light group the query selects.
+void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId, const FINISH *finish)
 {
     lights.clear();
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    if (finish == nullptr)
+        finish = FirstSubsurfaceFinish(object->Texture);
+    const int litBy = ((finish != nullptr) && (finish->SubsurfaceLitByTags >= 0)) ? finish->SubsurfaceLitByTags : object->litByTags;
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-        for(unsigned int i : view.globalLights)
+        for(unsigned int i : view.Lights(litBy))
             if (!ExportSkips(*threadData->lightSources[i]))
                 if (const LightSource *received = LightOnObject(*threadData->lightSources[i], object))
                     lights.push_back(received);
     for(const LightSource *light : object->LLights)
-        if(view.UsesGroupLight(light->index) && !ExportSkips(*light))
+        if(view.UsesGroupLight(light->index, litBy) && !ExportSkips(*light))
             if (const LightSource *received = LightOnObject(*light, object))
                 lights.push_back(received);
 }
@@ -9862,7 +9891,10 @@ const Trace::SubsurfaceParts& Trace::FindSubsurfaceParts(ObjectPtr object, Prepa
         CollectSubsurfaceLights(leaves[i], each[i], preparedSetId);
         for (const LightSource *light : each[i])
             if (std::find(parts.lights.begin(), parts.lights.end(), light) == parts.lights.end())
+            {
                 parts.lights.push_back(light);
+                parts.lightsKey = DeriveKey(parts.lightsKey, light->index, light->lightGroupLight ? 1 : 0);
+            }
         parts.anyCollects = parts.anyCollects || !Test_Flag(leaves[i], PH_IGNORE_PHOTONS_FLAG);
         parts.anyEntry = parts.anyEntry || SubsurfaceLooksUpEntry(leaves[i]);
         if (SubsurfaceSheet(leaves[i], cutters[i], threadData->subsurfaceCache.get()))
@@ -10146,6 +10178,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
                                           std::int64_t(floor(out.IPoint[Y] / cloud.size)) + (k / 3) % 3 - 1,
                                           std::int64_t(floor(out.IPoint[Z] / cloud.size)) + k / 9 - 1,
                                           cloud.photons, cloud.radiosity, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
+                key.lights = cloud.parts->lightsKey;
                 double step[3];
                 SubsurfaceStepTerm term;
                 bool floored;
@@ -10226,6 +10259,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     {
         SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(cx), std::int64_t(cy), std::int64_t(cz), cloud.photons,
                                   cloud.radiosity, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
+        key.lights = cloud.parts->lightsKey;
         // what of the view the cell depends on: the camera off the map, the radiosity cache, the photon maps
         key.camera = cloud.map ? 0 : ssltCameraId;
         key.view = cloud.radiosity ? threadData->subsurfaceCache->View() : 0;
@@ -11943,7 +11977,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);
 
     std::vector<const LightSource*> lights;
-    CollectSubsurfaceLights(out.Object, lights, Eye.GetPreparedSetId());
+    CollectSubsurfaceLights(out.Object, lights, Eye.GetPreparedSetId(), Finish);
     // Method 2 is the cloud's everywhere, the radiosity pretrace included (its points then carry no radiosity, the cache still
     // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
     bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();

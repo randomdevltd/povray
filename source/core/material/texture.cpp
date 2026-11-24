@@ -239,6 +239,8 @@ FINISH *Create_Finish()
 
     New->LightSamples = 1.0;
     New->LightSamplesMode = kLightSamplesDefault;
+    New->LitByTags = -1;
+    New->SubsurfaceLitByTags = -1;
     New->Ambient.Set(0.1);
     New->Emission.Clear();
     New->Reflection_Max.Clear();
