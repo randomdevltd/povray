@@ -160,6 +160,9 @@ struct SubsurfaceCloudStatistics final
     double boundaries = 0.0, layers = 0.0, evicted = 0.0, tablesPeakBytes = 0.0; ///< method 2's tables built, dropped for the cap, and the most alive at once
 };
 
+/// Floats a cloud point keeps of its buried lights' light: per channel its radiance at the pivot cosine, then its lean.
+constexpr int kSubsurfaceInternalStride = 2 * MathColour::channels;
+
 /// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
 struct SubsurfacePoint final
 {
@@ -198,6 +201,8 @@ struct SubsurfaceCell final
     std::vector<float> ambient; ///< while lighting a radiosity cell: per point and channel, the cache's light, or NaN if none
     std::vector<float> photonEntry; ///< entry-filtered photons, in point id order, for core reconstruction
     std::vector<float> entry; ///< where the body looks up flesh: per point, the flesh times skin its light enters by, then its emission, per channel
+    std::vector<float> internal; ///< where the body holds a buried volume light: per point, the scattered radiance inside heading out and its lean with the cosine, per channel
+    std::vector<std::int32_t> internalPart; ///< beside internal: per point, the part whose material and lights it was found with, or -1 where the cloud cannot carry it
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;

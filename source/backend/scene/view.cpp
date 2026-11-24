@@ -1651,6 +1651,10 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       double(stats[Subsurface_Cloud_Lifted]), double(stats[Subsurface_Cloud_Dropped_Inside]),
                       double(stats[Subsurface_Cloud_Dropped_Outside]), double(stats[Subsurface_Cloud_Dropped_Thin]),
                       double(stats[Subsurface_Cloud_Dropped_Sheet]), double(stats[Subsurface_Cloud_Estimated]));
+        if (stats[Subsurface_Cloud_Internal_Read] + stats[Subsurface_Cloud_Internal_Walked] > 0)
+            messages.Info("Method 2 buried lights: %.0f shading points read their scattered light from the cloud; %.0f walked "
+                          "their own paths for all of it.", double(stats[Subsurface_Cloud_Internal_Read]),
+                          double(stats[Subsurface_Cloud_Internal_Walked]));
         if (viewData.subsurfaceCache)
         {
             SubsurfaceCloudStatistics cloud = viewData.subsurfaceCache->Statistics();

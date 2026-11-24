@@ -828,6 +828,12 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
                 std::memcpy(&bits[3], &p.area, sizeof(p.area));
                 std::memcpy(&bits[4], p.irradiance, sizeof(p.irradiance));
                 for (std::uint64_t b : bits) digest = BounceOrderMix(digest ^ b);
+                if (!cell->internal.empty())
+                {
+                    std::uint64_t light[3] = {};
+                    std::memcpy(light, &cell->internal[p.id * kSubsurfaceInternalStride], kSubsurfaceInternalStride * sizeof(float));
+                    for (std::uint64_t b : light) digest = BounceOrderMix(digest ^ b);
+                }
             }
             stats.digest ^= digest;
         }
@@ -952,7 +958,7 @@ void SubsurfaceCell::BuildHierarchy()
 size_t SubsurfaceCell::Bytes() const
 {
     return sizeof(SubsurfaceCell) + points.capacity() * sizeof(SubsurfacePoint) + nodes.capacity() * sizeof(SubsurfaceNode) +
-           (visibility.capacity() + ambient.capacity() + photonEntry.capacity() + entry.capacity()) * sizeof(float) +
+           (visibility.capacity() + ambient.capacity() + photonEntry.capacity() + entry.capacity() + internal.capacity()) * sizeof(float) + internalPart.capacity() * sizeof(std::int32_t) +
            (read ? (nodes.size() + 31) / 32 * sizeof(std::uint32_t) : 0) + rows.capacity() * sizeof(std::vector<SubsurfacePoint>);
 }
 
@@ -964,6 +970,8 @@ void SubsurfaceCell::Release()
     std::vector<float>().swap(ambient);
     std::vector<float>().swap(photonEntry);
     std::vector<float>().swap(entry);
+    std::vector<float>().swap(internal);
+    std::vector<std::int32_t>().swap(internalPart);
     std::vector<float>().swap(taps);
     std::vector<size_t>().swap(tapStart);
     std::vector<std::vector<float>>().swap(tapRows);

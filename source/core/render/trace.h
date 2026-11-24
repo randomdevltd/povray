@@ -1298,9 +1298,11 @@ class Trace
             std::vector<const LightSource*> lights;
             std::vector<std::vector<char>> sets;
             std::unordered_map<const void*, int> setOf;
+            std::unordered_map<const void*, int> partOf; ///< each part's place in the walk of the parts, which its cloud points keep for their buried light
             std::unordered_set<const void*> sheets; ///< parts with no inside (discs, meshes with a border): no subsurface
             bool anyCollects = false;
             bool anyEntry = false; ///< whether any part's material looks up flesh or skin where light enters, so its points keep their own
+            bool buried = false; ///< whether a volume light of its parts lies in a part's material, which its map points then carry
             std::shared_ptr<const surface_map::Instance> map; ///< the object's surface map, which its points come from; null for an unbounded object
             double area = 0.0; ///< on the map: the object's surface area from the map's coarsest read that finds any, in scene units squared; 0 if none does
             int depthLevel = 0; ///< on the map: the level its points are read at, from its domain_cells over its area
@@ -1339,6 +1341,8 @@ class Trace
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
+            bool internalServed = false; ///< whether the map gather found the buried lights' radiance at the exit point, from points of its own part
+            MathColour internalRaw[2]; ///< that radiance, inside the surface heading out, before its exit factor, at the pivot cosine and its lean per unit cosine
         };
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
@@ -1486,7 +1490,36 @@ class Trace
         MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
             const std::vector<const LightSource*>& lights, double lightSamples, bool nested, std::uint64_t key, bool homogeneous,
-            const SubsurfaceFlesh* skin);
+            const SubsurfaceFlesh* skin, SubsurfaceInternalPart part = SubsurfaceInternalPart::kAll, bool cloud = false,
+            MathColour* slope = nullptr);
+        /// The mean cosine inside of viewing directions cosine-weighted outside that refract in, about which a cloud point keeps its light.
+        static double SubsurfaceInternalPivot(double eta);
+        /// The share of cosine-weighted directions outside that refract in.
+        static double SubsurfaceInternalCone(double eta);
+        /// The least cosine inside of a direction refracted in from outside.
+        static double SubsurfaceInternalLeast(double eta);
+        /// A cloud point's paths as a line in the cosine inside: its value at the pivot cosine, and its lean in slope.
+        static MathColour CloudInternalLine(const std::vector<Vector3d>& inwards, const std::vector<char>& refracted,
+                                            const std::vector<double>& values, const Vector3d& normal, double eta, MathColour* slope);
+        /// What a buried light's radiance inside the surface, heading out, becomes towards the eye: Ft / eta^2 by the refracted
+        /// eye ray's cosine, or 0 for an eye inside the material.
+        double SubsurfaceInternalExit(const Intersection& out, const Ray& eye, double eta, double* insideCosine = nullptr);
+        /// The buried lights' light leaving towards the eye: the cloud's scattered light, when given, and the eye ray's own
+        /// uncollided light, else the eye ray's own paths for all of it.
+        MathColour ComputeInternalAtExit(const Intersection& out, Ray& eye, double eta, const PreciseMathColour& absorption,
+            const PreciseMathColour& scattering, const std::vector<const LightSource*>& lights, double lightSamples, bool nested,
+            std::uint64_t key, bool homogeneous, const SubsurfaceFlesh* skin, const MathColour* scattered);
+        /// A cloud point's buried light: the radiance inside heading out, over cosine-weighted viewing directions, by its own
+        /// material; see doc/PERF.md.
+        bool CloudInternalRadiance(const Intersection& hit, const Vector3d& outward, const std::vector<const LightSource*>& lights,
+                                   std::uint64_t key, TraceTicket& ticket, MathColour& value, MathColour& slope);
+        /// The translucency a finish carries, its untransported channels given the carried ones' mean.
+        static PreciseMathColour CarriedTranslucency(const FINISH *finish);
+        std::vector<const LightSource*> ssltScratchInternalLights;
+        void LightCloudInternal(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int k, const Intersection& hit,
+                                const Vector3d& outward, const std::vector<char>& uses, TraceTicket& ticket);
+        bool GatherCloudInternal(const Vector3d& x, const Vector3d& n, const Vector3d& u1, const Vector3d& u2, double farDepth,
+                                 ConstObjectPtr part, SubsurfaceCloud& cloud, MathColour result[2]);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
