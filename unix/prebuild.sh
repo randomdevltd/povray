@@ -669,6 +669,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/antialias_m4.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_photon_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cloud.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_cloud_views.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_per_point_flesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_shadowed_exit.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_body_volume_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -683,6 +684,8 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_internal_beer.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_internal_source.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_buried_samples.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_cloud_internal.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_buried_veins.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_volume_emitter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_internal_hosts.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_coincident_seams.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -707,7 +710,7 @@ check-quick: all
 	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/progressive_photon.cpp -o progressive_photon_test
 	./progressive_photon_test
 	rm -f progressive_photon_test
-	\$(CXX) -std=c++14 -O2 -DHAVE_CONFIG_H -I\$(top_builddir)/unix -I\$(top_srcdir)/source -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/libraries \$(top_srcdir)/tests/source/subsurface_internal.cpp -o subsurface_internal_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_builddir)/unix -I\$(top_srcdir)/source -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/libraries \$(top_srcdir)/tests/source/subsurface_internal.cpp -o subsurface_internal_test
 	./subsurface_internal_test
 	rm -f subsurface_internal_test
 	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/subsurface_patch.cpp -o subsurface_patch_test

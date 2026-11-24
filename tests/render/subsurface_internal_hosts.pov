@@ -15,7 +15,9 @@ light_source { <0.05,0.08,-0.06>*S rgb 0.4 }
 #declare Wax=texture { pigment { rgb <0.95,0.85,0.7> } finish { diffuse 0.8 specular 0.2 roughness 0.02 subsurface { method 2 translucency <3,2,1> colour rgb 0.95 } } }
 #declare Paper=texture { pigment { rgb <0.93,0.86,0.7> } finish { diffuse 0.8 subsurface { method 2 translucency <1.1,0.95,0.7> colour rgb 0.95 } } }
 #macro Lamp(Lumens) pigment { rgbt 1 } hollow interior { ior off light { pigment { rgb <1,0.6,0.25> } brightness scale_lumens(Lumens*Lm, 1/S) lumens samples 4 } } #end
-#macro Host(Tex) texture { Tex } interior { ior 1.45 } #end
+// The buried light's scattered part is carried on the host's points, as localised as they are close: a budget that
+// resolves the glow over these hosts of a few millimetres, which the materials' diffusion lengths alone would give 4 points.
+#macro Host(Tex) texture { Tex } interior { ior 1.45 } subsurface { domain_cells 4096 } #end
 #declare T=0.00035; // paper thickness
 #macro SheetMesh(T)
  mesh2 { vertex_vectors { 8, <-0.02,-T/2,-0.015>,<0.02,-T/2,-0.015>,<0.02,-T/2,0.015>,<-0.02,-T/2,0.015>,

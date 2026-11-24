@@ -66,6 +66,8 @@
 namespace pov
 {
 
+class SubsurfaceStore;
+
 class BackendSceneData final : public SceneData
 {
         // Scene needs access to the private scene data constructor!
@@ -156,6 +158,9 @@ class BackendSceneData final : public SceneData
             bool useSubsurface;
         };
         std::unique_ptr<ViewDefaults> viewDefaults;
+
+        /// The subsurface clouds every view of the scene shares, created by the first; see SubsurfaceStore.
+        std::shared_ptr<SubsurfaceStore> subsurfaceStore;
 
         /// Photon maps depend on the scene, its settings and the sets shot, not the camera: a view shooting the same sets reuses them.
         struct ShotPhotons final

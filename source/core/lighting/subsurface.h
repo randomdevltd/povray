@@ -44,6 +44,7 @@
 #include <cstring>
 
 // C++ standard header files
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -158,7 +159,11 @@ struct SubsurfaceCloudStatistics final
     double termCells[kStepTerms] = {}, termPoints[kStepTerms] = {};
     std::uint64_t digest = 0; ///< the cells' points and light, combined independently of build order
     double boundaries = 0.0, layers = 0.0, evicted = 0.0, tablesPeakBytes = 0.0; ///< method 2's tables built, dropped for the cap, and the most alive at once
+    double reused = 0.0; ///< of the cells a view used, those an earlier view of the scene built
 };
+
+/// Floats a cloud point keeps of its buried lights' light: per channel its radiance at the pivot cosine, then its lean.
+constexpr int kSubsurfaceInternalStride = 2 * MathColour::channels;
 
 /// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
 struct SubsurfacePoint final
@@ -198,9 +203,12 @@ struct SubsurfaceCell final
     std::vector<float> ambient; ///< while lighting a radiosity cell: per point and channel, the cache's light, or NaN if none
     std::vector<float> photonEntry; ///< entry-filtered photons, in point id order, for core reconstruction
     std::vector<float> entry; ///< where the body looks up flesh: per point, the flesh times skin its light enters by, then its emission, per channel
+    std::vector<float> internal; ///< where the body holds a buried volume light: per point, the scattered radiance inside heading out and its lean with the cosine, per channel
+    std::vector<std::int32_t> internalPart; ///< beside internal: per point, the part whose material and lights it was found with, or -1 where the cloud cannot carry it
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
+    std::uint64_t view = 0; ///< the view of the scene that built it
     SubsurfaceStepTerm term = kStepDiffusion; ///< the rule that set its finest step
     size_t charged = 0, staged = 0; ///< bytes of its finished arrays counted against the cap; of its rows while casting
     bool settled = false; ///< charged or refunded, after which its rows no longer count
@@ -247,10 +255,15 @@ struct SubsurfaceCellKey final
     int depthLevel; ///< where the diffusion would set too coarse a step for its depth, the step is 2^depthLevel scene units
     double lightSamples = 1.0;
     bool normals = true; ///< whether entry lighting uses texture normals
+    /// What of its view a cell's contents depend on, 0 where nothing does, so that views of one scene share the rest: the
+    /// camera spacing of a cell off the surface map (SubsurfaceStore::CameraId), the view whose radiosity cache a radiosity
+    /// cell reads, and the shooting of the photon maps a cell with photons gathers.
+    std::uint64_t camera = 0, view = 0, photonShot = 0;
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
-               photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples && normals == o.normals;
+               photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples && normals == o.normals &&
+               camera == o.camera && view == o.view && photonShot == o.photonShot;
     }
 };
 
@@ -288,63 +301,44 @@ class SubsurfacePhotonBoundaries final
         void Allocate(const PhotonMap& map);
 };
 
-/// Irradiance clouds built on demand and shared by all render threads; a cap the scene sets stops the render at it, and
-/// without one the clouds take the memory they need until the system runs out.
-class SubsurfaceCache final
+/// Irradiance clouds built on demand and shared by all render threads and by every view of a scene; a cap the scene sets
+/// stops the render once the clouds of all its views pass it, and without one they take the memory they need until the
+/// system runs out. A cell is a function of its key alone, so a view reuses the cells earlier views built.
+class SubsurfaceStore final
 {
     public:
         /// capMB in MB caps the clouds when at least 1; below it (kSubsurfaceUncappedMB, the scene's default) they are
         /// uncapped.
-        explicit SubsurfaceCache(double capMB = kSubsurfaceUncappedMB);
-        SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
-        /// The cell for key, and whether the caller is the first to ask and so must build it.
-        std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
-        /// Counts a finished cell's bytes against the cap, so that whether a render stops depends on the scene alone; throws
-        /// the fatal error once the clouds pass it.
+        explicit SubsurfaceStore(double capMB = kSubsurfaceUncappedMB);
+        /// The cell for key, and whether the caller, of the view numbered view, is the first to ask and so must build it.
+        std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build, std::uint64_t view);
+        /// Readies the cells for a new view and returns its number, from 1: drops those a stopped view left unusable and
+        /// those no later view can read (radiosity cells, photon cells of an earlier shooting), refunds their bytes, clears
+        /// the read marks of the rest, and lifts a stop an earlier view hit if what remains fits the cap.
+        std::uint64_t BeginView();
         void Charge(SubsurfaceCell& cell);
-        /// Rows a cell casts into, counted only in the peak.
         void Stage(SubsurfaceCell& cell, size_t bytes);
-        /// Whether one cell's own points fit the cap; past it, the stop is recorded, as no total could then fit.
         bool CellFits(size_t bytes);
         void Refund(SubsurfaceCell& cell);
-        /// Counts what the surface map `map` holds now against the cap, past what was counted for it before; throws the
-        /// fatal error once the clouds and maps pass it.
         void ChargeMap(const void *map, size_t bytes);
-        /// Throws the fatal error once any cell has passed the cap.
         void CheckCap() const;
-        /// The share of the image done; once past half, whether cells built at the second quarter's rate would pass the cap.
-        bool Progress(double fraction, double& heldMB, double& projectedMB, double& capMB);
-        SubsurfaceCloudStatistics Statistics() const;
-        /// The count of shading points of one object the cloud could not serve for one reason, for the render's warnings.
-        std::atomic<std::uint64_t>& UnservedCounter(const void *object, SubsurfaceUnserved reason, const std::string& description);
-        struct UnservedObject { std::string description; SubsurfaceUnserved reason; std::uint64_t count; };
-        std::vector<UnservedObject> Unserved() const;
-        /// Each bounded object's point budget as the clouds use it: its area on the map, domain_cells, and the spacing and map
-        /// level they give, in scene units.
-        struct BudgetObject { std::string description; double area, budget, spacing; int level; };
-        void ReportBudget(const void *object, const BudgetObject& budget);
-        std::vector<BudgetObject> Budgets() const;
-        /// Whether a mesh's triangles close it: each edge shared by exactly two of them; computed once per mesh.
+        /// The share of the current view's image done, for the error a passed cap gives; the bytes counted and the cap.
+        void Progress(double fraction, size_t& held, size_t& capBytes);
+        /// The memory and table figures of the statistics, for all views so far.
+        void Totals(SubsurfaceCloudStatistics& stats) const;
         bool ClosedMesh(const void *mesh, const std::function<bool()>& compute);
-        /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
-        void SetCamera(const Vector3d& location, double pixelSize, double pixelAngle);
-        bool GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const;
-        /// A layer table of the boundary (SubsurfaceBoundary::BuildLayer), kept within kSubsurfaceTablesMB with the
-        /// least recently used dropped first; a table is a function of its key alone, so dropping one costs only time.
         std::shared_ptr<const float> Layer(const SubsurfaceBoundary& boundary, int step, int k);
-        /// The boundary for a quantised index (SubsurfaceBoundary::Quantise), kept as the layer tables are.
         std::shared_ptr<const SubsurfaceBoundary> Boundary(double eta);
-        /// Lets threads with nothing else to do take jobs of a cell being built, through `work`, until it is withdrawn.
-        void Offer(const SubsurfaceCell *cell, std::function<bool(Trace&)> work);
-        void Withdraw(const SubsurfaceCell *cell);
-        /// Runs jobs of an offered cell on `trace`, waiting up to `wait` for an offer; whether it ran any.
-        bool Help(Trace& trace, std::chrono::milliseconds wait);
+        /// The same number for views whose cameras space points alike, from 1.
+        std::uint64_t CameraId(const Vector3d& location, double pixelSize, double pixelAngle);
+        /// The number of the scene's photon maps, from 1: a new one when they are shot afresh, else the last one's. A fresh
+        /// shooting drops the photon cells of earlier ones, which no view can read again.
+        std::uint64_t PhotonShot(bool fresh);
 
     private:
-        std::mutex offersMutex;
-        std::condition_variable offered;
-        std::vector<std::pair<const SubsurfaceCell*, std::shared_ptr<std::function<bool(Trace&)>>>> offers;
-        size_t nextOffer = 0;
+        /// Drops the cells `drop` picks and refunds their bytes, clears the read marks of the rest, and lifts a stop an
+        /// earlier view hit if what remains fits the cap; only between views, when no thread works on a cell.
+        void Drop(const std::function<bool(const SubsurfaceCellKey&, const SubsurfaceCell&)>& drop);
         struct TableKey
         {
             double eta;
@@ -363,21 +357,97 @@ class SubsurfaceCache final
         std::shared_ptr<TableBytes> tableBytes = std::make_shared<TableBytes>();
         mutable std::mutex mutex;
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
+        std::map<const void*, bool> closedMeshes;
+        std::mutex closedMeshesMutex;
+        size_t cap, charged = 0, staged = 0, peak = 0, refused = 0;
+        double progress = 0.0, refusedAt = 0.0;
+        std::unordered_map<const void*, size_t> mapBytes; ///< what each map read by the clouds held when last counted
+        std::vector<std::array<double, 5>> cameras; ///< each camera spacing given an id, at its id less one
+        std::uint64_t views = 0, photonShots = 0;
+};
+
+/// One view's use of its scene's clouds: its camera, its photon shooting, its share of the statistics and its progress
+/// against the cap, with the cells and tables of the shared SubsurfaceStore.
+class SubsurfaceCache final
+{
+    public:
+        /// A cache with clouds of its own, capped as SubsurfaceStore is.
+        explicit SubsurfaceCache(double capMB = kSubsurfaceUncappedMB);
+        /// A new view of the scene's clouds in `store`.
+        explicit SubsurfaceCache(const std::shared_ptr<SubsurfaceStore>& store);
+        SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
+        /// The cell for key, and whether the caller is the first to ask and so must build it.
+        std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
+        /// Counts a finished cell's bytes against the cap, so that whether a render stops depends on the scene alone; throws
+        /// the fatal error once the clouds pass it.
+        void Charge(SubsurfaceCell& cell) { store->Charge(cell); }
+        /// Rows a cell casts into, counted only in the peak.
+        void Stage(SubsurfaceCell& cell, size_t bytes) { store->Stage(cell, bytes); }
+        /// Whether one cell's own points fit the cap; past it, the stop is recorded, as no total could then fit.
+        bool CellFits(size_t bytes) { return store->CellFits(bytes); }
+        void Refund(SubsurfaceCell& cell) { store->Refund(cell); }
+        /// Counts what the surface map `map` holds now against the cap, past what was counted for it before; throws the
+        /// fatal error once the clouds and maps pass it.
+        void ChargeMap(const void *map, size_t bytes) { store->ChargeMap(map, bytes); }
+        /// Throws the fatal error once any cell has passed the cap.
+        void CheckCap() const { store->CheckCap(); }
+        /// The share of the image done; once past half, whether cells built at the second quarter's rate would pass the cap.
+        bool Progress(double fraction, double& heldMB, double& projectedMB, double& capMB);
+        /// The clouds' memory for all views so far, and the cells and points this view used.
+        SubsurfaceCloudStatistics Statistics() const;
+        /// The count of shading points of one object the cloud could not serve for one reason, for the render's warnings.
+        std::atomic<std::uint64_t>& UnservedCounter(const void *object, SubsurfaceUnserved reason, const std::string& description);
+        struct UnservedObject { std::string description; SubsurfaceUnserved reason; std::uint64_t count; };
+        std::vector<UnservedObject> Unserved() const;
+        /// Each bounded object's point budget as the clouds use it: its area on the map, domain_cells, and the spacing and map
+        /// level they give, in scene units.
+        struct BudgetObject { std::string description; double area, budget, spacing; int level; };
+        void ReportBudget(const void *object, const BudgetObject& budget);
+        std::vector<BudgetObject> Budgets() const;
+        /// Whether a mesh's triangles close it: each edge shared by exactly two of them; computed once per mesh.
+        bool ClosedMesh(const void *mesh, const std::function<bool()>& compute) { return store->ClosedMesh(mesh, compute); }
+        /// The camera that cells space their points for: the first of the view's threads to set it, so every thread builds
+        /// alike; id names its spacing in the keys of cells off the surface map, 0 while it is unset.
+        void SetCamera(const Vector3d& location, double pixelSize, double pixelAngle);
+        bool GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle, std::uint64_t& id) const;
+        /// This view's number, for the keys of the cells its radiosity cache lights.
+        std::uint64_t View() const { return view; }
+        /// Whether the view shoots its photon maps afresh or reuses those last shot.
+        void PhotonsShot(bool fresh);
+        /// The photon shooting this view gathers from, for the keys of cells with photons.
+        std::uint64_t PhotonShot() const { return photonShot; }
+        /// A layer table of the boundary (SubsurfaceBoundary::BuildLayer), kept within kSubsurfaceTablesMB with the
+        /// least recently used dropped first; a table is a function of its key alone, so dropping one costs only time.
+        std::shared_ptr<const float> Layer(const SubsurfaceBoundary& boundary, int step, int k) { return store->Layer(boundary, step, k); }
+        /// The boundary for a quantised index (SubsurfaceBoundary::Quantise), kept as the layer tables are.
+        std::shared_ptr<const SubsurfaceBoundary> Boundary(double eta) { return store->Boundary(eta); }
+        /// Lets threads with nothing else to do take jobs of a cell being built, through `work`, until it is withdrawn.
+        void Offer(const SubsurfaceCell *cell, std::function<bool(Trace&)> work);
+        void Withdraw(const SubsurfaceCell *cell);
+        /// Runs jobs of an offered cell on `trace`, waiting up to `wait` for an offer; whether it ran any.
+        bool Help(Trace& trace, std::chrono::milliseconds wait);
+
+    private:
+        std::shared_ptr<SubsurfaceStore> store;
+        std::uint64_t view = 0, photonShot = 0;
+        std::mutex offersMutex;
+        std::condition_variable offered;
+        std::vector<std::pair<const SubsurfaceCell*, std::shared_ptr<std::function<bool(Trace&)>>>> offers;
+        size_t nextOffer = 0;
+        mutable std::mutex mutex;
+        std::unordered_map<const SubsurfaceCell*, std::shared_ptr<SubsurfaceCell>> used; ///< the cells this view acquired
         struct UnservedEntry { std::string description; std::atomic<std::uint64_t> count{0}; };
         std::map<std::pair<const void*, int>, std::unique_ptr<UnservedEntry>> unserved;
         std::map<const void*, BudgetObject> budgets;
-        std::map<const void*, bool> closedMeshes;
-        std::mutex closedMeshesMutex;
         std::mutex photonBoundariesMutex;
         std::unordered_map<const PhotonMap*, std::unique_ptr<SubsurfacePhotonBoundaries>> photonBoundaries;
-        size_t cap, charged = 0, staged = 0, peak = 0, refused = 0;
-        double progress = 0.0, refusedAt = 0.0, firstFraction = 0.0;
+        double firstFraction = 0.0;
         size_t firstCharged = 0;
         bool projected = false;
-        std::unordered_map<const void*, size_t> mapBytes; ///< what each map read by the clouds held when last counted
         bool cameraSet = false;
         Vector3d cameraLocation;
         double cameraPixelSize = 0.0, cameraPixelAngle = 0.0;
+        std::uint64_t cameraId = 0;
 };
 
 /// Approximation to the Fresnel diffuse reflectance.

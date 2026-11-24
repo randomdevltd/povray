@@ -84,7 +84,7 @@ SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point,
         outward(at, normal);
         if (dot(normal, direction) < 0.0) normal.invert();
         if (!(dot(normal, direction) > 0.0)) normal = direction;
-        return SubsurfaceInternalBoundary{query.Distance(at.Depth), at.IPoint, normal};
+        return SubsurfaceInternalBoundary{query.Distance(at.Depth), at.IPoint, normal, roundoff};
     };
     bool opened = false;
     double start = 0.0, openCosine = 1.0;
@@ -112,7 +112,7 @@ SubsurfaceInternalBoundary FindSubsurfaceInternalBoundary(const Vector3d& point,
         if (decided && !material)
             return leave(crossing);
         if (found && (end > limit) && (!opened || material))
-            return SubsurfaceInternalBoundary{end, point + direction * end, direction};
+            return SubsurfaceInternalBoundary{end, point + direction * end, direction, roundoff};
         if (!found)
         {
             if (!opened)
