@@ -127,13 +127,12 @@ bool Collapses(TagSelection child, bool intersection)
     return (child == (intersection ? TagSelection::Empty : TagSelection::Everything));
 }
 
-void CollectLights(ObjectPtr object, std::vector<LightSource*>& lights)
+void CollectTree(ObjectPtr object, std::vector<ObjectPtr>& objects)
 {
-    if (LightSource *light = dynamic_cast<LightSource *>(object))
-        lights.push_back(light);
+    objects.push_back(object);
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
-            CollectLights(child, lights);
+            CollectTree(child, objects);
 }
 
 void Rebound(CSG *csg)
@@ -147,7 +146,7 @@ void Rebound(CSG *csg)
 }
 
 TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited,
-                         std::vector<LightSource*>& removedLights)
+                         TagPruning& pruning)
 {
     std::vector<std::string> merged;
     const std::vector<std::string>& tags = EffectiveTags(object, inherited, merged);
@@ -161,7 +160,7 @@ TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, const std::v
     selected.reserve(csg->children.size());
     for (ObjectPtr child : csg->children)
     {
-        selected.push_back(PruneTagged(child, filter, &tags, removedLights));
+        selected.push_back(PruneTagged(child, filter, &tags, pruning));
         if (Collapses(selected.back(), intersection))
             return selected.back();
     }
@@ -171,7 +170,7 @@ TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, const std::v
     {
         if (Drops(selected[i], intersection))
         {
-            CollectLights(csg->children[i], removedLights);
+            CollectTree(csg->children[i], pruning.removed);
             Destroy_Object(csg->children[i]);
             part = true;
         }
@@ -185,7 +184,10 @@ TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, const std::v
     if (csg->children.empty())
         return intersection ? TagSelection::Everything : TagSelection::Empty;
     if (part)
+    {
         Rebound(csg);
+        pruning.reshaped.push_back(csg);
+    }
     return part ? TagSelection::Part : TagSelection::Whole;
 }
 
@@ -258,11 +260,11 @@ TagSelection SelectTagged(ConstObjectPtr object, const TagFilter& filter, const 
     return part ? TagSelection::Part : TagSelection::Whole;
 }
 
-TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights)
+TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, TagPruning& pruning)
 {
     if (!filter.specified)
         return TagSelection::Whole;
-    return PruneTagged(object, filter, nullptr, removedLights);
+    return PruneTagged(object, filter, nullptr, pruning);
 }
 
 TagFilter SceneData::EffectiveFilterTags(const TagFilter& requested) const

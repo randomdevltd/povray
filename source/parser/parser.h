@@ -965,6 +965,10 @@ class Parser final
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
         void Make_Surface_Light(ObjectPtr container);
         void Make_Interior_Light(Interior& interior, ObjectPtr container);
+        void Refit_Media_Light(LightSource *light);
+        void Apply_Filter_Tags();
+        /// Placed objects Filter_Tags will cut: their media and meshes are recorded once it has.
+        std::unordered_set<ConstObjectPtr> mFilteredPlacements;
         /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.
         bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.

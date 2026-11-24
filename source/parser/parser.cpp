@@ -544,7 +544,8 @@ void Parser::Run()
                 Parse_Frame();
             }
 
-            // the scene is complete: settle inherited tags and lit_by_tags, give out group lights, then dissolve the unions split for bounding
+            // the scene is complete: apply Filter_Tags, settle inherited tags and lit_by_tags, give out group lights, then dissolve the unions split for bounding
+            Apply_Filter_Tags();
             for (ObjectPtr object : sceneData->objects)
                 ResolveInheritedTags(object);
             Resolve_Lit_By_Tags();
@@ -8139,24 +8140,20 @@ void Parser::Parse_Frame_Items ()
             Object = Parse_Object();
             if (Object == nullptr)
                 Expectation_Error ("object or directive");
-            if (sceneData->parseFilterTags.specified)
-            {
-                std::vector<LightSource *> removedLights;
-                const TagSelection kept = PruneTagged(Object, sceneData->parseFilterTags, removedLights);
-                if ((kept == TagSelection::Empty) || (kept == TagSelection::Everything))
-                {
-                    Destroy_Object(Object);
-                    break;
-                }
-            }
             Post_Process (Object, nullptr);
             if (!DropShutPortal(Object))
             {
                 Remove_Subsurface_Without_Inside (Object);
                 Link_To_Frame (Object);
-                RecordMediaFields(Object, nullptr);
-                if ((sceneData->meshPool != nullptr) && sceneData->parseFilterTags.specified)
-                    QueuePlacedMeshes(Object);
+                // Filter_Tags prunes once the parse is over, so an object it will cut records its media and meshes then
+                if (SelectTagged(Object, sceneData->parseFilterTags) != TagSelection::Whole)
+                    mFilteredPlacements.insert(Object);
+                else
+                {
+                    RecordMediaFields(Object, nullptr);
+                    if ((sceneData->meshPool != nullptr) && sceneData->parseFilterTags.specified)
+                        QueuePlacedMeshes(Object);
+                }
             }
             for (Portal *image : mPortalImages)
                 Link_To_Frame(image);
@@ -10771,6 +10768,35 @@ void Parser::Make_Surface_Light(ObjectPtr container)
     }
 }
 
+// A light block whose container lost parts to Filter_Tags emits from what is left.
+void Parser::Refit_Media_Light(LightSource *light)
+{
+    // the light records its container read-only; the parser owns it and builds the emitter on it as when it made the light
+    const ObjectPtr container = const_cast<ObjectPtr>(light->emitterContainer);
+    if (light->emitter->IsSurface())
+    {
+        try
+        {
+            light->emitter = std::make_shared<GeometrySurfaceEmitter>(container, container->surfaceLight);
+        }
+        catch (const std::exception& failure)
+        {
+            Error("%s", failure.what());
+        }
+    }
+    else
+    {
+        std::string failure;
+        std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(*container->interior, container, &mThreadData, failure);
+        if (!emitter)
+            Error("An interior light left by Filter_Tags gives no light because %s.", failure.c_str());
+        light->emitter = emitter;
+        light->colour = emitter->Intensity() / M_PI;
+    }
+    light->Center = light->emitter->Centre();
+    light->lawRadius = light->emitter->Radius();
+}
+
 void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
 {
     MediaLight& settings = *interior.light;
@@ -10902,6 +10928,81 @@ static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& obje
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
             Collect_Scene_Objects(child, objects);
+}
+
+// Filter_Tags takes out what the render leaves out only now the scene is complete, so no parse-time query saw it gone.
+void Parser::Apply_Filter_Tags()
+{
+    const TagFilter& filter = sceneData->parseFilterTags;
+    if (!filter.specified)
+        return;
+    std::vector<ObjectPtr> before;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, before);
+    std::vector<Portal *> mouths;
+    for (ObjectPtr object : before)
+        if (Test_Flag(object, PORTAL_FLAG))
+            mouths.push_back(static_cast<Portal *>(object));
+    TagPruning pruning;
+    std::vector<ObjectPtr> kept;
+    for (ObjectPtr object : sceneData->objects)
+    {
+        const TagSelection selection = PruneTagged(object, filter, pruning);
+        if ((selection == TagSelection::Empty) || (selection == TagSelection::Everything))
+        {
+            Collect_Scene_Objects(object, pruning.removed);
+            Destroy_Object(object);
+        }
+        else
+            kept.push_back(object);
+    }
+    // removed objects are compared by address only, never read
+    std::unordered_set<ConstObjectPtr> gone(pruning.removed.begin(), pruning.removed.end());
+    for (Portal *mouth : mouths)
+    {
+        if ((gone.count(mouth) != 0) || (mouth->partner == nullptr) || (gone.count(mouth->partner) == 0))
+            continue;
+        // a mouth whose partner went has no far side; a far mouth goes with its near mouth
+        mouth->partner = nullptr;
+        if (!mouth->farMouth)
+        {
+            kept.erase(std::remove(kept.begin(), kept.end(), mouth), kept.end());
+            gone.insert(mouth);
+            Destroy_Object(mouth);
+        }
+    }
+    sceneData->objects.swap(kept);
+    const std::unordered_set<ConstObjectPtr> reshaped(pruning.reshaped.begin(), pruning.reshaped.end());
+    auto lost = [&](const LightSource *light) {
+        return (gone.count(light) != 0) || ((light->emitter != nullptr) && (gone.count(light->emitterContainer) != 0));
+    };
+    for (std::vector<LightSource *> *lights : { &sceneData->lightSources, &sceneData->lightGroupLightSources })
+        lights->erase(std::remove_if(lights->begin(), lights->end(), lost), lights->end());
+    mGroupMediaLights.erase(std::remove_if(mGroupMediaLights.begin(), mGroupMediaLights.end(),
+        [&](const std::pair<ObjectPtr, LightSource *>& added) { return (gone.count(added.first) != 0) || lost(added.second); }),
+        mGroupMediaLights.end());
+    std::vector<LightSource *> mediaLights;
+    for (LightSource *light : sceneData->mediaLights)
+    {
+        if (lost(light))
+        {
+            Destroy_Object(light);
+            continue;
+        }
+        if (reshaped.count(light->emitterContainer) != 0)
+            Refit_Media_Light(light);
+        mediaLights.push_back(light);
+    }
+    sceneData->mediaLights.swap(mediaLights);
+    for (ObjectPtr object : sceneData->objects)
+    {
+        if (mFilteredPlacements.count(object) == 0)
+            continue;
+        RecordMediaFields(object, nullptr);
+        if (sceneData->meshPool != nullptr)
+            QueuePlacedMeshes(object);
+    }
+    mFilteredPlacements.clear();
 }
 
 // Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter, bounce

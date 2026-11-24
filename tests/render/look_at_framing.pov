@@ -269,10 +269,12 @@ global_settings { assumed_gamma 1 }
     #if (Reference) camera { location <0, 0, -10> right x up y look_at Expected }
     #else camera { location <0, 0, -10> right x up y look_at tagged { "subject" } } #end
   #break
-  #case (43) // the command-line filter removes objects before any selection sees them
+  #case (43) // the command-line filter acts after the parse, so the selection still frames the filtered object
+    #declare Far = box { <5, -1, -1>, <7, 1, 1> pigment { rgb 1 } finish { Glow } tags { "subject", "far" } }
     object { Subject } object { Ground }
-    box { <5, -1, -1>, <7, 1, 1> pigment { rgb 1 } finish { Glow } tags { "subject", "far" } }
-    camera { location <0, 0, -10> right x up y look_at tagged { "subject" } }
+    #declare Both = union { object { Subject } object { Far } }
+    #if (Reference) camera { location <0, 0, -10> right x up y look_at Both }
+    #else object { Far } camera { location <0, 0, -10> right x up y look_at tagged { "subject" } } #end
   #break
   #case (44) // an empty selection placed adds nothing, with a warning
     object { Subject } object { Ground }

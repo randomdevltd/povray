@@ -41,7 +41,8 @@ for c in 4 72 73 74 18 19 5 20 75 13 76 21 22 57; do
     equal "case$c" "ref$c"
 done
 render case43 "$SCENE" 64 Declare=Case=43 'Filter_Tags=!"far"'
-equal case43 ref0
+render ref43 "$SCENE" 64 Declare=Case=43 Declare=Reference=1
+equal case43 ref43
 render case43_unfiltered "$SCENE" 64 Declare=Case=43
 if cmp -s look_at_case43.px look_at_case43_unfiltered.px; then echo "look_at case 43: Filter_Tags changed nothing" >&2; exit 1; fi
 warns case2 "skipped 1 unbounded object"
