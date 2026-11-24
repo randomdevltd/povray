@@ -78,6 +78,7 @@
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
 #include "core/scene/scenedata.h"
+#include "core/shape/mesh.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
 #include "core/support/preparationprogress.h"
@@ -2698,6 +2699,20 @@ static DBL CellIntegral(const PreparedSourceDomain& layout, size_t cell, const F
 
 // A copy or a transform of a CSG drops its child trees; an emitter's copy of its container indexes its children again, as
 // the scene's objects are, so that its chords and inside tests do not visit every member of a union of many.
+// Bounding resolves no mesh that only clips or bounds a shape, and resolving one writes shared data, so it is done here.
+static void ResolveEmitterMeshes(ObjectPtr object)
+{
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        mesh->Resolve();
+    if (object->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
+            ResolveEmitterMeshes(child);
+    for (ObjectPtr clip : object->Clip)
+        ResolveEmitterMeshes(clip);
+    for (ObjectPtr bound : object->Bound)
+        ResolveEmitterMeshes(bound);
+}
+
 static void IndexEmitterGeometry(ObjectPtr geometry, const SceneData& scene)
 {
     if (scene.boundingMethod == 0)
@@ -2728,6 +2743,7 @@ void VolumeEmitter::ResolveGeometry(const SceneData& scene) const
     emitter->centre = emitter->low + emitter->size * 0.5;
     emitter->radius = emitter->size.length() * 0.5;
     emitter->geometry = Copy_Object(container);
+    ResolveEmitterMeshes(emitter->geometry);
     emitter->PrepareOccupancyBoundaries(emitter->geometry);
     TRANSFORM translation, scaling;
     const Vector3d displacement = -emitter->centre, scale(1.0 / emitter->radius);
