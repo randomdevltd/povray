@@ -10240,7 +10240,10 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
 {
     cloud.cells.clear();
     cloud.coords.clear();
-    cloud.pins.Release();
+    // a regather of the same point replaces its last gather's pins, which are on top of the stack
+    if (cloud.pinMark <= ssltPins.size())
+        UnpinSubsurfaceCells(std::max(cloud.pinMark, ssltPinFloor));
+    cloud.pinMark = ssltPins.size();
     CacheBudget *budget = threadData->subsurfaceCache->Budget();
     // on the map, cells are cubes of its frame: the sphere taken there, its radius by the copy's least stretch
     const BoundingBox& box = cloud.map ? (*cloud.map)->Object()->BBox : cloud.object->BBox;
@@ -10319,7 +10322,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
         {
             SubsurfaceCell *pinned = const_cast<SubsurfaceCell*>(known);
             budget->Pin(*pinned);
-            cloud.pins.blocks.push_back(pinned);
+            ssltPins.push_back(pinned);
         }
         if (!known->nodes.empty())
         {
@@ -11972,8 +11975,13 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // Method 2's light enters through the perturbed surface, averaged over the area each estimate of it stands for; it
     // leaves by the surface's own normal (see doc/PERF.md), and the paths inside keep that normal too.
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
-    // the cells its gather pins are let go once this point is shaded, so a thread pins at most two gathers' cells at once
-    struct Unpin final { SubsurfaceCloud& c; ~Unpin() { c.pins.Release(); c.cells.clear(); c.coords.clear(); } } unpin{cloudData};
+    // the cells its gathers pin are let go once this point is shaded, those of points nested in it already let go
+    struct Unpin final
+    {
+        Trace& t; size_t mark, floor;
+        ~Unpin() { t.UnpinSubsurfaceCells(mark); t.ssltPinFloor = floor; }
+    } unpin{*this, ssltPins.size(), ssltPinFloor};
+    ssltPinFloor = ssltPins.size();
     std::vector<Vector3d>& bumped = cloudData.bumped;
     std::vector<double>& shares = cloudData.bumpedShare;
     bumped.clear();

@@ -1344,16 +1344,8 @@ class Trace
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
-            /// Under a memory budget, the cells its last gather pinned so the budget cannot spill them; a copy pins none.
-            struct Pins final
-            {
-                std::vector<SpillBlock*> blocks;
-                Pins() = default;
-                Pins(const Pins&) {}
-                Pins& operator=(const Pins&) { return *this; }
-                ~Pins() { Release(); }
-                void Release() { for (SpillBlock *block : blocks) block->Unpin(); blocks.clear(); }
-            } pins;
+            /// Under a memory budget, where its last gather's pins start on the thread's stack of pinned cells.
+            size_t pinMark = 0;
             bool internalServed = false; ///< whether the cloud gave the buried lights' radiance at the exit point, from points of its own class
             bool internalTried = false; ///< whether the cloud was read for it
             bool internalNearest = false; ///< whether it came from the nearest point of the class, none lying within the gather's reach
@@ -1363,6 +1355,10 @@ class Trace
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
+        /// The cells this thread's shading points have pinned, innermost last: a nested point lets go of only its own.
+        std::vector<SpillBlock*> ssltPins;
+        size_t ssltPinFloor = 0; ///< where the pins of the point being shaded start; a gather never lets go below it
+        void UnpinSubsurfaceCells(size_t mark) { while (ssltPins.size() > mark) { ssltPins.back()->Unpin(); ssltPins.pop_back(); } }
         SubsurfaceCloud ssltHelpCloud; ///< another thread's cloud with this thread's lights, while helping with its cell
         void SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket);
         void SetThinTables(double depth, const SubsurfaceProfile& profile, bool gate);
