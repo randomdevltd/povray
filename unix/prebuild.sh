@@ -669,6 +669,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/antialias_m4.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_photon_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cloud.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_cloud_views.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_per_point_flesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_shadowed_exit.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_body_volume_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
