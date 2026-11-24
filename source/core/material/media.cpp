@@ -82,6 +82,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
 #include "core/support/preparationprogress.h"
+#include "core/support/cachebudget.h"
 #include "core/support/preparedcache.h"
 #include "core/support/statistics.h"
 
@@ -165,6 +166,15 @@ static MathColour ScatterShare(const LightSource *light, const Media *medium, co
     return own ? (selfShare ? *selfShare : light->selfScale) : MathColour(1.0);
 }
 
+/// Under Max_Cache_Memory, builds a grid in the budget's pages, so it can be spilled once sealed.
+template<class T>
+static void UseCacheBudget(CacheArray<T>& values, const TraceThreadData *td)
+{
+    const std::shared_ptr<CacheBudget>& budget = td->GetSceneData()->cacheBudget;
+    if (budget != nullptr)
+        values.Budget(budget, &budget->Account("media grids", false));
+}
+
 class Media::FastCache final
 {
     public:
@@ -181,14 +191,14 @@ class Media::FastCache final
         std::string failure = "The density pattern or coefficients cannot be prepared; check for unsupported patterns or negative/non-finite values.";
         Vector3d low, size;
         int nx = 0, ny = 0, nz = 0;
-        vector<MathColour> density;
+        CacheArray<MathColour> density;
 
         struct Optical final
         {
             Vector3d u, v, w;
             DBL lo[3], ds[3];
             int n[3];
-            vector<MathColour> prefix;
+            CacheArray<MathColour> prefix;
 
             size_t Index(int x, int y, int z) const { return (size_t(z) * n[1] + y) * n[0] + x; }
             bool Depth(const Vector3d& point, MathColour& result) const;
@@ -455,6 +465,7 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     const Vector3d extent = hi - lo;
     if (!UsablePreparedContainer(container))
         throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
+    UseCacheBudget(density, td);
     CachedStep(unit, "density", [&]()
     {
         if (prepared)
@@ -506,6 +517,7 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     }
     if (td->mediaMessages)
         td->mediaMessages->Info("Prepared density grid: %d x %d x %d; medium at %s.", nx, ny, nz, media.where.c_str());
+    density.Seal("media density grid");
     if (cooperate)
         cooperate();
     published = true;
@@ -733,6 +745,7 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
         CoarseGridDetail(detail, sizeof(detail), "optical-depth grid", step, needed, limit, step * scale);
         WarnFastMedia(ttd, media, kFastCoarse, detail, container);
     }
+    UseCacheBudget(grid->prefix, ttd);
     grid->prefix.resize(size_t(grid->n[0]) * grid->n[1] * (grid->n[2] + 1));
     // Columns along the light are independent, so rows of them are shared out like the density grid's slabs.
     const size_t cells = size_t(grid->n[0]) * grid->n[1] * grid->n[2];
@@ -763,6 +776,7 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
     }, cooperate);
     for (const auto& helper : helpers)
         ttd->Stats() += helper->Stats();
+    grid->prefix.Seal("media optical-depth grid");
     return grid;
 }
 
@@ -789,6 +803,8 @@ void Media::FastCache::PrepareOptical(Media& media, const LightSource& light, Tr
         if (!present)
             return;
         grid = archive.Reading() ? std::make_shared<Optical>() : std::const_pointer_cast<Optical>(slot.grid);
+        if (archive.Reading())
+            UseCacheBudget(grid->prefix, td);
         Serialize(archive, grid->u);
         Serialize(archive, grid->v);
         Serialize(archive, grid->w);
@@ -824,7 +840,10 @@ void Media::FastCache::PrepareOptical(Media& media, const LightSource& light, Tr
         }
     });
     if (unit->Loading())
+    {
+        grid->prefix.Seal("media optical-depth grid");
         slot.grid = grid;
+    }
 }
 
 bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, const Vector3d& a,
@@ -2895,7 +2914,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                 if (value.Weight() > 0.0)
                     positiveField.store(true, std::memory_order_relaxed);
             });
-            nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(values));
+            nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(values), td->GetSceneData()->cacheBudget);
             field = nodes;
         }
         MathColour integral;
@@ -2996,9 +3015,14 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     const CacheGridBounds cellBounds = LatticeBounds(layout->Low(), layout->CellSize(), false);
     vector<MathColour> loadedValues;
     if (!solid)
-        unit.Grid("light nodes", unit.Loading() ? loadedValues : const_cast<vector<MathColour>&>(nodes->Values()), layout->NodeCounts(), nodeBounds);
+    {
+        if (unit.Loading())
+            unit.Grid("light nodes", loadedValues, layout->NodeCounts(), nodeBounds);
+        else
+            unit.Grid("light nodes", const_cast<CacheArray<MathColour>&>(nodes->Values()), layout->NodeCounts(), nodeBounds);
+    }
     if (!solid && unit.Loading())
-        nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(loadedValues));
+        nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(loadedValues), td->GetSceneData()->cacheBudget);
     if (occupied)
     {
         std::shared_ptr<vector<DBL>> occupancy = unit.Loading() ? std::make_shared<vector<DBL>>() : nullptr;

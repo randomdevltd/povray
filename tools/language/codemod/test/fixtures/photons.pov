@@ -1,6 +1,7 @@
 #version 4.0;
 #declare quality = 0.125;
-global_settings { assumed_gamma 1 max_trace_level 8 photons { method 2 quality (quality * 1) } }
+global_settings { assumed_gamma 1 max_trace_level 8 photons { method 2 quality (quality * 1) memory 2 } subsurface { memory 64 } }
+#declare memory = 2;
 camera { location <0, 5, -8> look_at 0 right x*image_width/image_height angle 40 }
 light_source { <-2, 6, -1> rgb 40 photon_only fade_power 2 fade_distance 0
     photons { refraction on reflection on } }

@@ -1831,11 +1831,12 @@ would pass the ceiling stops with an error naming this option. Without a ceiling
 memory available after the first photon batch, at most 6 GB, so the same scene can pass on an idle machine and fail on a
 busy one; a fixed ceiling removes that dependence.</p>
 <p>The ceiling can come from three places, and the first one given applies: this option, then the
-<code>POV_PHOTON_MEMORY</code> environment variable (also in GB), then the scene's <code>photons { memory GB }</code> in
+<code>POV_PHOTON_MEMORY</code> environment variable (also in GB), then the scene's <code>photons { photon_memory GB }</code> in
 <code>global_settings</code>. How much memory photons may take is a property of the machine, so the person running the
 render can raise or lower what a scene asks for without editing it; when this option or the environment variable
 overrides a different scene value, the render says so in one line giving the ceiling used. A value that is zero,
-negative, not finite or not a number is an error. The option does nothing for scenes without method 2 photons.</p>
+negative, not finite or not a number is an error. The option does nothing for scenes without method 2 photons. It caps
+photon storage only; <a href="#r3_2_8_13">Max_Cache_Memory</a>, in MB, is the memory budget for every render cache.</p>
 <pre>
 povray +Iscene.pov Photon_Memory=24
 </pre>
@@ -3794,6 +3795,24 @@ povray +W1920 +H1080 Snapshot_From=scene.pov-state +SNscene-wip.png
 <p><code>Cache_Verify=on</code> is for testing: each cache that has a file is built again, and the render stops with an error naming the cache and the section if what it built differs from the file. This catches a key that misses an input. It costs a full preparation.</p>
 <p><strong>The format.</strong> A file has a header, its sections, and an index that gives each section's offset, length, 64-bit checksum, id and bounds. A grid, such as a density grid or a light's lattice, is cut into bricks of up to 32 cells along each axis; each brick is a section whose index entry holds its first cell, its cell counts and its world-space bounds, and each can be read and checked on its own, so a later render can load only the bricks a region of the image needs. Sections of a page or more start on a 4096-byte boundary. A load checks every section's checksum before it uses any, then reads each section from the file as the preparation asks for it, so only one section is held in memory beyond the cache being filled.</p>
 <p>Saving costs disk space about the size of the caches in memory: from kilobytes for a small light to hundreds of megabytes for fine media or bounce grids. Eager preparation does not build media grids ahead when media caches of the key this parse is expected to give are saved: a small manifest beside the caches records, for each scene file, declares and settings, the key its last parse gave and the files it read, and a render whose recorded files are unchanged expects that key.</p>
+</div>
+
+<a name="r3_2_8_13"></a>
+<div class="content-level-h4" contains="Cache Memory Budget" id="r3_2_8_13">
+<h4>3.2.8.13 Cache Memory Budget</h4>
+<table class="centered" width="622px" cellpadding="0" cellspacing="10">
+<tr>
+<td width="30%"><code>Max_Cache_Memory=</code>n</td>
+<td width="70%">Keep the render's large caches within <em>n</em> MB in memory, where an MB is 1024 &times; 1024 bytes, spilling the rest to disk; unset by default, when nothing spills</td>
+</tr>
+</table>
+<p>A render holds caches that can grow far past the scene itself: method 2 subsurface clouds, method 4 media density and optical-depth grids, and the lattices of interior lights. <code>Max_Cache_Memory</code> is one budget for all of them, a whole number of MB of 1024 &times; 1024 bytes, such as <code>Max_Cache_Memory=2048</code> for 2 GiB. The environment variable <code>POV_CACHE_MEMORY</code> gives it in the same unit when the option is not given. Past the budget, caches spill to a file in the folder <code>spill</code> inside the cache directory: <code>Cache_Path</code> when given, else beside the render state file (<code>scene.pov-state.caches/spill</code>). The file is removed as soon as it is opened, so a render that stops for any reason leaves nothing behind, but the disk holds its space until the render ends. The image is the same with or without a budget.</p>
+<p><strong>What spills.</strong> A subsurface cloud is made of cells, each one object's points in one cube of space. A finished cell that no thread is reading may be written to the spill file once and its memory freed, least recently used first; the next shading point that needs it reads that cell alone back, checking its checksum, so a region of the image loads only the cells it touches. Grids and lattices do not change once built: past the budget, each is written once to the spill file and read through a read-only mapping of it at the same addresses, so the system drops its pages instead of swapping them, and the render keeps those it uses within the budget.</p>
+<p><strong>What stays.</strong> Caches that cannot be divided stay in memory and are counted against the budget: the scene's bounding tree, which every ray starts from, the radiosity tree, which is linked by pointers and grows while it is read, photon maps, and the surface maps of subsurface objects. If they alone need more than the budget once preparation is done, the render stops before its first pixel with an error listing each of them and its size. Scene geometry, meshes and images are not caches and are not counted. Each subsurface cell being built, and each grid while it is built, is held whole, so the budget can be passed by the largest of them for a moment.</p>
+<p>At the end of the render one line per cache gives its peak in memory and what it spilled and read back, and a last line gives the budget, the peak of all caches, the spill file's size and the process's peak memory. Without <code>Max_Cache_Memory</code> or <code>POV_CACHE_MEMORY</code> the render behaves exactly as without this feature: caches stay in memory and nothing is written. The budget limits memory, not size: the <code>memory</code> cap of <code>subsurface { }</code> (in MB) and <code>photon_memory</code> of <code>photons { }</code> (in GB) still stop a render whose clouds or photons would grow past them, wherever they are held.</p>
+<pre>
+povray +Iscene.pov Max_Cache_Memory=2048
+</pre>
 </div>
 
 </div>

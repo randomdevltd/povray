@@ -48,8 +48,8 @@ check group "the slab in a light group"
 
 if render capped +wt2 Declare=Cells=1000000000 Declare=SubsurfaceMemory=1; then fail "a cloud past its 1 MB cap did not stop the render"; fi
 grep -q 'Subsurfacecloudsandtheirsurfacemapsneedatleast[0-9.]*MBafter.*pasttheirmemorycapof1MB' ssm2ph_capped.txt ||
-    fail "the subsurface memory cap was not reported in MB beside a photons memory"
+    fail "the subsurface memory cap was not reported in MB beside a photon_memory"
 if render photon_cap +wt2 Declare=PhotonMemory=0.000001; then fail "a photon map past its ceiling did not stop the render"; fi
-grep -q "GBallowed(setbythescene'sphotonsmemory)" ssm2ph_photon_cap.txt ||
-    fail "the photons memory ceiling was not reported in GB beside a subsurface memory"
+grep -q "GBallowed(setbythescene'sphoton_memory)" ssm2ph_photon_cap.txt ||
+    fail "the photon_memory ceiling was not reported in GB beside a subsurface memory"
 echo "subsurface_photons_method2: method 2 photons reach the subsurface cloud, on any thread count, and both memory settings hold"

@@ -57,6 +57,7 @@
 #include "core/material/media.h"   // TODO FIXME - make MediaFunction class visible only as a pointer
 #include "core/math/randcosweighted.h"
 #include "core/render/trace.h"     // TODO FIXME - make Trace class visible only as a pointer
+#include "core/support/cachebudget.h"
 #include "core/support/octree_fwd.h"
 #include "core/support/statistics.h"
 
@@ -215,8 +216,13 @@ class RadiosityCache final
                       const MathColour& dx, const MathColour& dy, const MathColour& dz, const MathColour& Illuminance,
                       DBL Harmonic_Mean_Distance, DBL Nearest_Distance, DBL Quality, int Bounce_Depth, int pretraceStep, int tileId);
         void ReleaseBlockPool(BlockPool* pool);
+        /// Counts the tree against a memory budget; it is pinned, as it is pointer-linked and grows while it is read.
+        void SetBudget(CacheBudget *owner, CacheAccount *counted) { budget = owner; account = counted; }
 
     private:
+        CacheBudget *budget = nullptr;
+        CacheAccount *account = nullptr;
+        void Count(std::size_t bytes) { if (budget != nullptr) budget->Charge(*account, std::int64_t(bytes)); }
 
         struct Octree final
         {

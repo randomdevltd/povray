@@ -714,7 +714,7 @@ ProgressivePhotonCeiling ProgressivePhotonMemoryCeiling(const SceneData& scene)
     else if (ProgressivePhotonEnvironmentCeiling() > 0.0)
         ceiling = { ProgressivePhotonEnvironmentCeiling(), "set by the POV_PHOTON_MEMORY environment variable" };
     else if (scene.photonSettings.memory > 0.0)
-        ceiling = { scene.photonSettings.memory * 1.0e9, "set by the scene's photons memory" };
+        ceiling = { scene.photonSettings.memory * 1.0e9, "set by the scene's photon_memory" };
     return ceiling;
 }
 

@@ -284,9 +284,47 @@ class PreparedCacheFile final
         std::vector<Entry> entries;
 };
 
-/// Reads one brick written by PreparedCacheUnit::Grid into `values`, a grid of `counts` cells.
-template<class T>
-void ReadBrick(const std::string& bytes, const CacheSection& section, const std::array<std::size_t, 3>& counts, std::vector<T>& values);
+/// A cache file a render spills to: sections are appended once, from any thread, and read back alone, each checked against
+/// its checksum. Finish writes its index and header, so the file then reads as any saved cache.
+class CacheSpillFile final
+{
+    public:
+        /// Creates a file named after `name` in `directory`. Unless `keep`, it is unlinked at once where the system allows,
+        /// so a render that dies leaves nothing behind, and else removed on destruction. Throws std::runtime_error on failure.
+        CacheSpillFile(const std::string& directory, const std::string& name, bool keep = false);
+        ~CacheSpillFile();
+        CacheSpillFile(const CacheSpillFile&) = delete;
+        CacheSpillFile& operator=(const CacheSpillFile&) = delete;
+        const std::string& Path() const { return path; }
+        /// Appends a section, page aligned when a page or more so it can be mapped; returns its number. Throws on a failed write.
+        std::size_t Append(const char *label, const void *data, std::size_t n, const CacheSection *section = nullptr);
+        PreparedCacheFile::Entry Entry(std::size_t index) const;
+        /// A section's bytes into `data`, which holds its length; throws CacheFormatError if they do not match their checksum.
+        void Read(std::size_t index, void *data) const;
+        /// The descriptor sections map from; -1 where they cannot be mapped.
+        int Descriptor() const;
+        /// Bytes appended so far, padding included.
+        std::uint64_t Bytes() const;
+        /// Writes the index and header; later appends throw.
+        void Finish();
+    private:
+        std::string path;
+        bool keep, linked = true, finished = false;
+#if defined(_WIN32)
+        std::FILE *file = nullptr;
+#else
+        int file = -1;
+#endif
+        mutable std::mutex lock;
+        std::vector<PreparedCacheFile::Entry> entries;
+        std::uint64_t end = 0;
+        void WriteAt(std::uint64_t offset, const void *data, std::size_t n);
+        void ReadAt(std::uint64_t offset, void *data, std::size_t n) const;
+};
+
+/// Reads one brick written by PreparedCacheUnit::Grid into `values`, a grid of `counts` cells: a vector or a CacheArray.
+template<class Values>
+void ReadBrick(const std::string& bytes, const CacheSection& section, const std::array<std::size_t, 3>& counts, Values& values);
 
 class PreparedCacheUnit;
 
@@ -376,8 +414,8 @@ class PreparedCacheUnit final
         void Note(const char *label, std::string& text);
 
         /// A grid of `counts` cells, x fastest, built already unless loading, saved or read as bricks: one section each.
-        template<class T>
-        void Grid(const char *label, std::vector<T>& values, const std::array<std::size_t, 3>& counts, const CacheGridBounds& bounds);
+        template<class Values>
+        void Grid(const char *label, Values& values, const std::array<std::size_t, 3>& counts, const CacheGridBounds& bounds);
 
         /// Saves a built cache, checks a loaded one was read to its end, and logs what was done.
         void Finish();
@@ -419,16 +457,16 @@ inline void SerializeRow(CacheArchive& archive, T *row, std::size_t count)
             Serialize(archive, row[i]);
 }
 
-template<class T>
-inline void SerializeBrick(CacheArchive& archive, const CacheSection& section, const std::array<std::size_t, 3>& counts, std::vector<T>& values)
+template<class Values>
+inline void SerializeBrick(CacheArchive& archive, const CacheSection& section, const std::array<std::size_t, 3>& counts, Values& values)
 {
     for (std::size_t z = section.first[2]; z < section.first[2] + section.cells[2]; ++z)
         for (std::size_t y = section.first[1]; y < section.first[1] + section.cells[1]; ++y)
             SerializeRow(archive, &values[(z * counts[1] + y) * counts[0] + section.first[0]], section.cells[0]);
 }
 
-template<class T>
-void ReadBrick(const std::string& bytes, const CacheSection& section, const std::array<std::size_t, 3>& counts, std::vector<T>& values)
+template<class Values>
+void ReadBrick(const std::string& bytes, const CacheSection& section, const std::array<std::size_t, 3>& counts, Values& values)
 {
     for (int axis = 0; axis < 3; ++axis)
         if (std::size_t(section.first[axis]) + section.cells[axis] > counts[axis])
@@ -440,8 +478,8 @@ void ReadBrick(const std::string& bytes, const CacheSection& section, const std:
         throw CacheFormatError("a brick is longer than its cells");
 }
 
-template<class T>
-void PreparedCacheUnit::Grid(const char *label, std::vector<T>& values, const std::array<std::size_t, 3>& counts, const CacheGridBounds& bounds)
+template<class Values>
+void PreparedCacheUnit::Grid(const char *label, Values& values, const std::array<std::size_t, 3>& counts, const CacheGridBounds& bounds)
 {
     if (mode == Mode::Off)
         return;

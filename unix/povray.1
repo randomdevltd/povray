@@ -179,8 +179,16 @@ is never visible to the scene; quote the expression for the shell. See doc/rende
 \fBPhoton_Memory\fP=\fIGB\fP
 Set the ceiling on photon method 2 storage in GB (10^9 bytes), any positive finite
 number. It overrides the \fBPOV_PHOTON_MEMORY\fP environment variable, which overrides
-the scene's \fBphotons { memory\fP \fIGB\fP \fB}\fP; without any of them the ceiling is
+the scene's \fBphotons { photon_memory\fP \fIGB\fP \fB}\fP; without any of them the ceiling is
 40% of the available memory, at most 6 GB. See doc/progressive\-photons.md.
+.TP
+\fBMax_Cache_Memory\fP=\fIMB\fP
+Keep the render's large caches (subsurface clouds, media grids, light lattices) within
+this many MB of memory, an MB being 1024 x 1024 bytes, a whole number greater than zero;
+past it they spill to a file in the cache directory and are read back as needed, with
+the same image. \fBPOV_CACHE_MEMORY\fP gives it when the option is not given. Caches
+that cannot be divided stay in memory; if they alone pass it the render stops before its
+first pixel. Unset by default: nothing spills.
 .TP
 \fBML\fP\fIn.n\fP or \fBPov4_Version\fP=\fIn.n\fP
 Run a .pov4 scene with the defaults of language version n.n instead of 4.0.

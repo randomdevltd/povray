@@ -9020,6 +9020,9 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
             threadData->subsurfaceCache->Refund(cell);
     }
     cell.changed.notify_all();
+    // a reader pins it before it reads, so the budget may spill it from now on
+    if (usable)
+        threadData->subsurfaceCache->Ready(cell);
 }
 
 // Cell jobs run at the quality subsurface needs, whichever trace runs them (a radiosity gather's has no area lights).
@@ -10233,6 +10236,8 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
 {
     cloud.cells.clear();
     cloud.coords.clear();
+    cloud.pins.Release();
+    CacheBudget *budget = threadData->subsurfaceCache->Budget();
     // on the map, cells are cubes of its frame: the sphere taken there, its radius by the copy's least stretch
     const BoundingBox& box = cloud.map ? (*cloud.map)->Object()->BBox : cloud.object->BBox;
     const Vector3d at = cloud.map ? cloud.map->ToMap(centre) : centre;
@@ -10304,6 +10309,13 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
         {
             threadData->subsurfaceCache->CheckCap();
             throw POV_EXCEPTION_STRING("A subsurface point cloud cell could not be built.");
+        }
+        // under a budget the cell is pinned until the next gather, read back first if it was spilled
+        if (budget != nullptr)
+        {
+            SubsurfaceCell *pinned = const_cast<SubsurfaceCell*>(known);
+            budget->Pin(*pinned);
+            cloud.pins.blocks.push_back(pinned);
         }
         if (!known->nodes.empty())
         {

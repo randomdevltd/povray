@@ -224,6 +224,47 @@ std::string Size(uint64_t bytes)
     return text;
 }
 
+/// The trailing index of a cache file: each section's place, checksum, cells, bounds and label.
+std::string IndexBytes(const std::vector<PreparedCacheFile::Entry>& entries)
+{
+    std::string index;
+    for (const PreparedCacheFile::Entry& entry : entries)
+    {
+        Append(index, &entry.offset, sizeof(entry.offset));
+        Append(index, &entry.length, sizeof(entry.length));
+        Append(index, &entry.hash, sizeof(entry.hash));
+        Append(index, &entry.section.id, sizeof(entry.section.id));
+        Append(index, entry.section.first.data(), sizeof(entry.section.first));
+        Append(index, entry.section.cells.data(), sizeof(entry.section.cells));
+        for (const Vector3d& corner : { entry.section.low, entry.section.high })
+            for (int axis = X; axis <= Z; ++axis)
+            {
+                const double value = corner[axis];
+                Append(index, &value, sizeof(value));
+            }
+        AppendText(index, entry.label, kLabelBytes);
+    }
+    return index;
+}
+
+/// The header of a cache file, with its own checksum.
+std::string HeaderBytes(uint64_t key, uint64_t count, uint64_t indexOffset, uint64_t indexHash, const std::string& name)
+{
+    std::string header(kMagic, sizeof(kMagic));
+    const uint64_t build = BuildHash();
+    Append(header, &kFormat, sizeof(kFormat));
+    Append(header, &kByteOrder, sizeof(kByteOrder));
+    Append(header, &build, sizeof(build));
+    Append(header, &key, sizeof(key));
+    Append(header, &count, sizeof(count));
+    Append(header, &indexOffset, sizeof(indexOffset));
+    Append(header, &indexHash, sizeof(indexHash));
+    AppendText(header, name, kNameBytes);
+    const uint64_t headerHash = ContentHash(header.data(), header.size(), 0);
+    Append(header, &headerHash, sizeof(headerHash));
+    return header;
+}
+
 std::string Describe(const CacheSection& section)
 {
     if (section.id == CacheSection::kWhole)
@@ -973,35 +1014,8 @@ bool PreparedCacheUnit::Write()
     const uint64_t indexOffset = (written + 7) / 8 * 8;
     std::string index(std::size_t(indexOffset - written), '\0');
     const std::size_t padding = index.size();
-    for (const PreparedCacheFile::Entry& entry : saved)
-    {
-        Append(index, &entry.offset, sizeof(entry.offset));
-        Append(index, &entry.length, sizeof(entry.length));
-        Append(index, &entry.hash, sizeof(entry.hash));
-        Append(index, &entry.section.id, sizeof(entry.section.id));
-        Append(index, entry.section.first.data(), sizeof(entry.section.first));
-        Append(index, entry.section.cells.data(), sizeof(entry.section.cells));
-        for (const Vector3d& corner : { entry.section.low, entry.section.high })
-            for (int axis = X; axis <= Z; ++axis)
-            {
-                const double value = corner[axis];
-                Append(index, &value, sizeof(value));
-            }
-        AppendText(index, entry.label, kLabelBytes);
-    }
-    std::string header(kMagic, sizeof(kMagic));
-    const uint64_t build = BuildHash(), count = saved.size(),
-                   indexHash = ContentHash(index.data() + padding, index.size() - padding, 0);
-    Append(header, &kFormat, sizeof(kFormat));
-    Append(header, &kByteOrder, sizeof(kByteOrder));
-    Append(header, &build, sizeof(build));
-    Append(header, &key, sizeof(key));
-    Append(header, &count, sizeof(count));
-    Append(header, &indexOffset, sizeof(indexOffset));
-    Append(header, &indexHash, sizeof(indexHash));
-    AppendText(header, name, kNameBytes);
-    const uint64_t headerHash = ContentHash(header.data(), header.size(), 0);
-    Append(header, &headerHash, sizeof(headerHash));
+    index += IndexBytes(saved);
+    const std::string header = HeaderBytes(key, saved.size(), indexOffset, ContentHash(index.data() + padding, index.size() - padding, 0), name);
     bool ok = (std::fwrite(index.data(), 1, index.size(), out) == index.size()) && (std::fseek(out, 0, SEEK_SET) == 0) &&
               (std::fwrite(header.data(), 1, header.size(), out) == header.size());
     ok = (std::fclose(out) == 0) && ok;
@@ -1057,6 +1071,162 @@ void PreparedCacheUnit::Finish()
         caches->Info("Prepared cache " + name + ": rebuilt and verified identical to its saved file, " + Size(fileBytes) + ", " +
                      std::to_string(saved.size()) + " sections, " + timing + ".");
     }
+}
+
+
+CacheSpillFile::CacheSpillFile(const std::string& directory, const std::string& name, bool keepFile) :
+    keep(keepFile)
+{
+    if (!MakeDirectories(directory))
+        throw std::runtime_error("cannot create the spill directory " + directory);
+    path = directory + "/" + name + "-" + std::to_string(ProcessId()) + "-" + Hex(Uniquifier()) + ".povc";
+#if defined(_WIN32)
+    file = std::fopen(path.c_str(), "w+bx");
+    if (file == nullptr)
+        throw std::runtime_error("cannot create the spill file " + path + " (" + std::strerror(errno) + ")");
+#else
+    file = ::open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    if (file < 0)
+        throw std::runtime_error("cannot create the spill file " + path + " (" + std::strerror(errno) + ")");
+    // an unlinked file lives until it is closed, so nothing is left behind however the render ends
+    if (!keep && (unlink(path.c_str()) == 0))
+        linked = false;
+#endif
+    const std::string blank(kHeaderBytes, '\0');
+    WriteAt(0, blank.data(), blank.size());
+    end = kHeaderBytes;
+}
+
+CacheSpillFile::~CacheSpillFile()
+{
+#if defined(_WIN32)
+    if (file != nullptr)
+        std::fclose(file);
+#else
+    if (file >= 0)
+        close(file);
+#endif
+    if (linked && !keep)
+        std::remove(path.c_str());
+}
+
+void CacheSpillFile::WriteAt(uint64_t offset, const void *data, std::size_t n)
+{
+#if defined(_WIN32)
+    std::lock_guard<std::mutex> guard(lock);
+    if ((_fseeki64(file, __int64(offset), SEEK_SET) != 0) || (std::fwrite(data, 1, n, file) != n))
+        throw std::runtime_error("writing the spill file " + path + " failed (" + std::strerror(errno) + ")");
+#else
+    const char *at = static_cast<const char *>(data);
+    while (n > 0)
+    {
+        const ssize_t put = pwrite(file, at, n, off_t(offset));
+        if (put <= 0)
+        {
+            if ((put < 0) && (errno == EINTR))
+                continue;
+            throw std::runtime_error("writing the spill file " + path + " failed (" + std::strerror(errno) + ")");
+        }
+        at += put;
+        offset += uint64_t(put);
+        n -= std::size_t(put);
+    }
+#endif
+}
+
+void CacheSpillFile::ReadAt(uint64_t offset, void *data, std::size_t n) const
+{
+#if defined(_WIN32)
+    std::lock_guard<std::mutex> guard(lock);
+    if ((_fseeki64(file, __int64(offset), SEEK_SET) != 0) || (std::fread(data, 1, n, file) != n))
+        throw CacheFormatError("the spill file " + path + " cannot be read");
+#else
+    char *at = static_cast<char *>(data);
+    while (n > 0)
+    {
+        const ssize_t got = pread(file, at, n, off_t(offset));
+        if (got <= 0)
+        {
+            if ((got < 0) && (errno == EINTR))
+                continue;
+            throw CacheFormatError("the spill file " + path + " cannot be read");
+        }
+        at += got;
+        offset += uint64_t(got);
+        n -= std::size_t(got);
+    }
+#endif
+}
+
+std::size_t CacheSpillFile::Append(const char *label, const void *data, std::size_t n, const CacheSection *section)
+{
+    PreparedCacheFile::Entry entry{ 0, uint64_t(n), ContentHash(data, n, 0), label, section ? *section : CacheSection() };
+    std::size_t index;
+    {
+        // the place is taken under the lock; the bytes are written outside it, so threads spill side by side
+        std::lock_guard<std::mutex> guard(lock);
+        if (finished)
+            throw std::runtime_error("the spill file " + path + " is finished");
+        const uint64_t align = (n >= kPage) ? kPage : kSmallAlign;
+        entry.offset = (end + align - 1) / align * align;
+        end = entry.offset + n;
+        index = entries.size();
+        entries.push_back(entry);
+    }
+    if (n > 0)
+        WriteAt(entry.offset, data, n);
+    return index;
+}
+
+PreparedCacheFile::Entry CacheSpillFile::Entry(std::size_t index) const
+{
+    std::lock_guard<std::mutex> guard(lock);
+    return entries.at(index);
+}
+
+void CacheSpillFile::Read(std::size_t index, void *data) const
+{
+    const PreparedCacheFile::Entry entry = Entry(index);
+    if (entry.length > 0)
+        ReadAt(entry.offset, data, std::size_t(entry.length));
+    if (ContentHash(data, std::size_t(entry.length), 0) != entry.hash)
+        throw CacheFormatError("section " + std::to_string(index) + " (" + entry.label + ") of the spill file " + path + " is damaged");
+}
+
+int CacheSpillFile::Descriptor() const
+{
+#if defined(_WIN32)
+    return -1;
+#else
+    return file;
+#endif
+}
+
+uint64_t CacheSpillFile::Bytes() const
+{
+    std::lock_guard<std::mutex> guard(lock);
+    return end;
+}
+
+void CacheSpillFile::Finish()
+{
+    std::vector<PreparedCacheFile::Entry> written;
+    uint64_t indexOffset;
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        if (finished)
+            return;
+        finished = true;
+        written = entries;
+        indexOffset = (end + 7) / 8 * 8;
+    }
+    const std::string index = IndexBytes(written);
+    WriteAt(indexOffset, index.data(), index.size());
+    const std::string header = HeaderBytes(0, written.size(), indexOffset, ContentHash(index.data(), index.size(), 0), "spill");
+    WriteAt(0, header.data(), header.size());
+#if defined(_WIN32)
+    std::fflush(file);
+#endif
 }
 
 }

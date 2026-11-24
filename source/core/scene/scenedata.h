@@ -87,6 +87,7 @@ namespace surface_map { class Maps; }
 struct DeferredMeshState;
 class DeferredMeshPool;
 class PreparedCaches;
+class CacheBudget;
 
 /// What remains of an object under a filter. An excluded object is empty space, so an excluded inverted operand, such
 /// as a difference's cutter, is everything; `Part` means some descendants were removed.
@@ -235,6 +236,8 @@ class SceneData
         bool readsTime = false;
         /// built once the preparation knows the scene's inputs; null when caches are off
         std::shared_ptr<PreparedCaches> preparedCaches;
+        /// Max_Cache_Memory: the budget every large cache is counted against, spilling to disk past it; null when unset
+        std::shared_ptr<CacheBudget> cacheBudget;
         /// Whether a declare is one the renderer provides (image size, clock, frames, input file name) rather than the user.
         static bool RendererDeclare(const std::string& name);
         POV_LONG meshQueryRealTime = 0, meshQueryCpuTime = 0; ///< milliseconds the parser spent on builds for geometry queries

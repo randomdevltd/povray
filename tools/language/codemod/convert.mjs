@@ -25,6 +25,10 @@ const isComparison = (node) => node.type === 'conditional_expression' ||
   (node.type === 'binary_expression' && PRECEDENCE_CLASSIC[operator(node)] <= 3);
 const isMacroCall = (node) => node.type === 'call_expression' && node.childForFieldName('function').type === 'identifier';
 
+// The photon cap's old spelling, an item `memory` directly inside a photons block; 4.0 spells it photon_memory.
+export const isPhotonMemory = (node) => node.type === 'identifier' && node.text === 'memory' && node.parent?.type === 'block' &&
+  node.parent.children.find((c) => c.type === 'keyword')?.text === 'photons';
+
 function lvalueRoot(node) {
   while (node.type === 'index_expression' || node.type === 'member_expression') node = node.childForFieldName('object');
   return node.type === 'identifier' ? node : null;
@@ -725,7 +729,8 @@ function convertUnit(unit, context) {
     switch (node.type) {
       case 'ERROR': return;
       case 'identifier':
-        if (context.renames.has(node.text)) replace(node, renamed(node.text));
+        if (isPhotonMemory(node)) replace(node, 'photon_memory');
+        else if (context.renames.has(node.text)) replace(node, renamed(node.text));
         return;
       case 'string':
         if (/[\r\n]/.test(node.text)) replace(node, node.text.replace(/\r?\n/g, '\\n'));

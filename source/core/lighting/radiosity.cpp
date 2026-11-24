@@ -1242,6 +1242,7 @@ void RadiosityCache::AddBlock(BlockPool* pool, RenderStatistics* stats, const Ve
                               DBL harmonicMeanDistance, DBL nearestDistance, DBL quality, int bounceDepth, int pretraceStep, int tileId)
 {
     ot_block_struct*    block = pool->NewBlock();
+    Count(sizeof(ot_block_struct));
     ot_id_struct        id;
     ot_node_struct*     node;
     const RadiosityRecursionSettings& recSettings = recursionSettings[bounceDepth];
@@ -1305,6 +1306,7 @@ ot_node_struct *RadiosityCache::GetNode(RenderStatistics* stats, const ot_id_str
         if (octree.root == nullptr)
         {
             octree.root = new ot_node_struct;
+            Count(sizeof(ot_node_struct));
 #ifdef OCTREE_PERFORMANCE_DEBUG
             if (stats != nullptr)
                 (*stats)[Radiosity_OctreeNodes]++;
@@ -1438,6 +1440,7 @@ ot_node_struct *RadiosityCache::GetNode(RenderStatistics* stats, const ot_id_str
             if (this_node->Kids[index] == nullptr)
             {
                 temp_node = new ot_node_struct;
+                Count(sizeof(ot_node_struct));
 #ifdef OCTREE_PERFORMANCE_DEBUG
                 if (stats!= nullptr)
                     (*stats)[Radiosity_OctreeNodes]++;

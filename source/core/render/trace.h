@@ -1344,6 +1344,16 @@ class Trace
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
+            /// Under a memory budget, the cells its last gather pinned so the budget cannot spill them; a copy pins none.
+            struct Pins final
+            {
+                std::vector<SpillBlock*> blocks;
+                Pins() = default;
+                Pins(const Pins&) {}
+                Pins& operator=(const Pins&) { return *this; }
+                ~Pins() { Release(); }
+                void Release() { for (SpillBlock *block : blocks) block->Unpin(); blocks.clear(); }
+            } pins;
             bool internalServed = false; ///< whether the cloud gave the buried lights' radiance at the exit point, from points of its own class
             bool internalTried = false; ///< whether the cloud was read for it
             bool internalNearest = false; ///< whether it came from the nearest point of the class, none lying within the gather's reach

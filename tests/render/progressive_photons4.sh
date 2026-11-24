@@ -37,18 +37,18 @@ cmp progressive_photons4_default_pov.px progressive_photons4_default_pov4.px
 sed 's/method 2 quality (quality \* 1)/quality (quality * 1) method 2/' "$SCENE.pov4" > progressive_photons4_order.pov4
 render order progressive_photons4_order.pov4
 cmp progressive_photons4_native.px progressive_photons4_order.px
-for memory in 'memory (quality * 512)' 'memory(64)' 'memory +64'; do
+for memory in 'photon_memory (quality * 512)' 'photon_memory(64)' 'photon_memory +64' 'memory +64'; do
     sed "s/method 2 quality (quality \* 1)/$memory method 2 quality (quality * 1)/" "$SCENE.pov4" > progressive_photons4_memory.pov4
     (unset POV_PHOTON_MEMORY; render memory progressive_photons4_memory.pov4)
     cmp progressive_photons4_native.px progressive_photons4_memory.px
 done
-for memory in 'memory 0.000001' 'memory (quality * 0.000008)' 'memory(0.000001)' 'memory +0.000001'; do
+for memory in 'photon_memory 0.000001' 'photon_memory (quality * 0.000008)' 'photon_memory(0.000001)' 'photon_memory +0.000001' 'memory 0.000001'; do
     sed "s/method 2 quality (quality \* 1)/method 2 quality (quality * 1) $memory/" "$SCENE.pov4" > progressive_photons4_tiny.pov4
     if (unset POV_PHOTON_MEMORY; "$POVRAY" +iprogressive_photons4_tiny.pov4 +w8 +h6 -a -d -p -v -gp -f \
         > progressive_photons4_tiny.log 2>&1); then
         echo "native photons accepted under a tiny scene memory ceiling: $memory" >&2; exit 1
     fi
-    tr '\n' ' ' < progressive_photons4_tiny.log | tr -s ' ' | grep -q "more than the 1e-06 GB allowed (set by the scene's photons memory)" ||
+    tr '\n' ' ' < progressive_photons4_tiny.log | tr -s ' ' | grep -q "more than the 1e-06 GB allowed (set by the scene's photon_memory)" ||
         { cat progressive_photons4_tiny.log; exit 1; }
 done
 for method in '' 'method 1'; do

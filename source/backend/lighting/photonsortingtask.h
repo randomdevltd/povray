@@ -71,7 +71,7 @@ std::string ProgressivePhotonIdentity(const SceneData& scene);
 std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed);
 /// The POV_PHOTON_MEMORY ceiling in bytes, read once: zero when unset, negative when it is not a positive number of GB.
 double ProgressivePhotonEnvironmentCeiling();
-/// The ceiling from the first source that sets it: the Photon_Memory option, POV_PHOTON_MEMORY, the scene's photons memory.
+/// The ceiling from the first source that sets it: the Photon_Memory option, POV_PHOTON_MEMORY, the scene's photon_memory.
 ProgressivePhotonCeiling ProgressivePhotonMemoryCeiling(const SceneData& scene);
 /// The bytes method 2 photons may use: the ceiling, else 40% of the memory available now, at most 6 GB.
 double ProgressivePhotonMemoryBudget(const ProgressivePhotonCeiling& ceiling);

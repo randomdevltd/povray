@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // codemod <in>... -o <out-dir> [--includes classic|convert] [-L <dir>]... [--json <report>] [--quiet]
-import { readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+// Classic .pov files convert to 4.0; .pov4 and .inc4 files given by name are brought up to date with the spellings 4.0 replaced.
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { root } from '../classic.mjs';
 import { Program, writeConversion } from './convert.mjs';
+import { rewritePov4 } from './pov4.mjs';
 
-const usage = 'usage: codemod <scene.pov|dir>... -o <out-dir> [--includes classic|convert] [-L <dir>]... [--json <file>] [--quiet]';
+const usage = 'usage: codemod <scene.pov|scene.pov4|dir>... -o <out-dir> [--includes classic|convert] [-L <dir>]... [--json <file>] [--quiet]';
 const args = process.argv.slice(2);
 const inputs = [];
 const options = { includes: 'classic', includePath: [], out: null, json: null, quiet: false };
@@ -42,6 +44,15 @@ const report = { includes: options.includes, scenes: [] };
 let refused = 0;
 
 for (const input of inputs) {
+  if (/\.(pov4|inc4)$/i.test(input) && statSync(input).isFile()) {
+    const { text, changes } = rewritePov4(readFileSync(input, 'utf8'));
+    const out = join(options.out, basename(input));
+    mkdirSync(options.out, { recursive: true });
+    writeFileSync(out, text);
+    for (const c of changes) if (!options.quiet) console.log(`rewrote\t${shown(resolve(input))}:${c.line}:${c.column}\t${c.from} -> ${c.to}`);
+    report.scenes.push({ scene: shown(resolve(input)), output: out, files: [{ file: shown(resolve(input)), output: out, refusals: [], notes: changes }] });
+    continue;
+  }
   const base = statSync(input).isDirectory() ? input : dirname(input);
   for (const scene of scenes(input, base, true)) {
     const outScene = join(options.out, scene.rel.replace(/\.pov$/i, '.pov4').replace(/\.(inc|mcr)$/i, '.inc4'));

@@ -650,6 +650,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/isosurface_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/mesh_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/prepared_caches.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/cache_budget.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/shadow_order.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/thread_identity.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/csg_mesh_media_shadow.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -751,6 +752,8 @@ check-quick: all
 	./mesh_pool_stop_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/prepared_cache.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o prepared_cache_test
 	./prepared_cache_test
+	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/cache_budget.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o cache_budget_test
+	./cache_budget_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_preparation.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o surface_preparation_test
 	./surface_preparation_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_map.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o surface_map_test
@@ -759,7 +762,7 @@ check-quick: all
 	./subsurface_help_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/subsurface_memory.cpp -Wl,--start-group \$(top_builddir)/source/libpovray.a \$(top_builddir)/platform/libplatform.a \$(wildcard \$(top_builddir)/platform/libx86*.a) -Wl,--end-group -ltiff -ljpeg -lpng -lz -lrt -lm -o subsurface_memory_test
 	./subsurface_memory_test
-	rm -f surface_preparation_test surface_map_test bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test prepared_cache_test subsurface_help_test subsurface_memory_test
+	rm -f surface_preparation_test surface_map_test bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test prepared_cache_test cache_budget_test subsurface_help_test subsurface_memory_test
 	mkdir -p \$(top_builddir)/tests/subsurface-internal-sweep
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_internal_sweep.cpp" \\

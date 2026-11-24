@@ -3214,6 +3214,7 @@
           "media",
           "memory",
           "method",
+          "photon_memory",
           "quality",
           "radius",
           "save_file",

@@ -15,7 +15,7 @@ global_settings {
   subsurface { samples 12, 4 method 2 memory SubsurfaceMemory }
   #switch (Photons)
     #case (1) photons { count 200000 } #break
-    #case (2) photons { method 2 quality 0.25 memory PhotonMemory } #break
+    #case (2) photons { method 2 quality 0.25 photon_memory PhotonMemory } #break
   #end
 }
 

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import test from 'node:test';
 import { applyEdits, Program } from '../convert.mjs';
+import { rewritePov4 } from '../pov4.mjs';
 
 const dir = join(import.meta.dirname, 'fixtures');
 const expected = (path) => join(dir, basename(path).replace(/\.pov$/, '.pov4').replace(/\.inc$/, '.inc4'));
@@ -69,4 +70,11 @@ test('names includes uniquely within one output folder', () => {
   const program = new Program({ includes: 'convert' });
   const names = ['a', 'b'].map((s) => program.convertScene(join(base, 'scenes', `${s}.pov`), { folder: 'out' })[0].name);
   assert.deepEqual(names, ['u.inc4', 'u-2.inc4']);
+});
+
+test('rewrites the photon cap in 4.0 scenes to photon_memory, nothing else named memory', () => {
+  const { text, changes } = rewritePov4('global_settings { photons { method 2 memory 4 } subsurface { memory 30 } }\nlet memory = 3;\n');
+  assert.equal(text, 'global_settings { photons { method 2 photon_memory 4 } subsurface { memory 30 } }\nlet memory = 3;\n');
+  assert.deepEqual(changes, [{ line: 1, column: 38, from: 'memory', to: 'photon_memory' }]);
+  assert.equal(rewritePov4(text).changes.length, 0);
 });
