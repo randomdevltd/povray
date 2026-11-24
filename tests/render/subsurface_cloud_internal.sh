@@ -17,18 +17,18 @@ render() {
 }
 render cloud16 +wt4 Declare=Samples=16
 render cloud16one +wt1 Declare=Samples=16
-render paths16 +wt4 Declare=Samples=16 Declare=Influence=1e9
+render paths16 +wt4 Declare=Samples=16 Declare=Influence=1e9 Declare=Paths=1
 render cloud64 +wt4 Declare=Samples=64
 render cloud64big +wt4 Declare=Samples=64 Declare=Scale=1000
-render paths256 +wt4 Declare=Samples=256 Declare=Influence=1e9
+render paths256 +wt4 Declare=Samples=256 Declare=Influence=1e9 Declare=Paths=1
 render bounce64 +wt4 Declare=Samples=64 Declare=Passes=2
-render bounce256 +wt4 Declare=Samples=256 Declare=Passes=2 Declare=Influence=1e9
+render bounce256 +wt4 Declare=Samples=256 Declare=Passes=2 Declare=Influence=1e9 Declare=Paths=1
 render vein16 +wt4 +w96 +h24 Declare=Samples=16 Declare=Vein=1 Declare=Cells=16384
-render vein256 +wt4 +w96 +h24 Declare=Samples=256 Declare=Vein=1 Declare=Influence=1e9
+render vein256 +wt4 +w96 +h24 Declare=Samples=256 Declare=Vein=1 Declare=Influence=1e9 Declare=Paths=1
 render heavy4 +wt4 Declare=Samples=4
 THIN="Declare=Vein=1 Declare=Thick=2 Declare=Depth=1 Declare=Radius=0.1 Declare=Translucency=3 Declare=Cells=16384"
 render thin2 +wt4 +w96 +h24 $THIN Declare=Samples=2
-render thin256 +wt4 +w96 +h24 $THIN Declare=Samples=256 Declare=Influence=1e9
+render thin256 +wt4 +w96 +h24 $THIN Declare=Samples=256 Declare=Influence=1e9 Declare=Paths=1
 grep -E 'Method 2 buried lights: [1-9][0-9]* shading points' cloud16.log >/dev/null ||
     { echo "subsurface_cloud_internal: the cloud did not serve the buried light" >&2; cat cloud16.log; exit 1; }
 . "$SRCDIR/tests/render/image.sh"

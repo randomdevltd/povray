@@ -1,9 +1,11 @@
 #version 3.8;
 // A method 2 body lit only by a volume light buried in it: a sphere lamp in a sphere (Vein=0), or a thin vein lamp just under
 // the top of a slab (Vein=1), seen from View degrees off the top's normal. Thick, Depth, Radius and Translucency set the slab's
-// thickness, the vein's depth and radius and the flesh's translucency, all in mm; Pigment its colour. Influence 1e9 sends every hit to the estimate path,
-// which walks the per-pixel internal paths; the default reads the buried light's scattered part from the point cloud.
+// thickness, the vein's depth and radius and the flesh's translucency, all in mm; Pigment its colour. Paths 1 walks the per-pixel
+// internal paths, the reference; the default reads all of the buried light from the point cloud. Influence 1e9 sends every hit to
+// the estimate path.
 #ifndef (Influence) #declare Influence = 0.003; #end
+#ifndef (Paths) #declare Paths = 0; #end
 #ifndef (Samples) #declare Samples = 4; #end
 #ifndef (Scale) #declare Scale = 1; #end
 #ifndef (Passes) #declare Passes = 0; #end
@@ -17,7 +19,7 @@
 #ifndef (Pigment) #declare Pigment = 0.9; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 / Scale max_trace_level 8
-  subsurface { method 2 samples 4, 2 }
+  subsurface { method 2 samples 4, 2 internal_paths Paths }
 }
 background { rgb 0 }
 #declare Flesh = material {
