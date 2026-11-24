@@ -258,7 +258,7 @@ class Media::EagerField final
         std::atomic<POV_LONG> cpuTime{0};
 };
 
-std::shared_ptr<Media::EagerField> Media::PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const
+std::shared_ptr<Media::EagerField> Media::PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit, const std::shared_ptr<CacheBudget>& budget) const
 {
     if (!fastCache || (Sample_Method != 4) || fastCache->constantDensity || fastCache->prepared ||
         !UsablePreparedContainer(fastCache->container))
@@ -266,6 +266,8 @@ std::shared_ptr<Media::EagerField> Media::PlanEagerField(const std::shared_ptr<M
     std::shared_ptr<EagerField> field(new EagerField(fastCache, copy, cellLimit));
     field->grid.coarseStep = fastCache->coarseStep;
     field->grid.coarseCells = fastCache->coarseCells;
+    if (budget != nullptr)
+        field->grid.density.Budget(budget, &budget->Account("media grids", false));
     if (!field->grid.SizeGrid(*copy, fastCache->container->BBox, cellLimit))
         return nullptr;
     return field;

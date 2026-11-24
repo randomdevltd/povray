@@ -316,7 +316,7 @@ void Parser::RecordMediaField(Media& medium, bool allowEager)
             *slot.first = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(slot.second));
         }
     }
-    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, medium.PreparedCellLimit());
+    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, medium.PreparedCellLimit(), sceneData->cacheBudget);
     if (field == nullptr)
         return;
     // one job per eager thread, all claiming slabs of the same grid

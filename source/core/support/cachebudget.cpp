@@ -74,7 +74,7 @@ const std::size_t kRegionPages = std::size_t(1) << 20;
 /// Mapped pages are dropped this many at a time, from where the last drop ended.
 const std::size_t kTrimChunk = std::size_t(1) << 20;
 /// How often the watcher measures the mapped pages in memory.
-const std::chrono::milliseconds kWatchPeriod(25);
+const std::chrono::milliseconds kWatchPeriod(10);
 
 std::size_t PageBytes()
 {
@@ -146,7 +146,8 @@ void CacheRegion::Adopt(const void *source, std::size_t n, const std::shared_ptr
     Release();
     label = name;
 #if !defined(_WIN32)
-    if ((owner != nullptr) && (n >= kRegionPages) && (owner->Resident() + n > owner->Bytes()))
+    // a copy holds the data twice for a moment, so it is made only where both fit; else the file holds it from the start
+    if ((owner != nullptr) && (n >= kRegionPages) && (owner->Resident() + 2 * n > owner->Bytes()))
     {
         budget = owner;
         account = owned;
