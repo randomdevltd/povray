@@ -984,6 +984,7 @@ void Parser::Parse_Num_Factor (EXPRESS& Express,int *Terms)
 
                 case NOW_TOKEN:
                     {
+                        sceneData->readsTime = true;
                         auto now = std::chrono::system_clock::now();
                         using FractionalDays = std::chrono::duration<double, std::ratio<24 * 60 * 60>>;
                         Val = std::chrono::duration_cast<FractionalDays> (now - mY2K).count();

@@ -101,8 +101,10 @@ class PreparedSourceDistribution;
 /// The light an interior's `light { }` block gives from its container: a table of each cell's power, its radiance
 /// times the media's density-weighted extinction, or their mean chord when none has any; nullptr and why if none.
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData *td, std::string& failure);
+class PreparedCacheUnit;
+/// `cache`, where given, saves or loads its power and cell masses, the costly part.
 std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary, std::shared_ptr<const PreparedDirectionalSourceField> field, TraceThreadData *td, bool includePrimary = false,
-    std::shared_ptr<const PreparedSourceDistribution> proposal = nullptr);
+    std::shared_ptr<const PreparedSourceDistribution> proposal = nullptr, PreparedCacheUnit *cache = nullptr);
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
 void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
 /// Records the interior's field and returns its refraction grid layout, sized from the refraction detail alone.

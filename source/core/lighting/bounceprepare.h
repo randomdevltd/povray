@@ -18,6 +18,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
 #include "core/support/preparationprogress.h"
+#include "core/support/preparedcache.h"
 #include <string>
 #include <algorithm>
 #include <chrono>
@@ -32,6 +33,24 @@
 
 namespace pov
 {
+// A node no light reached is one byte: most of a volume's nodes are empty.
+inline void Serialize(CacheArchive& archive, VolumeIncident& incident)
+{
+    static_assert(sizeof(VolumeLobe) == 6 * sizeof(float), "lobes are written as packed floats");
+    std::uint8_t form = incident.valid ? 1 : 0;
+    if (!archive.Reading() && !incident.valid)
+        for (const VolumeLobe& lobe : incident.lobes)
+            for (int axis = 0; axis < 3; ++axis)
+                if ((lobe.light[axis] != 0.0f) || (lobe.moment[axis] != 0.0f))
+                    form = 2;
+    Serialize(archive, form);
+    if (form > 2)
+        throw CacheFormatError("a volume node's form is unknown");
+    incident.valid = (form == 1);
+    if (form != 0)
+        archive.Raw(incident.lobes.data(), sizeof(incident.lobes));
+}
+
 namespace bounce_prepare
 {
 struct Cooperate final : Trace::CooperateFunctor
@@ -236,6 +255,35 @@ inline std::string Of(const char* name, std::size_t index, std::size_t count)
     return name + std::to_string(index + 1) + "/" + std::to_string(count);
 }
 
+// A placed light's points and what they export; the node index is rebuilt from the points when read back.
+inline void SerializePlaced(CacheArchive& archive, surface_refine::Result& result)
+{
+    surface_refine::Layout& layout = result.layout;
+    Serialize(archive, layout.points);
+    Serialize(archive, layout.normals);
+    Serialize(archive, layout.spacings);
+    Serialize(archive, layout.areas);
+    Serialize(archive, layout.front);
+    Serialize(archive, layout.back);
+    Serialize(archive, layout.ids);
+    Serialize(archive, result.levels);
+    if (!archive.Reading())
+        return;
+    const std::size_t count = layout.points.size();
+    if ((layout.normals.size() != count) || (layout.spacings.size() != count) || (layout.areas.size() != count) ||
+        (layout.front.size() != count) || (layout.back.size() != count) || (layout.ids.size() != count))
+        throw CacheFormatError("a bounce light's point arrays differ in length");
+    result.points = count;
+    result.index = count ? std::make_shared<const SurfaceNodeIndex>(layout.points, layout.normals, layout.spacings) : nullptr;
+}
+
+// A loaded step still moves the progress line as far as building it would have.
+inline void AdvanceLoaded(const PreparedCacheUnit& cache, TraceThreadData* td, std::size_t units)
+{
+    if (cache.Loading())
+        AdvancePreparation(td->preparationProgress, units);
+}
+
 inline bool Receives(ConstObjectPtr owner, const LightSource* light)
 {
     if (!light->lightGroupLight)
@@ -357,7 +405,7 @@ inline bool ConstantOwnerCoefficients(ConstObjectPtr owner, const std::vector<Co
 
 inline void PrepareCoefficients(Target& target, Workers& workers,
                                 const std::vector<ConstObjectPtr>& objects,
-                                const std::function<void()>& cooperate)
+                                const std::function<void()>& cooperate, PreparedCacheUnit& cache)
 {
     const auto owner = target.light->emitterContainer;
     for (const auto& medium : owner->interior->media)
@@ -372,24 +420,37 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
     for (auto& phase : values)
         phase.resize(constant ? 1 : target.domain->NodeCount());
     const std::size_t count = constant ? 1 : target.domain->NodeCount();
-    workers.For(count, cooperate, [&](size_t node, size_t worker)
+    cache.Record("coefficients", [&]()
     {
-        TraceThreadData* const td = workers.Thread(worker);
-        const auto& point = target.domain->Node(node);
-        RayInteriorVector interiors;
-        if (!constant)
-            workers[worker].trace.FindContainingInteriors(point, interiors);
-        // A node just outside the owner extends its media, as its primary field does, so cells across the boundary keep them.
-        if (std::find(interiors.begin(), interiors.end(), owner->interior.get()) == interiors.end())
-            interiors.push_back(owner->interior.get());
-        for (const auto& component : EvaluateOwnerBounceScattering(interiors, *owner->interior, point, td))
+        workers.For(count, cooperate, [&](size_t node, size_t worker)
         {
-            const auto found = std::find(target.phases.begin(), target.phases.end(),
-                                         PreparedBouncePhase{component.type, component.eccentricity});
-            if (found != target.phases.end())
-                values[found - target.phases.begin()][node] += component.coefficient * target.gain;
-        }
-    }, target.domain->NodeCount());
+            TraceThreadData* const td = workers.Thread(worker);
+            const auto& point = target.domain->Node(node);
+            RayInteriorVector interiors;
+            if (!constant)
+                workers[worker].trace.FindContainingInteriors(point, interiors);
+            // A node just outside the owner extends its media, as its primary field does, so cells across the boundary keep them.
+            if (std::find(interiors.begin(), interiors.end(), owner->interior.get()) == interiors.end())
+                interiors.push_back(owner->interior.get());
+            for (const auto& component : EvaluateOwnerBounceScattering(interiors, *owner->interior, point, td))
+            {
+                const auto found = std::find(target.phases.begin(), target.phases.end(),
+                                             PreparedBouncePhase{component.type, component.eccentricity});
+                if (found != target.phases.end())
+                    values[found - target.phases.begin()][node] += component.coefficient * target.gain;
+            }
+        }, target.domain->NodeCount());
+    }, [&](CacheArchive& archive)
+    {
+        std::uint64_t phases = values.size();
+        Serialize(archive, phases);
+        if (phases != target.phases.size())
+            throw CacheFormatError("a bounce light's coefficients do not match its phases");
+    });
+    for (auto& phase : values)
+        cache.Grid("coefficient nodes", phase, constant ? std::array<std::size_t, 3>{{ 1, 1, 1 }} : target.domain->NodeCounts(),
+                   LatticeBounds(target.domain->Low(), target.domain->CellSize(), true));
+    AdvanceLoaded(cache, workers.td, target.domain->NodeCount());
     for (auto& phase : values)
         if (constant)
             target.coefficients.push_back(std::make_shared<const PreparedConstantColourField>(phase.front()));
@@ -579,7 +640,7 @@ inline void Feed(LightSource& light, const std::shared_ptr<const Emitter>& prima
     light.ownLight->colour = light.ownLight->emitter->Intensity() / M_PI;
 }
 
-inline void FeedVolume(const Target& target, TraceThreadData* td)
+inline void FeedVolume(const Target& target, TraceThreadData* td, PreparedCacheUnit& cache)
 {
     LightSource& light = *target.light;
     const auto owner = target.light->emitterContainer;
@@ -594,7 +655,7 @@ inline void FeedVolume(const Target& target, TraceThreadData* td)
         light.selfLight->selfOnly = true;
     }
     const auto field = std::make_shared<const SumPreparedBounceField>(target.domain, target.orders);
-    light.emitter = MakeBouncedInteriorEmitter(*target.primary, field, td, true, target.proposal);
+    light.emitter = MakeBouncedInteriorEmitter(*target.primary, field, td, true, target.proposal, &cache);
     light.colour = light.emitter->Intensity() / M_PI;
     light.Center = light.emitter->Centre();
     light.lawRadius = light.emitter->Radius();
@@ -629,7 +690,7 @@ inline double PassScale(const MediaLight& settings, const MathColour& integral, 
 // Gives each emitting surface on a method 2 host its buried volume emitters' escaping light as part of its primary, placed
 // and shaded as a bounce light's first pass is but taking only those emitters' light; bounce lights then receive it.
 inline void PrepareInternalPrimaries(Workers& workers, const std::shared_ptr<SceneData>& scene, TraceThreadData* td,
-                                     const std::function<void()>& cooperate)
+                                     const std::function<void()>& cooperate, PreparedCacheUnit& cache)
 {
     for (LightSource* light : scene->mediaLights)
     {
@@ -653,6 +714,7 @@ inline void PrepareInternalPrimaries(Workers& workers, const std::shared_ptr<Sce
         part.inside = (owner->Type & (PATCH_OBJECT | NO_INSIDE_OBJECT)) != 0;
         workers.Step("internal emission " + Describe(owner));
         surface_refine::Result result;
+        cache.Record("internal", [&]()
         {
             const PassLights lights(workers, *scene);
             const SubsurfaceScope scope(workers, scene);
@@ -666,7 +728,9 @@ inline void PrepareInternalPrimaries(Workers& workers, const std::shared_ptr<Sce
                 shaders.push_back(traces.back().get());
             }
             result = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits);
-        }
+        }, [&](CacheArchive& archive) { SerializePlaced(archive, result); });
+        cache.Note("internal report", result.report);
+        AdvanceLoaded(cache, td, kSurfaceUnits);
         AdvancePreparation(td->preparationProgress);
         if (result.points == 0)
         {
@@ -700,8 +764,10 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         return;
     if (td->preparationProgress)
         td->preparationProgress->Begin("bounce", BounceUnits(*scene));
+    // every costly step below is a record of one saved cache, read back in the same order when its key matches
+    PreparedCacheUnit cache(scene->preparedCaches.get(), "bounce", CacheKey().Add(std::uint64_t(scene->mediaLights.size())).Value());
     Workers workers(scene, td);
-    PrepareInternalPrimaries(workers, scene, td, cooperate);
+    PrepareInternalPrimaries(workers, scene, td, cooperate, cache);
     std::vector<ConstObjectPtr> objects;
     std::unordered_set<ConstObjectPtr> seen;
     for (const auto object : scene->objects)
@@ -764,12 +830,13 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         target.domain = light->emitter->PreparedAxis()->Domain();
         if (!target.domain)
             throw std::runtime_error("Bounce preparation requires source coordinates");
-        PrepareCoefficients(target, workers, objects, cooperate);
+        PrepareCoefficients(target, workers, objects, cooperate, cache);
         maximum = std::max(maximum, target.passes);
         targets.push_back(std::move(target));
     }
     if (targets.empty())
     {
+        cache.Finish();
         if (td->preparationProgress)
             td->preparationProgress->End();
         return;
@@ -822,7 +889,10 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             const surface_refine::Part& part = parts[target.part];
             const auto owner = const_cast<ObjectPtr>(target.light->emitterContainer);
             workers.Step("o1 " + Describe(owner));
-            placed[t] = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits);
+            cache.Record("o1", [&]() { placed[t] = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits); },
+                         [&](CacheArchive& archive) { SerializePlaced(archive, placed[t]); });
+            cache.Note("o1 report", placed[t].report);
+            AdvanceLoaded(cache, td, kSurfaceUnits);
             const surface_refine::Result& result = placed[t];
             totalSurfaceNodes += result.points;
             AdvancePreparation(td->preparationProgress);
@@ -869,7 +939,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             {
                 for (const Target& target : targets)
                     if (!target.surface && !target.orders.empty())
-                        FeedVolume(target, td);
+                        FeedVolume(target, td, cache);
                 for (std::size_t worker = 0; worker < workers.Count(); ++worker)
                     for (std::size_t i = 0; i < copyOf.size(); ++i)
                         if (copyOf[i] < targets.size())
@@ -913,16 +983,25 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     const surface_refine::Part& part = parts[target.part];
                     const surface_refine::Layout& layout = placed[t].layout;
                     workers.Step(item + " " + Describe(part.owner));
-                    fronts[t].assign(layout.points.size(), MathColour());
-                    backs[t].assign(layout.points.size(), MathColour());
-                    workers.For(layout.points.size(), cooperate, [&](std::size_t i, std::size_t worker)
+                    cache.Record("shade", [&]()
                     {
-                        workers[worker].Watch(part.owner);
-                        fronts[t][i] = shaders[worker]->BounceExport(layout.hits[i], layout.normals[i], layout.ids[i], part.directions);
-                        if (part.inside)
-                            backs[t][i] = shaders[worker]->BounceExport(layout.hits[i], -layout.normals[i], BounceOrderMix(layout.ids[i]),
-                                                                        part.directions);
-                    }, 0);
+                        fronts[t].assign(layout.points.size(), MathColour());
+                        backs[t].assign(layout.points.size(), MathColour());
+                        workers.For(layout.points.size(), cooperate, [&](std::size_t i, std::size_t worker)
+                        {
+                            workers[worker].Watch(part.owner);
+                            fronts[t][i] = shaders[worker]->BounceExport(layout.hits[i], layout.normals[i], layout.ids[i], part.directions);
+                            if (part.inside)
+                                backs[t][i] = shaders[worker]->BounceExport(layout.hits[i], -layout.normals[i], BounceOrderMix(layout.ids[i]),
+                                                                            part.directions);
+                        }, 0);
+                    }, [&](CacheArchive& archive)
+                    {
+                        Serialize(archive, fronts[t]);
+                        Serialize(archive, backs[t]);
+                        if (archive.Reading() && ((fronts[t].size() != layout.points.size()) || (backs[t].size() != layout.points.size())))
+                            throw CacheFormatError("a bounce pass's shading does not match its points");
+                    });
                     if (td->preparationProgress)
                     {
                         char line[128];
@@ -1032,23 +1111,29 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         if (!candidate.surface && candidate.domain == target.domain)
                             gather.receivers.push_back(candidate.light->emitterContainer);
                     workers.Step(step + " volume");
-                    workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
+                    cache.Record("moments", [&]()
                     {
-                        // Nodes no scattering reaches through the stencil hold no light, as every coefficient there is zero.
-                        const Vector3d at = target.domain->Node(node);
-                        bool scatters = false;
-                        for (const auto container : gather.receivers)
-                            for (const Media& medium : container->interior->media)
-                                scatters = scatters || medium.ScattersNear(container, at, cellSize);
-                        if (!scatters)
-                            return;
-                        workers[worker].Watch(target.light->emitterContainer);
-                        TraceTicket ticket(256, 0.0);
-                        thread_local std::vector<IncidentDraw> draws;
-                        thread_local std::vector<int> scratch;
-                        (*moments)[node] = GatherVolumeIncident(workers[worker].trace, at, cellSize, gather,
-                                                                BounceOrderSeed(0, order, groupIndex, node), ticket, draws, scratch);
-                    });
+                        workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
+                        {
+                            // Nodes no scattering reaches through the stencil hold no light, as every coefficient there is zero.
+                            const Vector3d at = target.domain->Node(node);
+                            bool scatters = false;
+                            for (const auto container : gather.receivers)
+                                for (const Media& medium : container->interior->media)
+                                    scatters = scatters || medium.ScattersNear(container, at, cellSize);
+                            if (!scatters)
+                                return;
+                            workers[worker].Watch(target.light->emitterContainer);
+                            TraceTicket ticket(256, 0.0);
+                            thread_local std::vector<IncidentDraw> draws;
+                            thread_local std::vector<int> scratch;
+                            (*moments)[node] = GatherVolumeIncident(workers[worker].trace, at, cellSize, gather,
+                                                                    BounceOrderSeed(0, order, groupIndex, node), ticket, draws, scratch);
+                        });
+                    }, [](CacheArchive&) {});
+                    cache.Grid("moment nodes", *moments, target.domain->NodeCounts(),
+                               LatticeBounds(target.domain->Low(), target.domain->CellSize(), true));
+                    AdvanceLoaded(cache, td, target.domain->NodeCount());
                     for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
                         prepared.fields.push_back(std::make_shared<const BounceMomentGrid>(
                             target.domain, moments, prepared.phases[phase].type, prepared.phases[phase].eccentricity, phase == 0));
@@ -1061,23 +1146,29 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                             contributing.push_back(&candidate);
                     std::vector<DBL> proposalMasses(target.domain->CellCount());
                     workers.Step(step + " proposal");
-                    workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
+                    cache.Record("proposal", [&]()
                     {
-                        const auto point = target.domain->CellMidpoint(cell);
-                        MathColour value;
-                        for (const auto candidate : contributing)
-                            if (Inside_Object(point, const_cast<ObjectPtr>(candidate->light->emitterContainer),
-                                              workers.Thread(worker)))
-                                for (size_t phase = 0; phase < candidate->phases.size(); ++phase)
-                                {
-                                    const size_t index = std::find(prepared.phases.begin(), prepared.phases.end(),
-                                                                   candidate->phases[phase]) -
-                                                         prepared.phases.begin();
-                                    value += candidate->coefficients[phase]->Sample(point) *
-                                             prepared.fields[index]->AngularAverage(point);
-                                }
-                        proposalMasses[cell] = value.Weight() * target.domain->CellVolume(cell);
-                    });
+                        workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
+                        {
+                            const auto point = target.domain->CellMidpoint(cell);
+                            MathColour value;
+                            for (const auto candidate : contributing)
+                                if (Inside_Object(point, const_cast<ObjectPtr>(candidate->light->emitterContainer),
+                                                  workers.Thread(worker)))
+                                    for (size_t phase = 0; phase < candidate->phases.size(); ++phase)
+                                    {
+                                        const size_t index = std::find(prepared.phases.begin(), prepared.phases.end(),
+                                                                       candidate->phases[phase]) -
+                                                             prepared.phases.begin();
+                                        value += candidate->coefficients[phase]->Sample(point) *
+                                                 prepared.fields[index]->AngularAverage(point);
+                                    }
+                            proposalMasses[cell] = value.Weight() * target.domain->CellVolume(cell);
+                        });
+                    }, [](CacheArchive&) {});
+                    cache.Grid("proposal cells", proposalMasses, target.domain->Counts(),
+                               LatticeBounds(target.domain->Low(), target.domain->CellSize(), false));
+                    AdvanceLoaded(cache, td, target.domain->CellCount());
                     prepared.proposal =
                         std::make_shared<const PreparedSourceDistribution>(target.domain, proposalMasses);
                     if (td->mediaMessages)
@@ -1111,7 +1202,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 light->selfLight = nullptr;
                 light->selfContainer = nullptr;
                 light->selfScale = MathColour(1.0);
-                light->emitter = MakeBouncedInteriorEmitter(*target.primary, field, td, false, target.proposal);
+                light->emitter = MakeBouncedInteriorEmitter(*target.primary, field, td, false, target.proposal, &cache);
                 light->colour = light->emitter->Intensity() / M_PI;
                 next.push_back(std::move(light));
                 nextOriginal.push_back(target.light);
@@ -1141,21 +1232,27 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             std::vector<DBL> masses(target.domain->CellCount());
             workers.Step("final proposal");
-            workers.For(masses.size(), cooperate, [&](size_t cell, size_t worker)
+            cache.Record("final proposal", [&]()
             {
-                const auto point = target.domain->CellMidpoint(cell);
-                MathColour value;
-                for (const auto& candidate : targets)
-                    if (!candidate.surface && candidate.domain == target.domain &&
-                        Inside_Object(point, const_cast<ObjectPtr>(candidate.light->emitterContainer),
-                                      workers.Thread(worker)))
-                    {
-                        value += candidate.primary->PreparedAxis()->ColourAt(point);
-                        for (const auto& order : candidate.orders)
-                            value += order->AngularAverage(point);
-                    }
-                masses[cell] = value.Weight() * target.domain->CellVolume(cell);
-            });
+                workers.For(masses.size(), cooperate, [&](size_t cell, size_t worker)
+                {
+                    const auto point = target.domain->CellMidpoint(cell);
+                    MathColour value;
+                    for (const auto& candidate : targets)
+                        if (!candidate.surface && candidate.domain == target.domain &&
+                            Inside_Object(point, const_cast<ObjectPtr>(candidate.light->emitterContainer),
+                                          workers.Thread(worker)))
+                        {
+                            value += candidate.primary->PreparedAxis()->ColourAt(point);
+                            for (const auto& order : candidate.orders)
+                                value += order->AngularAverage(point);
+                        }
+                    masses[cell] = value.Weight() * target.domain->CellVolume(cell);
+                });
+            }, [](CacheArchive&) {});
+            cache.Grid("final proposal cells", masses, target.domain->Counts(),
+                       LatticeBounds(target.domain->Low(), target.domain->CellSize(), false));
+            AdvanceLoaded(cache, td, target.domain->CellCount());
             finalProposals.push_back(
                 {target.domain, std::make_shared<const PreparedSourceDistribution>(target.domain, masses)});
         }
@@ -1165,9 +1262,10 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             continue;
         target.proposal = std::find_if(finalProposals.begin(), finalProposals.end(),
             [&](const FinalProposal& candidate) { return candidate.domain == target.domain; })->proposal;
-        FeedVolume(target, td);
+        FeedVolume(target, td, cache);
         target.light->bounceFed = false;
     }
+    cache.Finish();
     if (td->preparationProgress)
     {
         if (!parts.empty())

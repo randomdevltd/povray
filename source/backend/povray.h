@@ -49,6 +49,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <string>
 #include <thread>
 
 // Boost header files
@@ -75,6 +76,9 @@ std::thread *povray_init(const boost::function0<void>& threadExit, POVMSAddress 
  *  all threads created by POV-Ray have been terminated.
  */
 void povray_terminate();
+
+/// The versions of the image and compression libraries in use, which decode inputs and so join the prepared cache key.
+std::string ImageLibraryVersions();
 
 /**
  *  Returns true if the main thread has terminated. It will return

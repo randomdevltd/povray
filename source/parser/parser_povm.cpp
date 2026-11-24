@@ -61,12 +61,6 @@
 #else
 #include <unistd.h>
 #endif
-#if defined(__linux__)
-#include <link.h>
-#endif
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#endif
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -81,6 +75,7 @@
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
+#include "core/support/preparedcache.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -134,37 +129,6 @@ static_assert(sizeof(MeshVector) == 3 * sizeof(float), "vertices are read straig
 static_assert(sizeof(MESH_TRIANGLE) == 3 * sizeof(uint32_t), "face indices are read straight into triangles");
 static_assert(sizeof(MeshIndex) == sizeof(uint32_t), "index columns are read straight into MeshIndex arrays");
 
-const uint64_t H1 = 11400714785074694791ull, H2 = 14029467366897019727ull, H3 = 1609587929392839161ull;
-const uint64_t H4 = 9650029242287828579ull, H5 = 2870177450012600261ull;
-
-inline uint64_t Rotl(uint64_t x, int r) { return (x << r) | (x >> (64 - r)); }
-inline uint64_t Round(uint64_t acc, uint64_t in) { return Rotl(acc + in * H2, 31) * H1; }
-inline uint64_t Load64(const unsigned char *p) { uint64_t v; std::memcpy(&v, p, sizeof(v)); return v; }
-
-/// A 64-bit hash of `n` bytes in the manner of xxHash64, chained through `seed`.
-uint64_t Hash_Bytes(const void *data, size_t n, uint64_t seed)
-{
-    const unsigned char *p = static_cast<const unsigned char *>(data), *end = p + n;
-    uint64_t h = seed + H5;
-    if (n >= 32)
-    {
-        uint64_t v[4] = { seed + H1 + H2, seed + H2, seed, seed - H1 };
-        for (; end - p >= 32; p += 32)
-            for (int k = 0; k < 4; ++k)
-                v[k] = Round(v[k], Load64(p + 8 * k));
-        h = Rotl(v[0], 1) + Rotl(v[1], 7) + Rotl(v[2], 12) + Rotl(v[3], 18);
-        for (int k = 0; k < 4; ++k)
-            h = (h ^ Round(0, v[k])) * H1 + H4;
-    }
-    h += n;
-    for (; end - p >= 8; p += 8)
-        h = Rotl(h ^ Round(0, Load64(p)), 27) * H1 + H4;
-    for (; p < end; ++p)
-        h = Rotl(h ^ (*p * H5), 11) * H1;
-    h ^= h >> 33; h *= H2; h ^= h >> 29; h *= H3; h ^= h >> 32;
-    return h;
-}
-
 bool Little_Endian()
 {
     const uint32_t one = 1;
@@ -203,82 +167,6 @@ uint32_t Word(const unsigned char *p)
     return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
 }
 
-#if defined(__linux__)
-int Find_Build_Id(struct dl_phdr_info *info, size_t, void *out)
-{
-    for (int i = 0; i < info->dlpi_phnum; ++i)
-    {
-        const ElfW(Phdr)& ph = info->dlpi_phdr[i];
-        if (ph.p_type != PT_NOTE)
-            continue;
-        // Padding aligns each field's end, counted from the note's start: an 8-aligned note's name ends at 16, not 20.
-        const size_t align = (ph.p_align > 4) ? size_t(ph.p_align) : 4;
-        const auto padded = [align](size_t n) { return (n + align - 1) & ~(align - 1); };
-        const unsigned char *p = reinterpret_cast<const unsigned char *>(info->dlpi_addr + ph.p_vaddr), *end = p + ph.p_memsz;
-        while (size_t(end - p) >= sizeof(ElfW(Nhdr)))
-        {
-            const ElfW(Nhdr) *note = reinterpret_cast<const ElfW(Nhdr) *>(p);
-            const size_t left = size_t(end - p), descAt = padded(sizeof(ElfW(Nhdr)) + note->n_namesz);
-            if (descAt + note->n_descsz > left)
-                break;
-            const unsigned char *name = p + sizeof(ElfW(Nhdr)), *desc = p + descAt;
-            if ((note->n_type == NT_GNU_BUILD_ID) && (note->n_namesz == 4) && (std::memcmp(name, "GNU", 4) == 0))
-            {
-                static_cast<std::string *>(out)->assign(reinterpret_cast<const char *>(desc), note->n_descsz);
-                return 1;
-            }
-            const size_t next = padded(descAt + note->n_descsz);
-            if (next >= left)
-                break;
-            p += next;
-        }
-    }
-    return 1;
-}
-#endif
-
-FILE *Open_Executable()
-{
-#if defined(_WIN32)
-    std::vector<wchar_t> path(32768);
-    const DWORD n = GetModuleFileNameW(nullptr, path.data(), DWORD(path.size()));
-    return ((n > 0) && (n < path.size())) ? _wfopen(path.data(), L"rb") : nullptr;
-#elif defined(__APPLE__)
-    char path[4096];
-    uint32_t size = sizeof(path);
-    return (_NSGetExecutablePath(path, &size) == 0) ? std::fopen(path, "rb") : nullptr;
-#else
-    return std::fopen("/proc/self/exe", "rb");
-#endif
-}
-
-/// Differs between any two builds, so a new build rebuilds every cached tree: the GNU build ID where there is one,
-/// else a hash of the executable.
-uint64_t Build_Hash()
-{
-    static const uint64_t hash = []() {
-#if defined(__linux__)
-        std::string gnu;
-        dl_iterate_phdr(Find_Build_Id, &gnu);
-        if (!gnu.empty())
-            return Hash_Bytes(gnu.data(), gnu.size(), 1);
-#endif
-        if (FILE *exe = Open_Executable())
-        {
-            std::vector<unsigned char> chunk(1 << 20);
-            uint64_t h = 2;
-            for (size_t n; (n = std::fread(chunk.data(), 1, chunk.size(), exe)) > 0; )
-                h = Hash_Bytes(chunk.data(), n, h);
-            const bool read = !std::ferror(exe);
-            std::fclose(exe);
-            if (read)
-                return h;
-        }
-        const std::string id = POV_RAY_VERSION " " __DATE__ " " __TIME__;
-        return Hash_Bytes(id.data(), id.size(), 3);
-    }();
-    return hash;
-}
 
 /// True if every child reference lies inside the tree and after its block, so a walk always ends.
 bool Valid_Tree(const std::vector<FlatQBBoxBlock>& blocks, uint32_t triangles)
@@ -320,7 +208,7 @@ TreeRead Read_Tree(const PovmTreeKey& key, uint32_t triangles, FlatMeshBBoxTree 
     TreeHeader h;
     if (!file->read(&h, sizeof(h)) || (std::memcmp(h.magic, TREE_MAGIC, sizeof(TREE_MAGIC)) != 0))
         return TreeRead::Corrupt;
-    if ((h.version != TREE_VERSION) || (h.blockBytes != sizeof(FlatQBBoxBlock)) || (h.build != Build_Hash()) ||
+    if ((h.version != TREE_VERSION) || (h.blockBytes != sizeof(FlatQBBoxBlock)) || (h.build != BuildHash()) ||
         (h.povmBytes != key.bytes) || (h.povmHash != key.hash) || (h.triangles != triangles))
         return TreeRead::Stale;
     if (!file->seekg(0, IOBase::seek_end) || (uint64_t(file->tellg()) != sizeof(h) + uint64_t(h.blocks) * sizeof(FlatQBBoxBlock)) ||
@@ -330,7 +218,7 @@ TreeRead Read_Tree(const PovmTreeKey& key, uint32_t triangles, FlatMeshBBoxTree 
     std::unique_ptr<FlatMeshBBoxTree> t(new FlatMeshBBoxTree);
     t->blocks.resize(h.blocks);
     if (!file->read(t->blocks.data(), t->blocks.size() * sizeof(FlatQBBoxBlock)) ||
-        (Hash_Bytes(t->blocks.data(), t->blocks.size() * sizeof(FlatQBBoxBlock), 0) != h.blocksHash) ||
+        (ContentHash(t->blocks.data(), t->blocks.size() * sizeof(FlatQBBoxBlock), 0) != h.blocksHash) ||
         !Valid_Tree(t->blocks, triangles))
         return TreeRead::Corrupt;
     tree = t.release();
@@ -459,12 +347,12 @@ TreeWrite Write_Tree(const PovmTreeKey& key, uint32_t triangles, const FlatMeshB
     std::memcpy(h.magic, TREE_MAGIC, sizeof(TREE_MAGIC));
     h.version = TREE_VERSION;
     h.blockBytes = sizeof(FlatQBBoxBlock);
-    h.build = Build_Hash();
+    h.build = BuildHash();
     h.povmBytes = key.bytes;
     h.povmHash = key.hash;
     h.triangles = triangles;
     h.blocks = uint32_t(tree.blocks.size());
-    h.blocksHash = Hash_Bytes(tree.blocks.data(), tree.blocks.size() * sizeof(FlatQBBoxBlock), 0);
+    h.blocksHash = ContentHash(tree.blocks.data(), tree.blocks.size() * sizeof(FlatQBBoxBlock), 0);
     bool written = (std::fwrite(&h, sizeof(h), 1, file) == 1) &&
                    (std::fwrite(tree.blocks.data(), sizeof(FlatQBBoxBlock), tree.blocks.size(), file) == tree.blocks.size());
     written = (std::fclose(file) == 0) && written;
@@ -550,8 +438,8 @@ GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& de
     GeneratedMeshKey key;
     if (dir.empty())
         return key;
-    key.a = Hash_Bytes(definition.data(), definition.size(), Build_Hash());
-    key.b = Hash_Bytes(definition.data(), definition.size(), ~key.a);
+    key.a = ContentHash(definition.data(), definition.size(), BuildHash());
+    key.b = ContentHash(definition.data(), definition.size(), ~key.a);
     char name[40];
     std::snprintf(name, sizeof(name), "%016llx%016llx.povg", (unsigned long long)key.a, (unsigned long long)key.b);
     key.path = dir;
@@ -592,9 +480,9 @@ std::shared_ptr<Mesh> Read_Generated_Mesh(const GeneratedMeshKey& key, DeferredM
     char magic[8];
     uint32_t version;
     uint64_t build, a, b;
-    if ((Hash_Bytes(bytes.data(), bytes.size() - sizeof(trailer), 0) != trailer) || !in.Take(magic) ||
+    if ((ContentHash(bytes.data(), bytes.size() - sizeof(trailer), 0) != trailer) || !in.Take(magic) ||
         (std::memcmp(magic, GENERATED_MAGIC, sizeof(magic)) != 0) || !in.Take(version) || (version != GENERATED_VERSION) ||
-        !in.Take(build) || (build != Build_Hash()) || !in.Take(a) || (a != key.a) || !in.Take(b) || (b != key.b))
+        !in.Take(build) || (build != BuildHash()) || !in.Take(a) || (a != key.a) || !in.Take(b) || (b != key.b))
     {
         state.warnings.push_back("Generated mesh cache '" + path + "' does not match its name; rebuilding it.");
         return nullptr;
@@ -655,7 +543,7 @@ void Write_Generated_Mesh(const GeneratedMeshKey& key, const Mesh& mesh, Deferre
     Packer out;
     out.bytes.append(GENERATED_MAGIC, sizeof(GENERATED_MAGIC));
     out.Put(GENERATED_VERSION);
-    out.Put(Build_Hash());
+    out.Put(BuildHash());
     out.Put(key.a);
     out.Put(key.b);
     out.Put(uint8_t(mesh.has_inside_vector));
@@ -683,7 +571,7 @@ void Write_Generated_Mesh(const GeneratedMeshKey& key, const Mesh& mesh, Deferre
     out.Put(uint32_t(state.warnings.size() - firstWarning));
     for (size_t i = firstWarning; i < state.warnings.size(); ++i)
         out.Put(state.warnings[i].data(), state.warnings[i].size());
-    out.Put(Hash_Bytes(out.bytes.data(), out.bytes.size(), 0));
+    out.Put(ContentHash(out.bytes.data(), out.bytes.size(), 0));
 
     const UCS2String temp = key.path + SysToUCS2String(".tmp");
     PlatformBase& platform = PlatformBase::GetInstance();
@@ -788,13 +676,13 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
         throw PovmError("povm file '%s' has %llu bytes where its header needs %llu.", name.c_str(),
               (unsigned long long)bytes, (unsigned long long)expected);
 
-    uint64_t hash = Hash_Bytes(header, sizeof(header), 0);
+    uint64_t hash = ContentHash(header, sizeof(header), 0);
     const auto read = [&](void *dst, size_t words) {
         if (state.Cancelled())
             throw PovmError("Mesh build cancelled.");
         if (!file->read(dst, words * 4))
             throw PovmError("Cannot read povm file '%s'.", name.c_str());
-        hash = Hash_Bytes(dst, words * 4, hash);
+        hash = ContentHash(dst, words * 4, hash);
         To_Host_Order(dst, words);
     };
 

@@ -43,6 +43,8 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <set>
+#include <string>
 #include <cstdint>
 #include <memory>
 
@@ -86,6 +88,7 @@ struct Sym_Table_Entry final
     bool deprecatedOnce : 1;
     bool deprecatedShown : 1;
     SymTableEntryRefCount ref_count; ///< normally 1, but may be greater when passing symbols out of macros
+    std::set<std::string> *readLog; ///< for a renderer-provided declare, where every lookup records its name for the cache key
 };
 using SYM_ENTRY = Sym_Table_Entry; ///< @deprecated
 

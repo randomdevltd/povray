@@ -371,6 +371,10 @@
   "Eager_Preparation": {
    "kind": "option",
    "text": "Render option, on by default (-WE turns it off): build each isosurface_mesh, skein_mesh and mesh2 { povm } on a spare work thread while the parser runs, and start method 4 media density grids; the image is the same either way, and +WT1 has no spare thread."
+  },
+  "Save_Caches": {
+   "kind": "option",
+   "text": "Render option, off by default: save the media, light and bounce caches prepared before the first pixel beside the render state file (scene.pov-state.caches), and load those a render of the same inputs saved before; the image is the same. Cache_Path=dir puts them elsewhere and turns saving on; Cache_Verify=on rebuilds each saved cache and stops if it differs; Cache_Max_Size=GiB (default 20) caps the directory, least recently used files going first."
   }
  }
 }

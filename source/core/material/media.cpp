@@ -80,6 +80,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
 #include "core/support/preparationprogress.h"
+#include "core/support/preparedcache.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -208,7 +209,8 @@ class Media::FastCache final
         DBL effect = 0.0, cellWidth = 0.0;
 
         bool EnsureField(Media& media, TraceThreadData *ttd);
-        void Finalize(Media& media, TraceThreadData *td, const std::function<void()>& cooperate);
+        /// Builds the grid, or loads it from `unit` when that holds it.
+        void Finalize(Media& media, TraceThreadData *td, const std::function<void()>& cooperate, PreparedCacheUnit *unit);
         /// Checks the medium and fits the grid to the bounds and cell limit, sizing its arrays; false where BuildField fails first.
         bool SizeGrid(const Media& media, const BoundingBox& bounds, DBL cellLimit);
         /// Fills one z slab of cells; false if a sample is negative or not finite.
@@ -217,7 +219,10 @@ class Media::FastCache final
         bool DensityAt(const Vector3d& point, MathColour& result) const;
         bool Contains(const Vector3d& point) const;
         bool CameraDensityAt(const Vector3d& point, MathColour& result) const;
-        void PrepareOptical(Media& media, const LightSource& light, TraceThreadData *td, const std::function<void()>& cooperate);
+        void PrepareOptical(Media& media, const LightSource& light, TraceThreadData *td, const std::function<void()>& cooperate,
+                            PreparedCacheUnit *unit);
+        /// Writes or reads its density grid, the record a saved cache holds.
+        void SerializeGrid(CacheArchive& archive);
         bool OpticalDepth(Media& media, const LightSource& light, const Vector3d& a, const Vector3d& b,
                           MathColour& result, TraceThreadData *ttd);
     private:
@@ -416,7 +421,7 @@ bool Media::FastCache::EnsureField(Media&, TraceThreadData *)
     return true;
 }
 
-void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::function<void()>& cooperate)
+void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::function<void()>& cooperate, PreparedCacheUnit *unit)
 {
     if (cooperate)
         cooperate();
@@ -448,32 +453,43 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     const Vector3d extent = hi - lo;
     if (!UsablePreparedContainer(container))
         throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
-    if (prepared)
-        fieldReady = TakePrepared();
-    bool sameBounds = fieldReady;
-    for (int axis = 0; axis < 3; axis++)
-        sameBounds = sameBounds && (low[axis] == lo[axis]) && (size[axis] == extent[axis]);
-    if (!sameBounds)
+    CachedStep(unit, "density", [&]()
     {
-        step = media.FastResolution;
-        density.clear();
-        if (!SizeGrid(media, container->BBox, media.PreparedCellLimit()))
-            throw POV_EXCEPTION_STRING("Prepared density cannot be published for this configuration.");
-        std::atomic<bool> unusable(false);
-        const size_t count = std::max<size_t>(1, std::min<size_t>(nz, td->GetSceneData()->workThreads));
-        std::vector<std::unique_ptr<TraceThreadData>> helpers;
-        for (size_t i = 1; i < count; i++)
-            helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
-        ParallelFor(size_t(nz), count, [&](size_t z, size_t worker) {
-            if ((count == 1) && cooperate)
-                cooperate();
-            if (!FillSlab(media, int(z), worker ? helpers[worker - 1].get() : td, unusable))
-                unusable.store(true, std::memory_order_relaxed);
-        }, cooperate);
-        for (const auto& helper : helpers)
-            td->Stats() += helper->Stats();
-        if (unusable.load(std::memory_order_relaxed))
-            throw POV_EXCEPTION_STRING("Prepared density publication produced an invalid value.");
+        if (prepared)
+            fieldReady = TakePrepared();
+        bool sameBounds = fieldReady;
+        for (int axis = 0; axis < 3; axis++)
+            sameBounds = sameBounds && (low[axis] == lo[axis]) && (size[axis] == extent[axis]);
+        if (!sameBounds)
+        {
+            step = media.FastResolution;
+            density.clear();
+            if (!SizeGrid(media, container->BBox, media.PreparedCellLimit()))
+                throw POV_EXCEPTION_STRING("Prepared density cannot be published for this configuration.");
+            std::atomic<bool> unusable(false);
+            const size_t count = std::max<size_t>(1, std::min<size_t>(nz, td->GetSceneData()->workThreads));
+            std::vector<std::unique_ptr<TraceThreadData>> helpers;
+            for (size_t i = 1; i < count; i++)
+                helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
+            ParallelFor(size_t(nz), count, [&](size_t z, size_t worker) {
+                if ((count == 1) && cooperate)
+                    cooperate();
+                if (!FillSlab(media, int(z), worker ? helpers[worker - 1].get() : td, unusable))
+                    unusable.store(true, std::memory_order_relaxed);
+            }, cooperate);
+            for (const auto& helper : helpers)
+                td->Stats() += helper->Stats();
+            if (unusable.load(std::memory_order_relaxed))
+                throw POV_EXCEPTION_STRING("Prepared density publication produced an invalid value.");
+            fieldReady = true;
+        }
+    }, [&](CacheArchive& archive) { SerializeGrid(archive); });
+    if (unit != nullptr)
+        unit->Grid("density cells", density, {{ size_t(nx), size_t(ny), size_t(nz) }}, LatticeBounds(low, cell, false));
+    if ((unit != nullptr) && unit->Loading())
+    {
+        // a grid the eager threads built is dropped for the loaded one
+        prepared.reset();
         fieldReady = true;
     }
     if (coarseCells > 0.0)
@@ -491,6 +507,23 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     if (cooperate)
         cooperate();
     published = true;
+}
+
+void Media::FastCache::SerializeGrid(CacheArchive& archive)
+{
+    Serialize(archive, low);
+    Serialize(archive, size);
+    Serialize(archive, step);
+    Serialize(archive, coarseStep);
+    Serialize(archive, coarseCells);
+    Serialize(archive, nx);
+    Serialize(archive, ny);
+    Serialize(archive, nz);
+    Serialize(archive, cell);
+    Serialize(archive, effect);
+    Serialize(archive, cellWidth);
+    if (archive.Reading() && ((nx < 1) || (ny < 1) || (nz < 1)))
+        throw CacheFormatError("the density grid has no cells");
 }
 
 bool Media::FastCache::SizeGrid(const Media& media, const BoundingBox& bounds, DBL cellLimit)
@@ -731,7 +764,8 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
     return grid;
 }
 
-void Media::FastCache::PrepareOptical(Media& media, const LightSource& light, TraceThreadData *td, const std::function<void()>& cooperate)
+void Media::FastCache::PrepareOptical(Media& media, const LightSource& light, TraceThreadData *td, const std::function<void()>& cooperate,
+                                      PreparedCacheUnit *unit)
 {
     if (constantDensity || !light.Parallel || light.Area_Light || (light.Light_Type == CYLINDER_SOURCE) ||
         !light.Media_Attenuation || !light.Media_Interaction || light.portal ||
@@ -745,7 +779,50 @@ void Media::FastCache::PrepareOptical(Media& media, const LightSource& light, Tr
     LightGrid& slot = lights[lightCount++];
     slot.index = light.index;
     slot.group = light.lightGroupLight;
-    slot.grid = BuildOptical(media, light, td, cooperate);
+    std::shared_ptr<Optical> grid;
+    CachedStep(unit, "optical", [&]() { slot.grid = BuildOptical(media, light, td, cooperate); }, [&](CacheArchive& archive)
+    {
+        bool present = (slot.grid != nullptr);
+        Serialize(archive, present);
+        if (!present)
+            return;
+        grid = archive.Reading() ? std::make_shared<Optical>() : std::const_pointer_cast<Optical>(slot.grid);
+        Serialize(archive, grid->u);
+        Serialize(archive, grid->v);
+        Serialize(archive, grid->w);
+        for (int axis = 0; axis < 3; axis++)
+        {
+            Serialize(archive, grid->lo[axis]);
+            Serialize(archive, grid->ds[axis]);
+            Serialize(archive, grid->n[axis]);
+        }
+        if (archive.Reading() && ((grid->n[0] < 1) || (grid->n[1] < 1) || (grid->n[2] < 1)))
+            throw CacheFormatError("the optical-depth grid has no cells");
+    });
+    if ((unit == nullptr) || (grid == nullptr))
+        return;
+    // the grid runs along the light, so a brick's bounds are those of its corners in the light's frame
+    const Optical& frame = *grid;
+    unit->Grid("optical cells", grid->prefix, {{ size_t(grid->n[0]), size_t(grid->n[1]), size_t(grid->n[2]) + 1 }},
+               [&frame](const std::array<size_t, 3>& first, const std::array<size_t, 3>& end, Vector3d& low, Vector3d& high)
+    {
+        low = Vector3d(HUGE_VAL);
+        high = Vector3d(-HUGE_VAL);
+        for (int corner = 0; corner < 8; ++corner)
+        {
+            DBL at[3];
+            for (int axis = 0; axis < 3; ++axis)
+                at[axis] = frame.lo[axis] + DBL(((corner >> axis) & 1) ? end[axis] : first[axis]) * frame.ds[axis];
+            const Vector3d point = frame.u * at[0] + frame.v * at[1] + frame.w * at[2];
+            for (int axis = X; axis <= Z; ++axis)
+            {
+                low[axis] = std::min(low[axis], point[axis]);
+                high[axis] = std::max(high[axis], point[axis]);
+            }
+        }
+    });
+    if (unit->Loading())
+        slot.grid = grid;
 }
 
 bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, const Vector3d& a,
@@ -1078,22 +1155,32 @@ void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const st
     }
     if (!fastCache || (fastCache->container != owner))
         throw POV_EXCEPTION_STRING("Prepared spatial field has no valid placement binding.");
-    fastCache->Finalize(*this, td, cooperate);
+    // a varying grid and its optical-depth grids are saved as one cache
+    std::unique_ptr<PreparedCacheUnit> unit;
+    if (!fastCache->constantDensity && (owner != nullptr))
+    {
+        CacheKey detail;
+        detail.Add(where).Add(FastResolution).Add(PreparedCellLimit()).Add(Vector3d(owner->BBox.lowerLeft)).Add(Vector3d(owner->BBox.size));
+        unit.reset(new PreparedCacheUnit(td->GetSceneData()->preparedCaches.get(), "media", detail.Value()));
+    }
+    fastCache->Finalize(*this, td, cooperate, unit.get());
     if (Sample_Method == 4)
     {
         for (const LightSource *light : td->GetSceneData()->lightSources)
         {
             if (cooperate)
                 cooperate();
-            fastCache->PrepareOptical(*this, *light, td, cooperate);
+            fastCache->PrepareOptical(*this, *light, td, cooperate, unit.get());
         }
         for (const LightSource *light : td->GetSceneData()->lightGroupLightSources)
         {
             if (cooperate)
                 cooperate();
-            fastCache->PrepareOptical(*this, *light, td, cooperate);
+            fastCache->PrepareOptical(*this, *light, td, cooperate, unit.get());
         }
     }
+    if (unit != nullptr)
+        unit->Finish();
 }
 
 namespace
@@ -1591,30 +1678,48 @@ static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const Refrac
         return value;
     };
     std::vector<PreparedPlacedScalarField::Entry> entries;
+    CacheKey detail;
+    detail.Add(spec.detail);
+    for (const auto& binding : interior.fields)
+        if (binding->layout)
+            for (int axis = X; axis <= Z; ++axis)
+                detail.Add(binding->layout->low[axis]).Add(binding->layout->size[axis]).Add(std::uint64_t(binding->layout->counts[axis]));
+    PreparedCacheUnit unit(td->GetSceneData()->preparedCaches.get(), "refraction", detail.Value());
     for (const auto& binding : interior.fields)
     {
         if (!binding->layout)
             throw POV_EXCEPTION_STRING("Varying refraction requires a finite prepared region.");
         const auto& layout = binding->layout;
         std::vector<DBL> values(layout->ValueCount());
-        const size_t workers = std::max<size_t>(1, std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads));
-        std::vector<std::unique_ptr<TraceThreadData>> helpers;
-        for (size_t worker = 1; worker < workers; worker++)
-            helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), worker, false));
-        ParallelFor(layout->counts[Z], workers, [&](size_t z, size_t worker) {
-            if (workers == 1 && cooperate)
-                cooperate();
-            TraceThreadData *thread = worker ? helpers[worker - 1].get() : td;
-            for (size_t y = 0; y < layout->counts[Y]; y++)
-                for (size_t x = 0; x < layout->counts[X]; x++)
-                {
-                    const Vector3d point = layout->low + Vector3d((x + 0.5) * layout->size[X] / layout->counts[X],
-                        (y + 0.5) * layout->size[Y] / layout->counts[Y], (z + 0.5) * layout->size[Z] / layout->counts[Z]);
-                    values[(z * layout->counts[Y] + y) * layout->counts[X] + x] = valueAt(point, thread);
-                }
-        }, cooperate);
-        for (const auto& helper : helpers)
-            td->Stats() += helper->Stats();
+        unit.Record("refraction", [&]()
+        {
+            const size_t workers = std::max<size_t>(1, std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads));
+            std::vector<std::unique_ptr<TraceThreadData>> helpers;
+            for (size_t worker = 1; worker < workers; worker++)
+                helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), worker, false));
+            ParallelFor(layout->counts[Z], workers, [&](size_t z, size_t worker) {
+                if (workers == 1 && cooperate)
+                    cooperate();
+                TraceThreadData *thread = worker ? helpers[worker - 1].get() : td;
+                for (size_t y = 0; y < layout->counts[Y]; y++)
+                    for (size_t x = 0; x < layout->counts[X]; x++)
+                    {
+                        const Vector3d point = layout->low + Vector3d((x + 0.5) * layout->size[X] / layout->counts[X],
+                            (y + 0.5) * layout->size[Y] / layout->counts[Y], (z + 0.5) * layout->size[Z] / layout->counts[Z]);
+                        values[(z * layout->counts[Y] + y) * layout->counts[X] + x] = valueAt(point, thread);
+                    }
+            }, cooperate);
+            for (const auto& helper : helpers)
+                td->Stats() += helper->Stats();
+        }, [&](CacheArchive& archive)
+        {
+            std::uint64_t count = values.size();
+            Serialize(archive, count);
+            if (count != layout->ValueCount())
+                throw CacheFormatError("the refraction grid's values do not match its cells");
+        });
+        const Vector3d cell(layout->size[X] / layout->counts[X], layout->size[Y] / layout->counts[Y], layout->size[Z] / layout->counts[Z]);
+        unit.Grid("refraction cells", values, layout->counts, LatticeBounds(layout->low, cell, false));
         const DBL step = std::max(layout->size[X] / layout->counts[X],
             std::max(layout->size[Y] / layout->counts[Y], layout->size[Z] / layout->counts[Z]));
         if (td->mediaMessages)
@@ -1624,6 +1729,7 @@ static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const Refrac
     }
     if (entries.empty())
         throw POV_EXCEPTION_STRING("Refraction has no prepared geometry binding.");
+    unit.Finish();
     return std::make_shared<const PreparedPlacedScalarField>(std::move(entries));
 }
 
@@ -2584,207 +2690,251 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     const bool nits = settings.nits;
     const bool normalized = (settings.lumens >= 0.0) || (nits && settings.brightness > 0.0);
     emitter->coefficient = MathColour(settings.BounceOnly() ? 0.0 : normalized ? 1.0 : settings.brightness);
-    // every serial estimate below is gathered per index on the workers, then summed in index order
-    const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
-    std::vector<std::unique_ptr<TraceThreadData>> helpers;
-    for (size_t i = 1; i < workers; i++)
-        helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
-    const auto poll = [&cooperate]() { if (cooperate) cooperate(); };
-    const auto thread = [&](size_t worker) { return worker ? helpers[worker - 1].get() : td; };
-    const auto parallel = [&](size_t count, const std::function<void(size_t, TraceThreadData *, size_t)>& work) {
-        ParallelFor(count, workers, [&](size_t i, size_t worker) {
-            if ((workers == 1) && (i % 1024 == 0))
-                poll();
-            work(i, thread(worker), worker);
-        }, poll);
-    };
-    double meanChord = 0.0;
-    if (!settings.BounceOnly() && settings.lumens < 0.0 && settings.brightness != 0.0 && (!settings.useEmission || nits))
-    {
-        double discrepancy = HUGE_VAL;
-        std::vector<vector<std::pair<double, double>>> pieces(workers);
-        std::vector<double> lineLength;
-        std::vector<size_t> lineCrossings;
-        for (int lines : {1024, 4096, 16384})
-        {
-            double replicate[4], sumLength = 0.0;
-            size_t sumPieces = 0;
-            lineLength.assign(size_t(4) * lines, 0.0);
-            lineCrossings.assign(size_t(4) * lines, 0);
-            parallel(size_t(4) * lines, [&](size_t index, TraceThreadData *worker, size_t slot) {
-                const int r = int(index / lines), k = int(index % lines);
-                const std::uint64_t scramble = DeriveKey(0x63686f726473ull, kDrawEmitter, r);
-                const double a = Draw(scramble, kDrawEmitter, 0), b = Draw(scramble, kDrawEmitter, 1);
-                const double c = Draw(scramble, kDrawEmitter, 2);
-                {
-                    const std::uint64_t key = DeriveKey(scramble, kDrawEmitter, k);
-                    const double su = a + k * 0.7548776662466927, sv = b + k * 0.5698402909980532;
-                    const double z = 1.0 - 2.0 * (su - floor(su)), azimuth = 2.0 * M_PI * (sv - floor(sv));
-                    const double radial = std::sqrt(max(0.0, 1.0 - z * z));
-                    const Vector3d w(radial * std::cos(azimuth), radial * std::sin(azimuth), z);
-                    const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
-                    const double t = c + k * 0.4142135623730950, phi = 2.0 * M_PI * (t - floor(t));
-                    const double rho = emitter->radius * std::sqrt((k + Draw(key, kDrawEmitter, 3)) / lines);
-                    const Vector3d origin = emitter->centre + (u * std::cos(phi) + cross(w, u) * std::sin(phi)) * rho - w * emitter->radius;
-                    lineLength[index] = emitter->Chord(origin, w, 2.0 * emitter->radius, worker, pieces[slot]);
-                    lineCrossings[index] = pieces[slot].size();
-                }
-            });
-            for (int r = 0; r < 4; r++)
-            {
-                double length = 0.0;
-                size_t crossings = 0;
-                for (int k = 0; k < lines; k++)
-                {
-                    length += lineLength[size_t(r) * lines + k];
-                    crossings += lineCrossings[size_t(r) * lines + k];
-                }
-                replicate[r] = crossings ? length / crossings : 0.0;
-                sumLength += length;
-                sumPieces += crossings;
-            }
-            meanChord = sumPieces ? sumLength / sumPieces : 0.0;
-            discrepancy = 0.0;
-            for (double estimate : replicate)
-                discrepancy = max(discrepancy, fabs(estimate - meanChord) / max(meanChord, 1.0e-300));
-            if ((meanChord > 0.0) && (discrepancy <= 0.005))
-                break;
-        }
-        if (!(meanChord > 0.0))
-        {
-            throw POV_EXCEPTION_STRING("Interior light geometric mean-chord normalization is unresolved or empty.");
-        }
-        if ((discrepancy > 0.005) && td->mediaMessages)
-            td->mediaMessages->Warning(kWarningGeneral, "Interior light's geometric mean-chord normalization has %.3g relative sampling discrepancy.", discrepancy);
-        if (!settings.useEmission && !nits)
-            emitter->coefficient = MathColour(settings.brightness / meanChord);
-    }
-    const size_t count = layout->NodeCount();
-    std::unique_ptr<OwningEmissionInput> emissionInput;
-    if (settings.useEmission)
-        emissionInput.reset(new OwningEmissionInput(*container->interior));
-    const bool solid = emissionInput ? emissionInput->Constant() :
-        (!settings.pigment || settings.pigment->Type == PLAIN_PATTERN);
-    auto colourAt = [&](const Vector3d& p, TraceThreadData *worker) {
-        TransColour colour(MathColour(1.0));
-        if (settings.pigment)
-            Compute_Pigment(colour, settings.pigment, p, nullptr, nullptr, worker);
-        const MathColour value = emissionInput ? emissionInput->Sample(p, worker) : colour.colour();
-        for (int ch = 0; ch < MathColour::channels; ch++)
-            if (!IsFiniteNumber(value[ch]) || value[ch] < 0.0)
-                throw POV_EXCEPTION_STRING("Interior light pigment is negative or not finite.");
-        return value;
-    };
+    // the emission at the nodes and its normalisation, the occupancy and the masses are what a saved cache holds
+    CacheKey detail;
+    detail.Add(emitter->low).Add(emitter->size).Add(layout->Low()).Add(layout->Size())
+          .Add(std::uint64_t(layout->NodeCount())).Add(std::uint64_t(layout->CellCount()));
+    PreparedCacheUnit unit(td->GetSceneData()->preparedCaches.get(), "light", detail.Value());
     std::shared_ptr<const PreparedColourField> field;
-    std::atomic<bool> positiveField(false);
+    std::shared_ptr<const PreparedSourceColourField> nodes;
     MathColour solidValue;
-    if (solid)
-    {
-        const MathColour value = colourAt(emitter->centre, td);
-        solidValue = value;
-        positiveField.store(value.Weight() > 0.0, std::memory_order_relaxed);
-        field = std::make_shared<PreparedConstantColourField>(value);
-    }
-    else
-    {
-        vector<MathColour> values(count);
-        parallel(count, [&](size_t node, TraceThreadData *worker, size_t) {
-            const MathColour value = colourAt(layout->Node(node), worker);
-            values[node] = value;
-            if (value.Weight() > 0.0)
-                positiveField.store(true, std::memory_order_relaxed);
-        });
-        field = std::make_shared<PreparedSourceColourField>(layout, std::move(values));
-    }
-    MathColour integral;
-    double volume = 0.0, relativeDiscrepancy = 0.0;
-    {
-        for (int bins : {16, 24, 32})
-        {
-            if (!positiveField.load(std::memory_order_relaxed) || !(emitter->coefficient.Weight() > 0.0))
-                break;
-            MathColour replicate[4];
-            const size_t draws = size_t(bins) * bins * bins;
-            vector<MathColour> drawn(4 * draws);
-            vector<char> occupied(4 * draws);
-            parallel(4 * draws, [&](size_t index, TraceThreadData *worker, size_t) {
-                const size_t r = index / draws, k = index % draws;
-                {
-                    const std::uint64_t key = DeriveKey(0x766f6c756d65ull, kDrawEmitter, size_t(r) * draws + k);
-                    const Vector3d q((k % bins + Draw(key, kDrawEmitter, 0)) / bins,
-                                     ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
-                                     (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
-                    const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
-                    occupied[index] = Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker);
-                    drawn[index] = occupied[index] ? field->Sample(p) * emitter->coefficient : MathColour();
-                }
-            });
-            for (int r = 0; r < 4; r++)
-                for (size_t k = 0; k < draws; k++)
-                {
-                    const MathColour& j = drawn[r * draws + k];
-                    if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
-                    {
-                        throw POV_EXCEPTION_STRING("Interior light prepared pigment is negative or not finite.");
-                    }
-                    replicate[r] += j * (emitter->boxVolume / draws);
-                }
-            size_t inside = 0;
-            for (char drawnInside : occupied)
-                inside += drawnInside ? 1 : 0;
-            volume = emitter->boxVolume * double(inside) / double(4 * draws);
-            integral.Clear();
-            for (const MathColour& estimate : replicate)
-                integral += estimate * 0.25;
-            const double mean = integral.Greyscale();
-            relativeDiscrepancy = 0.0;
-            for (const MathColour& estimate : replicate)
-                relativeDiscrepancy = max(relativeDiscrepancy, fabs(estimate.Greyscale() - mean) / max(mean, 1.0e-300));
-            if ((mean > 0.0) && (relativeDiscrepancy <= 0.0025))
-                break;
-        }
-        if ((settings.lumens > 0.0) && !(integral.Greyscale() > 0.0))
-            throw POV_EXCEPTION_STRING(positiveField.load(std::memory_order_relaxed) ?
-                "Interior light generated-lumens integral is unresolved; refine its field layout." :
-                "Interior light stated in lumens requires an input of positive luminance.");
-        if ((settings.lumens < 0.0) && emitter->coefficient.Weight() > 0.0 &&
-            positiveField.load(std::memory_order_relaxed) && !(integral.Greyscale() > 0.0))
-            throw POV_EXCEPTION_STRING("Interior light prepared power integral is unresolved; refine its field layout.");
-        if ((relativeDiscrepancy > 0.0025) && td->mediaMessages)
-            td->mediaMessages->Warning(kWarningGeneral, "Interior light's generated-lumens normalization has %.3g relative sampling discrepancy.", relativeDiscrepancy);
-        // nits: the mean boundary radiance 4 * integral / A is the brightness, with A / 4 = V / meanChord
-        const double meanLuminance = solid ? double(solidValue.Greyscale()) :
-            (volume > 0.0) ? integral.Greyscale() / volume : 0.0;
-        if (nits && (emitter->coefficient.Weight() > 0.0) &&
-            !(integral.Greyscale() > 0.0 && meanChord > 0.0 && meanLuminance > 0.0))
-            throw POV_EXCEPTION_STRING("Interior light stated in nits requires an input of positive luminance.");
-        const double scale = settings.lumens >= 0.0 ?
-            (settings.lumens == 0.0 ? 0.0 : settings.lumens / (4.0 * M_PI * integral.Greyscale())) :
-            (nits && (emitter->coefficient.Weight() > 0.0)) ? settings.brightness / (meanChord * meanLuminance) : 1.0;
-        emitter->coefficient *= scale;
-        emitter->intensity = integral * scale;
-    }
-    emitter->volumeEmission = positiveField.load(std::memory_order_relaxed) && emitter->coefficient.Weight() > 0.0;
-    field = std::make_shared<ScaledColour>(field, emitter->coefficient[0]);
+    bool solid = false, occupied = false, massive = false;
     vector<DBL> masses;
-    if (emitter->volumeEmission)
+    unit.Record("emission", [&]()
     {
-        emitter->occupancy = emitter->Occupancy(*layout, workers, parallel);
-        masses.resize(layout->CellCount());
-        parallel(layout->CellCount(), [&](size_t cell, TraceThreadData *, size_t) {
-            masses[cell] = emitter->occupancy->at(cell) * CellIntegral(*layout, cell, [&](const Vector3d& p) {
-                return field->Sample(p).Weight(); });
-        });
+        // every serial estimate below is gathered per index on the workers, then summed in index order
+        const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
+        std::vector<std::unique_ptr<TraceThreadData>> helpers;
+        for (size_t i = 1; i < workers; i++)
+            helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
+        const auto poll = [&cooperate]() { if (cooperate) cooperate(); };
+        const auto thread = [&](size_t worker) { return worker ? helpers[worker - 1].get() : td; };
+        const auto parallel = [&](size_t count, const std::function<void(size_t, TraceThreadData *, size_t)>& work) {
+            ParallelFor(count, workers, [&](size_t i, size_t worker) {
+                if ((workers == 1) && (i % 1024 == 0))
+                    poll();
+                work(i, thread(worker), worker);
+            }, poll);
+        };
+        double meanChord = 0.0;
+        if (!settings.BounceOnly() && settings.lumens < 0.0 && settings.brightness != 0.0 && (!settings.useEmission || nits))
+        {
+            double discrepancy = HUGE_VAL;
+            std::vector<vector<std::pair<double, double>>> pieces(workers);
+            std::vector<double> lineLength;
+            std::vector<size_t> lineCrossings;
+            for (int lines : {1024, 4096, 16384})
+            {
+                double replicate[4], sumLength = 0.0;
+                size_t sumPieces = 0;
+                lineLength.assign(size_t(4) * lines, 0.0);
+                lineCrossings.assign(size_t(4) * lines, 0);
+                parallel(size_t(4) * lines, [&](size_t index, TraceThreadData *worker, size_t slot) {
+                    const int r = int(index / lines), k = int(index % lines);
+                    const std::uint64_t scramble = DeriveKey(0x63686f726473ull, kDrawEmitter, r);
+                    const double a = Draw(scramble, kDrawEmitter, 0), b = Draw(scramble, kDrawEmitter, 1);
+                    const double c = Draw(scramble, kDrawEmitter, 2);
+                    {
+                        const std::uint64_t key = DeriveKey(scramble, kDrawEmitter, k);
+                        const double su = a + k * 0.7548776662466927, sv = b + k * 0.5698402909980532;
+                        const double z = 1.0 - 2.0 * (su - floor(su)), azimuth = 2.0 * M_PI * (sv - floor(sv));
+                        const double radial = std::sqrt(max(0.0, 1.0 - z * z));
+                        const Vector3d w(radial * std::cos(azimuth), radial * std::sin(azimuth), z);
+                        const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
+                        const double t = c + k * 0.4142135623730950, phi = 2.0 * M_PI * (t - floor(t));
+                        const double rho = emitter->radius * std::sqrt((k + Draw(key, kDrawEmitter, 3)) / lines);
+                        const Vector3d origin = emitter->centre + (u * std::cos(phi) + cross(w, u) * std::sin(phi)) * rho - w * emitter->radius;
+                        lineLength[index] = emitter->Chord(origin, w, 2.0 * emitter->radius, worker, pieces[slot]);
+                        lineCrossings[index] = pieces[slot].size();
+                    }
+                });
+                for (int r = 0; r < 4; r++)
+                {
+                    double length = 0.0;
+                    size_t crossings = 0;
+                    for (int k = 0; k < lines; k++)
+                    {
+                        length += lineLength[size_t(r) * lines + k];
+                        crossings += lineCrossings[size_t(r) * lines + k];
+                    }
+                    replicate[r] = crossings ? length / crossings : 0.0;
+                    sumLength += length;
+                    sumPieces += crossings;
+                }
+                meanChord = sumPieces ? sumLength / sumPieces : 0.0;
+                discrepancy = 0.0;
+                for (double estimate : replicate)
+                    discrepancy = max(discrepancy, fabs(estimate - meanChord) / max(meanChord, 1.0e-300));
+                if ((meanChord > 0.0) && (discrepancy <= 0.005))
+                    break;
+            }
+            if (!(meanChord > 0.0))
+            {
+                throw POV_EXCEPTION_STRING("Interior light geometric mean-chord normalization is unresolved or empty.");
+            }
+            if ((discrepancy > 0.005) && td->mediaMessages)
+                td->mediaMessages->Warning(kWarningGeneral, "Interior light's geometric mean-chord normalization has %.3g relative sampling discrepancy.", discrepancy);
+            if (!settings.useEmission && !nits)
+                emitter->coefficient = MathColour(settings.brightness / meanChord);
+        }
+        const size_t count = layout->NodeCount();
+        std::unique_ptr<OwningEmissionInput> emissionInput;
+        if (settings.useEmission)
+            emissionInput.reset(new OwningEmissionInput(*container->interior));
+        solid = emissionInput ? emissionInput->Constant() :
+            (!settings.pigment || settings.pigment->Type == PLAIN_PATTERN);
+        auto colourAt = [&](const Vector3d& p, TraceThreadData *worker) {
+            TransColour colour(MathColour(1.0));
+            if (settings.pigment)
+                Compute_Pigment(colour, settings.pigment, p, nullptr, nullptr, worker);
+            const MathColour value = emissionInput ? emissionInput->Sample(p, worker) : colour.colour();
+            for (int ch = 0; ch < MathColour::channels; ch++)
+                if (!IsFiniteNumber(value[ch]) || value[ch] < 0.0)
+                    throw POV_EXCEPTION_STRING("Interior light pigment is negative or not finite.");
+            return value;
+        };
+        std::atomic<bool> positiveField(false);
+        if (solid)
+        {
+            const MathColour value = colourAt(emitter->centre, td);
+            solidValue = value;
+            positiveField.store(value.Weight() > 0.0, std::memory_order_relaxed);
+            field = std::make_shared<PreparedConstantColourField>(value);
+        }
+        else
+        {
+            vector<MathColour> values(count);
+            parallel(count, [&](size_t node, TraceThreadData *worker, size_t) {
+                const MathColour value = colourAt(layout->Node(node), worker);
+                values[node] = value;
+                if (value.Weight() > 0.0)
+                    positiveField.store(true, std::memory_order_relaxed);
+            });
+            nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(values));
+            field = nodes;
+        }
+        MathColour integral;
+        double volume = 0.0, relativeDiscrepancy = 0.0;
+        {
+            for (int bins : {16, 24, 32})
+            {
+                if (!positiveField.load(std::memory_order_relaxed) || !(emitter->coefficient.Weight() > 0.0))
+                    break;
+                MathColour replicate[4];
+                const size_t draws = size_t(bins) * bins * bins;
+                vector<MathColour> drawn(4 * draws);
+                vector<char> occupied(4 * draws);
+                parallel(4 * draws, [&](size_t index, TraceThreadData *worker, size_t) {
+                    const size_t r = index / draws, k = index % draws;
+                    {
+                        const std::uint64_t key = DeriveKey(0x766f6c756d65ull, kDrawEmitter, size_t(r) * draws + k);
+                        const Vector3d q((k % bins + Draw(key, kDrawEmitter, 0)) / bins,
+                                         ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
+                                         (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
+                        const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
+                        occupied[index] = Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker);
+                        drawn[index] = occupied[index] ? field->Sample(p) * emitter->coefficient : MathColour();
+                    }
+                });
+                for (int r = 0; r < 4; r++)
+                    for (size_t k = 0; k < draws; k++)
+                    {
+                        const MathColour& j = drawn[r * draws + k];
+                        if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
+                        {
+                            throw POV_EXCEPTION_STRING("Interior light prepared pigment is negative or not finite.");
+                        }
+                        replicate[r] += j * (emitter->boxVolume / draws);
+                    }
+                size_t inside = 0;
+                for (char drawnInside : occupied)
+                    inside += drawnInside ? 1 : 0;
+                volume = emitter->boxVolume * double(inside) / double(4 * draws);
+                integral.Clear();
+                for (const MathColour& estimate : replicate)
+                    integral += estimate * 0.25;
+                const double mean = integral.Greyscale();
+                relativeDiscrepancy = 0.0;
+                for (const MathColour& estimate : replicate)
+                    relativeDiscrepancy = max(relativeDiscrepancy, fabs(estimate.Greyscale() - mean) / max(mean, 1.0e-300));
+                if ((mean > 0.0) && (relativeDiscrepancy <= 0.0025))
+                    break;
+            }
+            if ((settings.lumens > 0.0) && !(integral.Greyscale() > 0.0))
+                throw POV_EXCEPTION_STRING(positiveField.load(std::memory_order_relaxed) ?
+                    "Interior light generated-lumens integral is unresolved; refine its field layout." :
+                    "Interior light stated in lumens requires an input of positive luminance.");
+            if ((settings.lumens < 0.0) && emitter->coefficient.Weight() > 0.0 &&
+                positiveField.load(std::memory_order_relaxed) && !(integral.Greyscale() > 0.0))
+                throw POV_EXCEPTION_STRING("Interior light prepared power integral is unresolved; refine its field layout.");
+            if ((relativeDiscrepancy > 0.0025) && td->mediaMessages)
+                td->mediaMessages->Warning(kWarningGeneral, "Interior light's generated-lumens normalization has %.3g relative sampling discrepancy.", relativeDiscrepancy);
+            // nits: the mean boundary radiance 4 * integral / A is the brightness, with A / 4 = V / meanChord
+            const double meanLuminance = solid ? double(solidValue.Greyscale()) :
+                (volume > 0.0) ? integral.Greyscale() / volume : 0.0;
+            if (nits && (emitter->coefficient.Weight() > 0.0) &&
+                !(integral.Greyscale() > 0.0 && meanChord > 0.0 && meanLuminance > 0.0))
+                throw POV_EXCEPTION_STRING("Interior light stated in nits requires an input of positive luminance.");
+            const double scale = settings.lumens >= 0.0 ?
+                (settings.lumens == 0.0 ? 0.0 : settings.lumens / (4.0 * M_PI * integral.Greyscale())) :
+                (nits && (emitter->coefficient.Weight() > 0.0)) ? settings.brightness / (meanChord * meanLuminance) : 1.0;
+            emitter->coefficient *= scale;
+            emitter->intensity = integral * scale;
+        }
+        emitter->volumeEmission = positiveField.load(std::memory_order_relaxed) && emitter->coefficient.Weight() > 0.0;
+        field = std::make_shared<ScaledColour>(field, emitter->coefficient[0]);
+        if (emitter->volumeEmission)
+        {
+            emitter->occupancy = emitter->Occupancy(*layout, workers, parallel);
+            masses.resize(layout->CellCount());
+            parallel(layout->CellCount(), [&](size_t cell, TraceThreadData *, size_t) {
+                masses[cell] = emitter->occupancy->at(cell) * CellIntegral(*layout, cell, [&](const Vector3d& p) {
+                    return field->Sample(p).Weight(); });
+            });
+        }
+        for (const auto& helper : helpers)
+            td->Stats() += helper->Stats();
+        occupied = (emitter->occupancy != nullptr);
+        massive = !masses.empty();
+    }, [&](CacheArchive& archive)
+    {
+        Serialize(archive, emitter->coefficient);
+        Serialize(archive, emitter->intensity);
+        Serialize(archive, emitter->volumeEmission);
+        Serialize(archive, solid);
+        Serialize(archive, solidValue);
+        Serialize(archive, occupied);
+        Serialize(archive, massive);
+    });
+    // the node colours, occupancy and masses are bricks of the light's lattice
+    const CacheGridBounds nodeBounds = LatticeBounds(layout->Low(), layout->CellSize(), true);
+    const CacheGridBounds cellBounds = LatticeBounds(layout->Low(), layout->CellSize(), false);
+    vector<MathColour> loadedValues;
+    if (!solid)
+        unit.Grid("light nodes", unit.Loading() ? loadedValues : const_cast<vector<MathColour>&>(nodes->Values()), layout->NodeCounts(), nodeBounds);
+    if (!solid && unit.Loading())
+        nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(loadedValues));
+    if (occupied)
+    {
+        std::shared_ptr<vector<DBL>> occupancy = unit.Loading() ? std::make_shared<vector<DBL>>() : nullptr;
+        unit.Grid("light occupancy", unit.Loading() ? *occupancy : const_cast<vector<DBL>&>(*emitter->occupancy), layout->Counts(), cellBounds);
+        if (unit.Loading())
+            emitter->occupancy = occupancy;
     }
-    for (const auto& helper : helpers)
-        td->Stats() += helper->Stats();
+    if (massive)
+        unit.Grid("light masses", masses, layout->Counts(), cellBounds);
+    // the lobes are sorted from the masses, cheaply, so they are not saved
     emitter->BuildLobes(*layout, masses);
+    if (unit.Loading())
+        field = std::make_shared<ScaledColour>(solid ? std::make_shared<PreparedConstantColourField>(solidValue) :
+                                               std::shared_ptr<const PreparedColourField>(nodes), emitter->coefficient[0]);
     emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses));
+    unit.Finish();
 }
 
 std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary,
     std::shared_ptr<const PreparedDirectionalSourceField> field, TraceThreadData *td, bool includePrimary,
-    std::shared_ptr<const PreparedSourceDistribution> sharedProposal)
+    std::shared_ptr<const PreparedSourceDistribution> sharedProposal, PreparedCacheUnit *cache)
 {
     const VolumeEmitter *original = dynamic_cast<const VolumeEmitter*>(&primary);
     if (!original || !original->axis || !original->geometry || !field || (includePrimary && original->bounceField))
@@ -2822,16 +2972,21 @@ std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary
             for (size_t i = 0; i < count; ++i)
                 work(i, td, 0);
         });
-    for (size_t cell = 0; cell < layout->CellCount(); ++cell)
+    CachedStep(cache, "bounced power", [&]()
     {
-        const DBL occupied = emitter->occupancy->at(cell);
-        if (!(occupied > 0.0))
-            continue;
-        if (!sharedProposal)
-            masses[cell] = occupied * CellIntegral(*layout, cell, [&](const Vector3d& p) { return proposal->Sample(p).Weight(); });
-        for (const auto& q : layout->CornerQuadrature(cell))
-            emitter->intensity += field->AngularAverage(q.position) * (q.weight * occupied);
-    }
+        for (size_t cell = 0; cell < layout->CellCount(); ++cell)
+        {
+            const DBL occupied = emitter->occupancy->at(cell);
+            if (!(occupied > 0.0))
+                continue;
+            if (!sharedProposal)
+                masses[cell] = occupied * CellIntegral(*layout, cell, [&](const Vector3d& p) { return proposal->Sample(p).Weight(); });
+            for (const auto& q : layout->CornerQuadrature(cell))
+                emitter->intensity += field->AngularAverage(q.position) * (q.weight * occupied);
+        }
+    }, [&](CacheArchive& archive) { Serialize(archive, emitter->intensity); });
+    if ((cache != nullptr) && !sharedProposal)
+        cache->Grid("bounced masses", masses, layout->Counts(), LatticeBounds(layout->Low(), layout->CellSize(), false));
     emitter->axis = sharedProposal ? std::make_shared<PreparedLightAxis>(layout, proposal, std::move(sharedProposal)) :
         std::make_shared<PreparedLightAxis>(layout, proposal, std::move(masses));
     return emitter;

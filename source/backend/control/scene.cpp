@@ -50,11 +50,13 @@
 
 // POV-Ray header files (base module)
 #include "base/image/colourspace.h"
+#include "base/stringutilities.h"
 
 // POV-Ray header files (core module)
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
 #include "core/shape/portal.h"
+#include "core/support/preparedcache.h"
 
 // POV-Ray header files (POVMS module)
 #include "povms/povmscpp.h"
@@ -66,6 +68,7 @@
 // POV-Ray header files (backend module)
 #include "backend/bounding/boundingtask.h"
 #include "backend/control/parsertask.h"
+#include "backend/povray.h"
 #include "backend/scene/backendscenedata.h"
 #include "backend/scene/view.h"
 
@@ -211,6 +214,59 @@ void Scene::StartParser(POVMS_Object& parseOptions)
             }
 
             sceneData->declaredVariables.insert(make_pair(d.GetString(kPOVAttrib_Identifier), sstr.str()));
+        }
+    }
+
+    // Save_Caches, or a Cache_Path, saves prepared caches and loads those a render of the same inputs saved before
+    if (parseOptions.TryGetBool(kPOVAttrib_SaveCaches, parseOptions.Exist(kPOVAttrib_CachePath)) && parseOptions.Exist(kPOVAttrib_CachePath))
+    {
+        sceneData->preparedCacheDirectory = UCS2toSysString(parseOptions.GetUCS2String(kPOVAttrib_CachePath));
+        sceneData->preparedCacheVerify = parseOptions.TryGetBool(kPOVAttrib_CacheVerify, false);
+        // what the parse reads besides its files' contents and declares; paths, thread counts and view settings are left out
+        std::ostringstream settings;
+        settings << "version " << parseOptions.TryGetFloat(kPOVAttrib_Version, 0.0f) << " pov4 " << parseOptions.TryGetFloat(kPOVAttrib_Pov4Version, 0.0f)
+                 << " clock " << parseOptions.Exist(kPOVAttrib_Clock) << " " << parseOptions.TryGetFloat(kPOVAttrib_Clock, 0.0f)
+                 << " tags " << parseOptions.TryGetString(kPOVAttrib_FilterTags, "")
+                 << " bounding " << sceneData->boundingMethod << " " << parseOptions.TryGetInt(kPOVAttrib_BoundingThreshold, DEFAULT_AUTO_BOUNDINGTHRESHOLD)
+                 << " " << sceneData->splitUnions << " " << sceneData->removeBounds << " bsp " << sceneData->bspMaxDepth << " "
+                 << sceneData->bspObjectIsectCost << " " << sceneData->bspBaseAccessCost << " " << sceneData->bspChildAccessCost << " "
+                 << sceneData->bspMissChance << " alpha " << sceneData->outputAlpha << " clockless " << sceneData->clocklessAnimation
+                 << " realtime " << sceneData->realTimeRaytracing;
+        sceneData->preparedCacheSettings = settings.str();
+        const float maxSize = parseOptions.TryGetFloat(kPOVAttrib_CacheMaxSize, float(PreparedCaches::kDefaultMaxBytes >> 30));
+        sceneData->preparedCacheMaxBytes = (maxSize > 0.0f) ? std::uint64_t(double(maxSize) * double(std::uint64_t(1) << 30)) : 0;
+        // known before the parse: the build, settings, every declare and the scene file's name
+        CacheKey preKey(BuildHash());
+        preKey.Add(ImageLibraryVersions()).Add(sceneData->preparedCacheSettings).Add(UCS2toSysString(sceneData->inputFile));
+        for (const auto& declare : sceneData->declaredVariables)
+            preKey.Add(declare.first).Add(declare.second);
+        sceneData->preparedCachePreKey = preKey.Value();
+        // an earlier parse's manifest, its inputs unchanged, predicts this parse's key; only its media caches skip eager builds
+        std::uint64_t predicted = 0;
+        std::vector<CacheInput> inputs;
+        if (ReadSceneManifest(sceneData->preparedCacheDirectory, sceneData->preparedCachePreKey, predicted, inputs))
+        {
+            bool unchanged = true;
+            for (CacheInput& input : inputs)
+            {
+                InputStamp now;
+                std::uint64_t hash = 0;
+                if (StampFile(input.path, now) && (now == input.stamp))
+                    continue;
+                if (!HashFile(input.path, hash, now) || (hash != input.hash))
+                {
+                    unchanged = false;
+                    break;
+                }
+                input.stamp = now;
+            }
+            if (unchanged)
+            {
+                for (const CacheInput& input : inputs)
+                    sceneData->knownInputs[input.path] = input;
+                sceneData->preparedCachesFound = !sceneData->preparedCacheVerify &&
+                                                 HasSavedCaches(sceneData->preparedCacheDirectory, "media", predicted);
+            }
         }
     }
 

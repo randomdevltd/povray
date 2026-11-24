@@ -59,6 +59,7 @@
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
 #include "core/shape/portal.h"
+#include "core/support/preparedcache.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -462,6 +463,13 @@ SceneData::SceneData() :
     removeBounds = true;
 
     tree = nullptr;
+}
+
+bool SceneData::RendererDeclare(const std::string& name)
+{
+    static const std::set<std::string> names = { "clock_delta", "final_clock", "final_frame", "frame_number", "image_height",
+                                                 "image_width", "initial_clock", "initial_frame", "input_file_name" };
+    return names.count(name) != 0;
 }
 
 SceneData::~SceneData()

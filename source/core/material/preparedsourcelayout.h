@@ -102,6 +102,16 @@ public:
     {
         return counts;
     }
+    /// Nodes along each axis, one more than cells.
+    std::array<size_t, 3> NodeCounts() const
+    {
+        return {{ counts[X] + 1, counts[Y] + 1, counts[Z] + 1 }};
+    }
+    /// The extent of one cell, the spacing of the nodes.
+    Vector3d CellSize() const
+    {
+        return Vector3d(extent[X] / counts[X], extent[Y] / counts[Y], extent[Z] / counts[Z]);
+    }
     std::array<QuadraturePoint, 8> CornerQuadrature(size_t cell) const
     {
         const std::array<size_t, 8> nodes = CellNodes(cell);

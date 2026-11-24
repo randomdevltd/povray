@@ -47,7 +47,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <utility>
@@ -84,6 +86,7 @@ class SubsurfaceCache;
 namespace surface_map { class Maps; }
 struct DeferredMeshState;
 class DeferredMeshPool;
+class PreparedCaches;
 
 /// What remains of an object under a filter. An excluded object is empty space, so an excluded inverted operand, such
 /// as a difference's cutter, is everything; `Part` means some descendants were removed.
@@ -206,6 +209,24 @@ class SceneData
         std::vector<std::pair<std::shared_ptr<DeferredMeshState>, std::shared_ptr<Media::EagerField>>> eagerMediaFields;
         /// caches whose density a snapshot cannot take (an object test or a foreign function)
         std::vector<std::weak_ptr<Media::FastCache>> eagerMediaUnsafe;
+        /// where prepared caches are saved and loaded (Save_Caches, Cache_Path), empty when they are not; Cache_Verify
+        std::string preparedCacheDirectory;
+        bool preparedCacheVerify = false;
+        /// media caches of the key this parse is expected to give exist, so eager threads leave media grids to be loaded
+        bool preparedCachesFound = false;
+        /// a key known before the parse (build, settings, declares, scene file name), under which a manifest predicts the scene key
+        std::uint64_t preparedCachePreKey = 0;
+        /// Cache_Max_Size in bytes, 0 for no cap
+        std::uint64_t preparedCacheMaxBytes = 0;
+        /// the render settings a parse reads, and the renderer-provided declares it read, both part of the cache key
+        std::string preparedCacheSettings;
+        std::set<std::string> rendererDeclaresRead;
+        /// the parse read the time of day (`now`), so nothing it prepared can be reused
+        bool readsTime = false;
+        /// built once the preparation knows the scene's inputs; null when caches are off
+        std::shared_ptr<PreparedCaches> preparedCaches;
+        /// Whether a declare is one the renderer provides (image size, clock, frames, input file name) rather than the user.
+        static bool RendererDeclare(const std::string& name);
         POV_LONG meshQueryRealTime = 0, meshQueryCpuTime = 0; ///< milliseconds the parser spent on builds for geometry queries
         std::vector<std::unique_ptr<PreparedSet>> preparedSets;
         std::map<TagFilter, PreparedSetId> preparedSetFilters;

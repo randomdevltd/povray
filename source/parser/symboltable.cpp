@@ -128,6 +128,7 @@ SYM_ENTRY* SymbolTable::Create_Entry(const UTF8String& Name, TokenId Number)
     New->deprecated = false;
     New->deprecatedOnce = false;
     New->deprecatedShown = false;
+    New->readLog = nullptr;
     New->Deprecation_Message = nullptr;
     New->ref_count = 1;
     New->name = Name;
@@ -146,6 +147,7 @@ SYM_ENTRY* SymbolTable::Copy_Entry(const SYM_ENTRY* oldEntry)
     newEntry->deprecated = false;
     newEntry->deprecatedOnce = false;
     newEntry->deprecatedShown = false;
+    newEntry->readLog = oldEntry->readLog;
     newEntry->Deprecation_Message = nullptr;
     newEntry->ref_count = 1;
     newEntry->name = oldEntry->name;
@@ -536,7 +538,12 @@ SYM_ENTRY* SymbolTable::Find_Symbol(const char* Name, int hash) const
     while (Entry)
     {
         if (strcmp(Name, Entry->name.c_str()) == 0)
+        {
+            // every lookup of a renderer value passes here: plain names, global.name, global["name"] and 4.0 scenes
+            if (Entry->readLog != nullptr)
+                Entry->readLog->insert(Entry->name);
             return Entry;
+        }
 
         Entry = Entry->next;
     }
