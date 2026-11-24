@@ -8,6 +8,7 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <vector>
 
 namespace pov
 {
@@ -64,8 +65,11 @@ bool SubsurfaceInternalSurvives(double& throughput, double start, Draw& draw)
 // through its surface, where Fresnel transmission is above zero for some directions at any finite relative index. With
 // little absorption in an optically large body a walk is long (about the square of the body's optical size in
 // scattering events); that is the cost of the light diffusing out, and the boundary search lets the render stop meanwhile.
-// The one walk that cannot end is a boundary that returns the start point under total internal reflection with no
-// loss, which makes no progress; that is a boundary fault and throws.
+// A boundary met at zero distance is a reflection where faces meet (an edge, a corner, a face found again within rounding):
+// the walk stays at its point and turns. A run of such reflections gathers nothing (its segments have no length, so no
+// emission and no collision) until the walk travels again. One that turns back out through a face it has already
+// reflected from at this point retraces itself and would never travel: it carries nothing more, so the walk ends there.
+// Only a reflection at an edge or corner the walk hits exactly turns back like that, a measure-zero set of paths.
 template<typename Boundary, typename Source, typename Connect, typename Draw, typename Bounce>
 double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     double absorption, double scattering, double relativeIor,
@@ -86,10 +90,16 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
         return hit;
     };
     auto outwards = [](double cosine) { if (!(cosine > 0.0)) throw std::runtime_error("Internal subsurface normal must point outwards"); };
-    auto stuck = []()
+    // The faces reflected from at the walk's current point; false when a reflection there turns back out through one of them.
+    auto turn = [](std::vector<Vector3d>& faces, const SubsurfaceInternalBoundary& hit, const Vector3d& along)
     {
-        throw std::runtime_error("Internal subsurface walk reflected without loss where it started, so it makes no progress: "
-                                 "the boundary search returned its start point");
+        if (hit.distance > 0.0)
+            faces.clear();
+        else
+            for (const Vector3d& face : faces)
+                if (dot(along, face) > 0.0) return false;
+        faces.push_back(hit.normal);
+        return true;
     };
     // A collision at a point: its albedo, the emission it connects to, and an isotropic new direction; false if nothing is left.
     auto scatter = [&](const Vector3d& at, double& throughput, Vector3d& along, double& radiance)
@@ -109,6 +119,7 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     {
         const double start = throughput;
         double radiance = 0.0;
+        std::vector<Vector3d> faces;
         for (;;)
         {
             // a segment that gathers needs its whole length; otherwise only whether the material outlasts the free flight
@@ -122,6 +133,7 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
             if (distance < hit.distance)
             {
                 position += direction * distance;
+                faces.clear();
                 if (!scatter(position, throughput, direction, radiance)) return radiance;
                 gatherSegment = false;
             }
@@ -131,12 +143,11 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
                 outwards(cosine);
                 const double fresnel = SubsurfaceInternalFresnel(cosine, relativeIor);
                 if (draw() >= fresnel) return radiance;
-                const double kept = bounce(hit.position);
-                if (!(fresnel < 1.0) && !(kept < 1.0) && !(hit.distance > 0.0)) stuck();
-                throughput *= kept;
+                throughput *= bounce(hit.position);
                 if (!(throughput > 0.0)) return radiance;
                 position = hit.position;
                 direction -= hit.normal * (2.0 * cosine);
+                if (!turn(faces, hit, direction)) return radiance;
                 gatherSegment = true;
             }
             if (!SubsurfaceInternalSurvives(throughput, start, draw)) return radiance;
@@ -149,6 +160,7 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
     // each segment's first collision, drawn within the segment and weighted by the chance of one there, 1 - exp(-sigma d),
     // so that a path that would have left unscattered still collides: an optically thin host gives every path light.
     double radiance = 0.0, chain = 1.0;
+    std::vector<Vector3d> faces;
     for (;;)
     {
         const auto hit = exit(position, direction, std::numeric_limits<double>::infinity());
@@ -172,12 +184,11 @@ double SampleSubsurfaceInternalRadiance(Vector3d position, Vector3d direction,
         }
         const double cosine = dot(direction, hit.normal);
         outwards(cosine);
-        const double kept = std::exp(-depth) * SubsurfaceInternalFresnel(cosine, relativeIor) * bounce(hit.position);
-        if (!(kept < 1.0) && !(hit.distance > 0.0)) stuck();
-        chain *= kept;
+        chain *= std::exp(-depth) * SubsurfaceInternalFresnel(cosine, relativeIor) * bounce(hit.position);
         if (!(chain > 0.0)) return radiance;
         position = hit.position;
         direction -= hit.normal * (2.0 * cosine);
+        if (!turn(faces, hit, direction)) return radiance;
         if (!SubsurfaceInternalSurvives(chain, 1.0, draw)) return radiance;
     }
 }

@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -206,20 +207,43 @@ int main()
     }
     catch (const std::invalid_argument&) { rejected = true; }
     assert(rejected);
-    // A lossless reflection where the walk started makes no progress (the boundary returned its start under total internal
-    // reflection): it must throw, never hang.
-    rejected = false;
-    try
+    // Zero-distance reflections under lossless total internal reflection. In a unit cube a path aimed at an edge reflects off
+    // one face there and meets the other at zero distance: it turns and travels on, as every part. A zero-thickness sheet
+    // returns the walk's point each time and its normal facing the walk: the walk turns back out through the face it just
+    // reflected from and ends, never hangs, as every part.
+    auto cube = [](const Vector3d& p, const Vector3d& d)
     {
-        auto stuck = [](const Vector3d& p, const Vector3d& d)
-        { return SubsurfaceInternalBoundary{0.0, p, (d + Vector3d(d[Y], d[Z], d[X]) * 10.0).normalized()}; };
-        SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1), 0.0, 1.0, 1.5,
-            stuck, source, zero, [] { return 0.5; }, [](const Vector3d&) { return 1.0; }, SubsurfaceInternalPart::kUncollided);
-    }
-    catch (const std::runtime_error& e)
+        double t = std::numeric_limits<double>::infinity();
+        int axis = 0;
+        for (int a = 0; a < 3; ++a)
+            if (d[a] != 0.0)
+            {
+                const double s = std::max(0.0, (((d[a] > 0.0) ? 1.0 : 0.0) - p[a]) / d[a]);
+                if (s < t) { t = s; axis = a; }
+            }
+        Vector3d n, at = p + d * t;
+        n[axis] = (d[axis] > 0.0) ? 1.0 : -1.0;
+        for (int a = 0; a < 3; ++a) // a hit within rounding of a face lies on it, so an edge is met exactly
+            if (std::abs(at[a] - std::round(at[a])) < 1e-12) at[a] = std::round(at[a]);
+        return SubsurfaceInternalBoundary{t, at, n};
+    };
+    auto sheet = [](const Vector3d& p, const Vector3d& d)
+    { return SubsurfaceInternalBoundary{0.0, p, Vector3d(0, 0, (d[Z] > 0.0) ? 1.0 : -1.0)}; };
+    for (SubsurfaceInternalPart part : {SubsurfaceInternalPart::kAll, SubsurfaceInternalPart::kUncollided, SubsurfaceInternalPart::kCollided})
     {
-        rejected = std::string(e.what()).find("makes no progress") != std::string::npos;
+        size_t corners = 0;
+        auto counting = [&](const Vector3d& p, const Vector3d& d)
+        {
+            const auto hit = cube(p, d);
+            if (!(hit.distance > 0.0)) ++corners;
+            return hit;
+        };
+        const double value = SampleSubsurfaceInternalRadiance(Vector3d(0.4, 0.2, 0.4), Vector3d(0.6, 0.53, 0.6).normalized(),
+            1e-6, 0.0, 1.5, counting, source, zero, [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, part);
+        assert(std::isfinite(value) && corners > 0);
+        const double flat = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(1, 0, 0.2).normalized(), 0.0, 1.0, 1.5,
+            sheet, source, zero, [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, part);
+        assert(flat == 0.0);
     }
-    assert(rejected);
     std::cout << "Internal subsurface analytical transport passed\n";
 }
