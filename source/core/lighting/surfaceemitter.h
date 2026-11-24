@@ -63,7 +63,8 @@ public:
         std::vector<SurfaceAngularGuide::ConePoint> points;
         // the area draws and the guide's chosen shares are what a saved cache holds
         PreparedCacheUnit cache(td->GetSceneData()->preparedCaches.get(), "surfacelight",
-                                CacheKey().Add(Vector3d(owner->BBox.lowerLeft)).Add(Vector3d(owner->BBox.size)).Value());
+                                CacheKey().Add(Vector3d(owner->BBox.lowerLeft)).Add(Vector3d(owner->BBox.size)).Value(),
+                                td->preparationCacheOrdinal);
         cache.Record("emission", [&]()
         {
             constexpr unsigned count = 16384;

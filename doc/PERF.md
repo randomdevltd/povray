@@ -2586,6 +2586,16 @@ every 60 seconds while it stays flat; the phase is still running. `<step>` is te
 
     Preparation: bounce 18432/61440 4.0s; o2/2 t3/7 surface
 
+After a phase's `finished` line comes its cost, where the platform has thread CPU clocks:
+
+    Preparation cost: <phase> CPU <cpu>s, critical path <path>s (<cpu/path>x)
+
+`<cpu>` is the CPU every thread spent on the phase. `<path>` is the thread CPU along its longest chain: the preparing
+thread's own work, with each parallel loop counted at its busiest worker. It is the phase's wall time on an idle machine
+with a core per thread, and `<cpu/path>` is how many threads the phase keeps busy, so with `+WTn` the phase's parallel
+efficiency is that over n. Both come from thread clocks, so other load on the machine does not move them. Work a phase
+starts outside the shared parallel loops counts as CPU but not on the path.
+
 
 ## Embedded volume sources in subsurface solids
 
