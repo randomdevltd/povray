@@ -115,7 +115,7 @@ BEGIN {
     if (!(MEAN["bounce256"] > 1.02 * MEAN["paths256"])) fail("the bounce volume added no light")
     if (abs(MEAN["bounce64"] / MEAN["bounce256"] - 1) > 0.08) fail("cloud bounced buried light differs from the paths: " MEAN["bounce64"] / MEAN["bounce256"])
     if (abs(MEAN["cloud64big"] / MEAN["cloud64"] - 1) > 0.08) fail("cloud buried light changes with scene scale: " MEAN["cloud64big"] / MEAN["cloud64"])
-    # The cloud holds the uncollided core too, blurred to its points, so its glow differs from the paths' by up to a spacing.
+    # The cloud holds the uncollided core too, blurred to its points, so its glow differs from that of the paths by up to a spacing.
     if (abs(WIDTH["vein16"] - WIDTH["vein256"]) > ENVIRON["SPACING"]) fail("cloud vein glow is not as localised as the paths: " WIDTH["vein16"] " against " WIDTH["vein256"] " mm, points " ENVIRON["SPACING"] " mm apart")
     if (abs(GLOW["vein16"] / GLOW["vein256"] - 1) > 0.06) fail("cloud vein glow mean differs from the paths: " GLOW["vein16"] / GLOW["vein256"])
     # A heavy path once set the lean of a point to tens of times its value, which drove pixels black or several times too bright.
