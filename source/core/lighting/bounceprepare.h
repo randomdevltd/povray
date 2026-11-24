@@ -161,6 +161,17 @@ struct Workers final
             if (td->preparationProgress) td->preparationProgress->AddWork(count - units);
             units = count;
         }
+        Run(count, cooperate, function, units);
+    }
+    // As For, outside the progress count, for work whose amount depends on the thread count.
+    template<typename Function>
+    void Uncounted(std::size_t count, const std::function<void()>& cooperate, const Function& function)
+    {
+        Run(count, cooperate, function, 0);
+    }
+    template<typename Function>
+    void Run(std::size_t count, const std::function<void()>& cooperate, const Function& function, std::size_t units)
+    {
         const auto advance = [count, units](std::size_t index) { return (index + 1) * units / count - index * units / count; };
         try
         {
@@ -170,7 +181,8 @@ struct Workers final
                 stop();
                 function(index, worker);
                 contexts[worker]->Done();
-                AdvancePreparation(td->preparationProgress, advance(index));
+                if (units > 0)
+                    AdvancePreparation(td->preparationProgress, advance(index));
             }, [&]() { if (cooperate) cooperate(); }, true);
         }
         catch (const Stopped&)
@@ -576,6 +588,14 @@ inline Sources VolumeSources(const Target& target, unsigned int order,
     return sources;
 }
 
+// A placement's report is saved with its cache; a loaded one, look-ahead counts included, is the building run's.
+inline void NoteReport(PreparedCacheUnit& cache, const char* label, std::string& report)
+{
+    cache.Note(label, report);
+    if (cache.Loading())
+        report = "from the run that built the cache: " + report;
+}
+
 inline std::shared_ptr<LightSource> Clone(const LightSource* light)
 {
     return std::shared_ptr<LightSource>(
@@ -729,7 +749,7 @@ inline void PrepareInternalPrimaries(Workers& workers, const std::shared_ptr<Sce
             }
             result = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits);
         }, [&](CacheArchive& archive) { SerializePlaced(archive, result); });
-        cache.Note("internal report", result.report);
+        NoteReport(cache, "internal report", result.report);
         AdvanceLoaded(cache, td, kSurfaceUnits);
         AdvancePreparation(td->preparationProgress);
         if (result.points == 0)
@@ -891,7 +911,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             workers.Step("o1 " + Describe(owner));
             cache.Record("o1", [&]() { placed[t] = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits); },
                          [&](CacheArchive& archive) { SerializePlaced(archive, placed[t]); });
-            cache.Note("o1 report", placed[t].report);
+            NoteReport(cache, "o1 report", placed[t].report);
             AdvanceLoaded(cache, td, kSurfaceUnits);
             const surface_refine::Result& result = placed[t];
             totalSurfaceNodes += result.points;

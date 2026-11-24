@@ -45,7 +45,7 @@ public:
     double Radius() const override { return radius; }
     double Reach(const Vector3d& from) const override { return BoxReach(from, geometry.Lower(), geometry.Size()); }
 
-    void ResolveGeometry() const override { geometry.ResolveDeferred(); }
+    void ResolveGeometry(const SceneData&) const override { geometry.ResolveDeferred(); }
 
     void PrepareAxis(std::shared_ptr<const PreparedSourceDomain>, TraceThreadData* td,
                      const std::function<void()>& cooperate) const override

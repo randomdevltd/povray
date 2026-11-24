@@ -307,7 +307,7 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
                 pending.push_back(std::move(next));
             }
         }
-        workers.For(pending.size(), cooperate, [&](std::size_t index, std::size_t worker)
+        workers.Uncounted(pending.size(), cooperate, [&](std::size_t index, std::size_t worker)
         {
             workers[worker].Watch(part.owner);
             Pending& next = pending[index];
@@ -322,16 +322,16 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
                 next.traced = lines(*p);
                 locate(*p, worker, next.child.fresh);
             }
-        }, 0);
+        });
         std::vector<std::pair<std::uint32_t, std::uint32_t>> located;
         for (std::size_t index = 0; index < pending.size(); ++index)
             for (std::size_t i = 0; i < pending[index].child.fresh.size(); ++i)
                 located.emplace_back(std::uint32_t(index), std::uint32_t(i));
-        workers.For(located.size(), cooperate, [&](std::size_t index, std::size_t worker)
+        workers.Uncounted(located.size(), cooperate, [&](std::size_t index, std::size_t worker)
         {
             workers[worker].Watch(part.owner);
             light(pending[located[index].first].child.fresh[located[index].second], worker);
-        }, 0);
+        });
         // a cube the piece's box does not meet holds none of it; one it meets is kept even when its read found none
         for (Pending& next : pending)
         {

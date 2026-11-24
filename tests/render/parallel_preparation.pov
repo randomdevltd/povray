@@ -1,11 +1,13 @@
 // parallel_preparation.pov: preparation that must not depend on the thread count. Case 0 surface bounce on Count
 // patterned subsurface spheres under an area light, Cells points each; 1 Count interior volume lights of patterned
-// emission, LightCells cells each; 2 both, with two surface light panels.
+// emission, LightCells cells each; 2 both, with two surface light panels; 3 interior lights in instances of one declared
+// mesh and one declared lathe, whose copies share the shape's data, around one light of BigCells cells prepared alone.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Count) #declare Count = 4; #end
 #ifndef (Cells) #declare Cells = 256; #end
 #ifndef (LightCells) #declare LightCells = 4096; #end
+#ifndef (BigCells) #declare BigCells = 72000; #end
 #ifndef (Samples) #declare Samples = 4; #end
 #ifndef (Area) #declare Area = 3; #end
 global_settings { assumed_gamma 1 subsurface { method 2 samples 16, 4 } }
@@ -49,5 +51,34 @@ plane { y, 0 pigment { checker rgb 0.7, rgb 0.4 scale 0.5 } finish { ambient 0 d
       }
       Place(I) #if (Case = 2) translate y * 1.9 #end
     }
+  #end
+#end
+
+#if (Case = 3)
+  #declare Octahedron = mesh {
+    #for (F, 0, 7)
+      #declare SX = (mod(F, 2) = 0 ? 1 : -1);
+      #declare SY = (mod(int(F / 2), 2) = 0 ? 1 : -1);
+      #declare SZ = (int(F / 4) = 0 ? 1 : -1);
+      triangle { <SX, 0, 0>, <0, SY, 0>, <0, 0, SZ> }
+    #end
+    inside_vector <0.3, 0.7, 0.2>
+  }
+  #declare Bulb = lathe { linear_spline 5, <0, -1>, <0.6, -0.6>, <0.8, 0.3>, <0.4, 1>, <0, 1> }
+  #macro VolumeLight(Cells, I)
+    pigment { rgbt 1 } hollow no_image
+    interior {
+      light {
+        pigment { granite colour_map { [0 rgb 0] [1 rgb <2, 1, 0.5>] } scale 0.25 translate I }
+        brightness 3 samples Samples domain_cells Cells
+      }
+    }
+  #end
+  #for (I, 0, 6)
+    #if (I = 3)
+      sphere { 0, 0.5 VolumeLight(BigCells, I) translate <0, 2.4, 0.6> }
+    #else
+      object { #if (mod(I, 2) = 0) Octahedron scale 0.4 #else Bulb scale 0.35 #end VolumeLight(LightCells, I) Place(I) }
+    #end
   #end
 #end

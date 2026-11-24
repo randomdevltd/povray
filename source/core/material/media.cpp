@@ -1879,7 +1879,7 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
             throw POV_EXCEPTION_STRING("Interior light has no prepared geometry binding.");
         if (light->portal)
             throw POV_EXCEPTION_STRING("Prepared volume light paths through portals are not supported.");
-        light->emitter->ResolveGeometry();
+        light->emitter->ResolveGeometry(*scene);
     }
     std::vector<std::shared_ptr<const PreparedSourceDomain>> layouts(scene->mediaLights.size());
     for (size_t index = 0; index < scene->mediaLights.size(); ++index)
@@ -2263,6 +2263,7 @@ class VolumeEmitter final : public Emitter
             }
             return result;
         }
+        void ResolveGeometry(const SceneData& scene) const override;
         void PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                          const std::function<void()>& cooperate) const override;
 
@@ -2706,18 +2707,12 @@ static void IndexEmitterGeometry(ObjectPtr geometry, const SceneData& scene)
     Prepare_CSG_Child_Trees(geometry, CSG_Child_Tree_Minimum(), visited, built);
 }
 
-void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
-                                const std::function<void()>& cooperate) const
+void VolumeEmitter::ResolveGeometry(const SceneData& scene) const
 {
-    std::lock_guard<std::mutex> lock(prepareMutex);
-    if (axis)
+    // a shape copy shares the shape's data by a plain reference count, so lights are copied here, on one thread
+    if (geometry)
         return;
-    if (!layout)
-        throw POV_EXCEPTION_STRING("Interior light requires its prepared field layout.");
     VolumeEmitter *emitter = const_cast<VolumeEmitter*>(this);
-    const MediaLight& settings = *sourceSettings;
-    if (settings.pigment && PigmentRequiresRayContext(settings.pigment))
-        throw POV_EXCEPTION_STRING("Interior light requires ray context and cannot be published.");
     if (!UsablePreparedContainer(container))
     {
         throw POV_EXCEPTION_STRING("Interior light requires a finite container.");
@@ -2732,8 +2727,6 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     }
     emitter->centre = emitter->low + emitter->size * 0.5;
     emitter->radius = emitter->size.length() * 0.5;
-    Destroy_Object(emitter->geometry);
-    emitter->geometry = nullptr;
     emitter->geometry = Copy_Object(container);
     emitter->PrepareOccupancyBoundaries(emitter->geometry);
     TRANSFORM translation, scaling;
@@ -2742,7 +2735,23 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    IndexEmitterGeometry(emitter->geometry, *td->GetSceneData());
+    IndexEmitterGeometry(emitter->geometry, scene);
+}
+
+void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
+                                const std::function<void()>& cooperate) const
+{
+    std::lock_guard<std::mutex> lock(prepareMutex);
+    if (axis)
+        return;
+    if (!layout)
+        throw POV_EXCEPTION_STRING("Interior light requires its prepared field layout.");
+    if (!geometry)
+        throw POV_EXCEPTION_STRING("Interior light geometry was not resolved before preparation.");
+    VolumeEmitter *emitter = const_cast<VolumeEmitter*>(this);
+    const MediaLight& settings = *sourceSettings;
+    if (settings.pigment && PigmentRequiresRayContext(settings.pigment))
+        throw POV_EXCEPTION_STRING("Interior light requires ray context and cannot be published.");
     // a bounce-only block casts no primary light; a unit normalizes the input below, else the emission alias casts its
     // glow times brightness and a unitless pigment takes the mean chord 4V/A
     const bool nits = settings.nits;

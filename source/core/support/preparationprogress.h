@@ -107,7 +107,7 @@ public:
         if (Done() != lastReported)
             Report(now);
         Emit(Format("finished %.1fs", Seconds(start, now)), false);
-        // CPU over the critical path is how many threads the phase kept busy, whatever else the machine ran
+        // CPU over the critical path models how many threads the phase keeps busy on an idle machine; waits are not seen
         if ((messages != nullptr) && cost && (cost->Path() > 0.0))
             messages->Info("%s", Format("Preparation cost: %s CPU %.1fs, critical path %.1fs (%.2fx)", phase.c_str(), cost->Cpu(),
                                         cost->Path(), cost->Cpu() / cost->Path()).substr(0, width).c_str());

@@ -20,8 +20,8 @@
 namespace pov
 {
 
-/// Thread CPU along a stage's longest chain of work, measured where a stage opens a Scope on its thread: on an idle machine
-/// with enough cores it is the stage's wall time, and the stage's CPU over it is how many threads it keeps busy.
+/// Thread CPU along a stage's longest chain of work, measured where a stage opens a Scope on its thread: a model of the stage's
+/// wall time on an idle machine with a core per thread, blind to lock and file waits; work outside ParallelFor is not seen.
 namespace critical_path
 {
 
