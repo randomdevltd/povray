@@ -83,6 +83,33 @@ using std::uint64_t;
 
 namespace
 {
+std::atomic<std::size_t> standInPage{0};
+}
+
+std::size_t SystemPageBytes()
+{
+#if defined(_WIN32)
+    return 4096;
+#else
+    static const std::size_t page = []() { const long n = sysconf(_SC_PAGESIZE); return (n > 0) ? std::size_t(n) : std::size_t(4096); }();
+    return page;
+#endif
+}
+
+std::size_t CachePageBytes()
+{
+    const std::size_t page = standInPage.load(std::memory_order_relaxed);
+    return (page > 0) ? page : SystemPageBytes();
+}
+
+void SetCachePageBytes(std::size_t bytes)
+{
+    const std::size_t system = SystemPageBytes();
+    standInPage.store((bytes + system - 1) / system * system, std::memory_order_relaxed);
+}
+
+namespace
+{
 
 const uint64_t H1 = 11400714785074694791ull, H2 = 14029467366897019727ull, H3 = 1609587929392839161ull;
 const uint64_t H4 = 9650029242287828579ull, H5 = 2870177450012600261ull;
@@ -194,8 +221,8 @@ uint64_t BuildHashOnce()
 
 const char kMagic[8] = { 'P', 'O', 'V', 'C', 'A', 'C', 'H', 'E' };
 const uint32_t kFormat = 1, kByteOrder = 0x01020304u;
-/// The header fills the first page; a section of a page or more starts on a page, so it can be mapped from the file alone.
-const std::size_t kHeaderBytes = 4096, kPage = 4096, kSmallAlign = 16, kNameBytes = 64, kLabelBytes = 32;
+/// The header fills the first 4 KiB; a section of a page or more starts on a page (CachePageBytes), so it can be mapped from the file alone.
+const std::size_t kHeaderBytes = 4096, kSmallAlign = 16, kNameBytes = 64, kLabelBytes = 32;
 /// offset, length, checksum, id; first and cells; low and high; label
 const std::size_t kIndexEntryBytes = 4 * sizeof(uint64_t) + 6 * sizeof(uint32_t) + 6 * sizeof(double) + kLabelBytes;
 const std::size_t kHeaderUsed = 8 + 2 * sizeof(uint32_t) + 5 * sizeof(uint64_t) + kNameBytes;
@@ -983,7 +1010,7 @@ void PreparedCacheUnit::Store(const char *label, std::string&& bytes, const Cach
         }
         written = kHeaderBytes;
     }
-    const uint64_t align = (bytes.size() >= kPage) ? kPage : kSmallAlign;
+    const uint64_t page = CachePageBytes(), align = (bytes.size() >= page) ? page : kSmallAlign;
     const uint64_t offset = (written + align - 1) / align * align;
     const std::string pad(std::size_t(offset - written), '\0');
     if ((std::fwrite(pad.data(), 1, pad.size(), out) != pad.size()) ||
@@ -1187,7 +1214,8 @@ std::size_t CacheSpillFile::Append(const char *label, const void *data, std::siz
         if ((cap > 0) && (live + n > cap))
             throw CacheSpillFull("the spill file " + path + " would hold " + Size(live + n) + " of live sections, past its cap of " +
                                  Size(cap) + " (Cache_Max_Size)");
-        const uint64_t align = (n >= kPage) ? kPage : kSmallAlign;
+        // a section that may be mapped starts on the page the system maps by, whatever its size
+        const uint64_t page = CachePageBytes(), align = (n >= page) ? page : kSmallAlign;
         entry.offset = end;
         // first fit in the space freed sections left, else at the end
         for (auto hole = holes.begin(); hole != holes.end(); ++hole)

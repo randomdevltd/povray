@@ -284,6 +284,14 @@ class PreparedCacheFile final
         std::vector<Entry> entries;
 };
 
+/// The system's page size.
+std::size_t SystemPageBytes();
+/// The page a cache section of that size or more starts on, so it can be mapped from its file: the system's page, or a
+/// multiple of it that a test stands in to check a larger page.
+std::size_t CachePageBytes();
+/// Stands in a cache page, rounded up to a multiple of the system's, for tests; 0 restores the system's.
+void SetCachePageBytes(std::size_t bytes);
+
 /// A spill that would take the spill file's live sections past its cap.
 class CacheSpillFull final : public std::runtime_error
 {

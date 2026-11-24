@@ -10322,7 +10322,10 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
         {
             SubsurfaceCell *pinned = const_cast<SubsurfaceCell*>(known);
             budget->Pin(*pinned);
-            ssltPins.push_back(pinned);
+            ssltPins.emplace_back(pinned, pinned->PinnedBytes());
+            ssltPinnedBytes += ssltPins.back().second;
+            // a ring wider than a cell pins more than 27 cells, so the ceiling takes the most any thread held
+            budget->NotePins(ssltPins.size(), ssltPinnedBytes);
         }
         if (!known->nodes.empty())
         {

@@ -718,6 +718,9 @@ void SubsurfaceStore::Charge(SubsurfaceCell& cell)
     struct Unstage final { SubsurfaceStore& store; std::int64_t& bytes; ~Unstage() { store.Budgeted(-bytes); } } unstage = { *this, unstaged };
     {
         std::lock_guard<std::mutex> lock(mutex);
+        // finished, it holds its arrays and what it cast into at once, until the cast rows are freed and it is ready
+        if (budget != nullptr)
+            budget->NoteCell(bytes + cell.staged);
         staged -= std::min(staged, cell.staged);
         unstaged = std::int64_t(cell.staged);
         cell.staged = 0;
@@ -740,14 +743,19 @@ void SubsurfaceStore::Charge(SubsurfaceCell& cell)
 
 void SubsurfaceStore::Stage(SubsurfaceCell& cell, size_t bytes)
 {
+    size_t building;
     {
         std::lock_guard<std::mutex> lock(mutex);
         if (cell.settled)
             return;
         staged += bytes;
         cell.staged += bytes;
+        building = cell.staged;
         peak = std::max(peak, charged + staged);
     }
+    // a cell being built bounds what a thread holds as much as a ready one
+    if (budget != nullptr)
+        budget->NoteCell(building);
     // a cell being built is in use, so it is counted but cannot be spilled
     Budgeted(std::int64_t(bytes));
 }

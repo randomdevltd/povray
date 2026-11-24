@@ -34,7 +34,8 @@ has tight 'Cachememory:budget8.0MiB(Max_Cache_Memory)' || fail "the budget line 
 has tight 'Cachememory:spillfile.*:[0-9.]*MiBlive,peak[0-9.]*MiBlive,[0-9.]*MiBlong,cap20480.0MiB(Cache_Max_Size)' ||
     { cat cachebudget_tight.log; fail "the spill file's size was not logged"; }
 
-# sixteen threads hold their caches below the logged ceiling: the budget, the grids built at once and threads x 58 x the largest cell
+# sixteen threads hold their caches below the logged ceiling: the budget or the unspillable caches, the grids built at once,
+# and threads x (the most one thread pinned + 5 x the largest cell)
 render sixteen +wt16 Max_Cache_Memory=8 || { cat cachebudget_sixteen.log; fail "the scene did not render on 16 threads under a budget"; }
 text sixteen; pixels sixteen
 cmp -s cachebudget_plain.px cachebudget_sixteen.px || fail "16 threads under a budget rendered differently"

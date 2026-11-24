@@ -40,6 +40,7 @@
 #include "core/configcore.h"
 
 // C++ standard header files
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -89,6 +90,8 @@ class SpillBlock
             return false;
         }
         void Unpin() noexcept { pins.fetch_sub(1, std::memory_order_release); }
+        /// The bytes it holds, for whoever has it pinned and complete, when it cannot change.
+        std::size_t PinnedBytes() const { return HeldBytes(); }
         bool Resident() const noexcept { return resident.load(std::memory_order_acquire); }
         /// Calls f(resident) with no eviction or read-back under way, for a reader that must not fault the block in.
         template<class F> void Inspect(F&& f) const
@@ -151,6 +154,7 @@ class CacheRegion final
         bool busy = false; ///< being written to the spill file outside the budget's lock; Release waits for it
         bool building = false; ///< in pages of its own and counted, but not yet sealed, so it cannot be spilled
         std::size_t trimmed = 0; ///< where the next trim of its mapped pages starts
+        bool heap = false; ///< counted on the heap, too small for pages of its own, so it can never be spilled
         void *Pages(std::size_t n);
 };
 
@@ -189,14 +193,33 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         std::uint64_t HeldPeak() const { return peakHeld.load(std::memory_order_relaxed); }
         /// The most bytes of grids and lattices being built at once, counted but not spillable until they are sealed.
         std::uint64_t BuildingPeak() const { return peakBuilding.load(std::memory_order_relaxed); }
-        /// The largest cell section spilled or read back so far.
+        /// The largest cell so far: resident, being built, spilled or read back.
         std::uint64_t LargestCell() const { return largestCell.load(std::memory_order_relaxed); }
-        /// The documented ceiling on HeldPeak: the budget, the grids built at once, and threads x kOvershootCells x the
-        /// largest cell.
-        std::uint64_t Ceiling() const { return budget + BuildingPeak() + std::uint64_t(threads) * kOvershootCells * LargestCell(); }
-        /// Cells one thread can hold unspillable at once: 2 nested gathers of up to 27 cells, 2 nested cells being built
-        /// and a read-back's two copies.
-        static constexpr unsigned kOvershootCells = 2 * 27 + 2 + 2;
+        /// Notes a cell's bytes for LargestCell.
+        void NoteCell(std::uint64_t bytes);
+        /// Notes the cells, and their bytes, that one thread holds pinned at once, for MostPins and MostPinnedBytes.
+        void NotePins(std::size_t cells, std::size_t bytes)
+        {
+            std::uint64_t most = mostPins.load(std::memory_order_relaxed);
+            while ((cells > most) && !mostPins.compare_exchange_weak(most, cells, std::memory_order_relaxed)) {}
+            most = mostPinnedBytes.load(std::memory_order_relaxed);
+            while ((bytes > most) && !mostPinnedBytes.compare_exchange_weak(most, bytes, std::memory_order_relaxed)) {}
+        }
+        /// The most cells one thread held pinned at once: its nested gathers, each as wide as its ring.
+        std::uint64_t MostPins() const { return mostPins.load(std::memory_order_relaxed); }
+        /// The most bytes of cells one thread held pinned at once.
+        std::uint64_t MostPinnedBytes() const { return mostPinnedBytes.load(std::memory_order_relaxed); }
+        /// The most bytes at once that no eviction can free: pinned caches and arrays too small for pages of their own.
+        std::uint64_t UnspillablePeak() const { return peakUnspillable.load(std::memory_order_relaxed); }
+        /// The cells one thread can hold besides its pins: 2 nested cells being built, and a read-back's two copies with an
+        /// eviction's copy made while room is made for them.
+        static constexpr unsigned kTransientCells = 2 + 3;
+        /// The documented ceiling on HeldPeak: the budget, or the unspillable caches where they pass it, the grids built at
+        /// once, and threads x (MostPinnedBytes + kTransientCells x the largest cell).
+        std::uint64_t Ceiling() const
+        {
+            return std::max(budget, UnspillablePeak()) + BuildingPeak() + std::uint64_t(threads) * (MostPinnedBytes() + kTransientCells * LargestCell());
+        }
         /// Throws, listing them, when the pinned caches alone pass the budget; before the first pixel.
         void CheckPinned() const;
         /// One line for each cache with figures, then a total.
@@ -231,8 +254,9 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         std::vector<CacheRegion *> mappings; ///< regions mapped from the spill file, whose pages can be dropped
         std::size_t mappingHand = 0;
         std::atomic<std::uint64_t> mappedResident{0}; ///< the mapped regions' pages last measured in this process's page tables
-        std::atomic<std::uint64_t> peakHeld{0}, peakBuilding{0}, largestCell{0};
+        std::atomic<std::uint64_t> peakHeld{0}, peakBuilding{0}, largestCell{0}, mostPins{0}, mostPinnedBytes{0}, peakUnspillable{0};
         std::atomic<std::int64_t> building{0};
+        std::atomic<std::int64_t> unspillable{0}, heapRegions{0}; ///< all bytes no eviction can free, and the heap regions' share
         std::thread watcher;
         std::condition_variable wake, regionIdle;
         bool stopping = false;
@@ -241,7 +265,10 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         bool EvictOne();
         bool MapOne();
         std::uint64_t TrimMapped(std::uint64_t bytes);
-        void NoteCell(std::uint64_t bytes);
+        /// Counts bytes like Charge without making room, for memory held only while room is being made.
+        void Count(CacheAccount& account, std::int64_t bytes);
+        void Unspillable(std::int64_t bytes);
+        void HeapRegion(std::int64_t bytes);
         void Building(std::int64_t bytes);
         void StartWatcher();
         std::size_t SpillSection(const std::string& label, const void *data, std::size_t n);
