@@ -400,6 +400,7 @@ bool CacheBudget::EvictOne()
 void CacheBudget::Fault(SpillBlock& block)
 {
     std::size_t held = 0;
+    std::int64_t transient = 0;
     CacheAccount *account;
     {
         std::unique_lock<std::mutex> blockGuard(block.blockMutex);
@@ -407,6 +408,11 @@ void CacheBudget::Fault(SpillBlock& block)
         if (!block.resident.load(std::memory_order_acquire))
         {
             const PreparedCacheFile::Entry entry = Spill().Entry(block.section);
+            // the section's bytes and the arrays they fill are both held while it is read back: counted before, so the
+            // budget makes room for them
+            transient = 2 * std::int64_t(entry.length);
+            if (account != nullptr)
+                Charge(*account, transient);
             std::string bytes(std::size_t(entry.length), '\0');
             try
             {
@@ -415,6 +421,8 @@ void CacheBudget::Fault(SpillBlock& block)
             }
             catch (const CacheFormatError& error)
             {
+                if (account != nullptr)
+                    Charge(*account, -transient);
                 throw POV_EXCEPTION_STRING(("Max_Cache_Memory: a spilled cache could not be read back: " + std::string(error.what()) + ".").c_str());
             }
             held = block.HeldBytes();
@@ -441,7 +449,7 @@ void CacheBudget::Fault(SpillBlock& block)
         }
     }
     if (account != nullptr)
-        Charge(*account, std::int64_t(held));
+        Charge(*account, std::int64_t(held) - transient);
 }
 
 void CacheBudget::Seal(CacheRegion& region)
