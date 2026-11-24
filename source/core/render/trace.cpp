@@ -7591,8 +7591,14 @@ MathColour Trace::ComputeSubsurfaceInternalSource(const Intersection& out, Ray& 
             };
             try
             {
-                const double radiance = SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta,
-                    boundary, source, connect, draw, bounce, part);
+                auto walk = [&](SubsurfaceInternalPart which)
+                {
+                    return SampleSubsurfaceInternalRadiance(out.IPoint, inward, sigmaA, sigmaS, eta, boundary, source, connect, draw,
+                                                            bounce, which);
+                };
+                // a cloud point takes all of it as its two parts, so that its collided walk collides in every segment
+                const double radiance = (cloud && (part == SubsurfaceInternalPart::kAll)) ?
+                    walk(SubsurfaceInternalPart::kUncollided) + walk(SubsurfaceInternalPart::kCollided) : walk(part);
                 if (cloud)
                 {
                     threadData->Stats()[Subsurface_Cloud_Internal_Paths]++;

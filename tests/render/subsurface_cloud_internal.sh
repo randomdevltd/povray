@@ -1,6 +1,6 @@
 #!/bin/sh
-# A volume light buried in a method 2 body has its scattered light read from the body's point cloud: smooth at few samples,
-# the per-pixel paths' mean at many, as localised as the paths make a thin vein's glow, and the same for any thread count
+# A volume light buried in a method 2 body has all its light read from the body's point cloud: smooth at few samples,
+# the per-pixel paths' mean at many, a thin vein's glow as localised as the paths make it to within the points' spacing, and the same for any thread count
 # and scene scale. At four paths a point, where one heavy path can set a point's lean, no pixel goes black or bright; in an
 # optically thin host (a 3 mm mean free path through a 2 mm slab) every point gets light at two paths a point.
 set -eu
@@ -31,6 +31,10 @@ render thin2 +wt4 +w96 +h24 $THIN Declare=Samples=2
 render thin256 +wt4 +w96 +h24 $THIN Declare=Samples=256 Declare=Influence=1e9 Declare=Paths=1
 grep -E 'Method 2 buried lights: [1-9][0-9]* shading points' cloud16.log >/dev/null ||
     { echo "subsurface_cloud_internal: the cloud did not serve the buried light" >&2; cat cloud16.log; exit 1; }
+# the vein slab's point spacing, which the cloud's glow is resolved to
+SPACING=$(tr '\n' ' ' < vein16.log | sed -n 's/.*points \([0-9.e+-]*\) apart.*/\1/p')
+[ -n "$SPACING" ] || { echo "subsurface_cloud_internal: no point spacing in the statistics" >&2; exit 1; }
+export SPACING
 . "$SRCDIR/tests/render/image.sh"
 image_awk '
 function luminance(path, v,    n, x, y) {
@@ -111,7 +115,8 @@ BEGIN {
     if (!(MEAN["bounce256"] > 1.02 * MEAN["paths256"])) fail("the bounce volume added no light")
     if (abs(MEAN["bounce64"] / MEAN["bounce256"] - 1) > 0.08) fail("cloud bounced buried light differs from the paths: " MEAN["bounce64"] / MEAN["bounce256"])
     if (abs(MEAN["cloud64big"] / MEAN["cloud64"] - 1) > 0.08) fail("cloud buried light changes with scene scale: " MEAN["cloud64big"] / MEAN["cloud64"])
-    if (abs(WIDTH["vein16"] / WIDTH["vein256"] - 1) > 0.1) fail("cloud vein glow is not as localised as the paths: " WIDTH["vein16"] " against " WIDTH["vein256"] " mm")
+    # The cloud holds the uncollided core too, blurred to its points, so its glow differs from the paths' by up to a spacing.
+    if (abs(WIDTH["vein16"] - WIDTH["vein256"]) > ENVIRON["SPACING"]) fail("cloud vein glow is not as localised as the paths: " WIDTH["vein16"] " against " WIDTH["vein256"] " mm, points " ENVIRON["SPACING"] " mm apart")
     if (abs(GLOW["vein16"] / GLOW["vein256"] - 1) > 0.06) fail("cloud vein glow mean differs from the paths: " GLOW["vein16"] / GLOW["vein256"])
     # A heavy path once set the lean of a point to tens of times its value, which drove pixels black or several times too bright.
     if (!(DARK["heavy4"] > 0.1) || !(BRIGHT["heavy4"] < 4)) fail("the lean of a heavy path shows: " DARK["heavy4"] " to " BRIGHT["heavy4"] " of the median")
