@@ -30,6 +30,24 @@ has tight 'Cachememory:subsurfaceclouds:peak[0-9.]*MiBresident;spilled[0-9.]*MiB
 has tight 'Cachememory:mediagrids:peak[0-9.]*MiBresident;spilled[0-9.]*MiBin[1-9]' || { cat cachebudget_tight.log; fail "media grids were not spilled"; }
 has tight 'Cachememory:budget8.0MiB(Max_Cache_Memory)' || fail "the budget line is missing"
 
+[ ! -e cachebudget_tight.pov-state.caches ] || fail "the spill folder was left behind"
+has tight 'Cachememory:spillfile.*:[0-9.]*MiBlive,peak[0-9.]*MiBlive,[0-9.]*MiBlong,cap20480.0MiB(Cache_Max_Size)' ||
+    { cat cachebudget_tight.log; fail "the spill file's size was not logged"; }
+
+# sixteen threads stay below the logged ceiling, the budget plus threads x 58 x the largest section
+render sixteen +wt16 Max_Cache_Memory=8 || { cat cachebudget_sixteen.log; fail "the scene did not render on 16 threads under a budget"; }
+text sixteen; pixels sixteen
+cmp -s cachebudget_plain.px cachebudget_sixteen.px || fail "16 threads under a budget rendered differently"
+peak=$(sed -n 's/.*peak\([0-9.]*\)MiBofcachesresident.*/\1/p' cachebudget_sixteen.txt)
+ceiling=$(sed -n 's/.*ceiling\([0-9.]*\)MiBfor16threads.*/\1/p' cachebudget_sixteen.txt)
+awk -v p="$peak" -v c="$ceiling" 'BEGIN { exit !((p > 0) && (c > 8) && (p <= c)) }' ||
+    { cat cachebudget_sixteen.log; fail "16 threads peaked at $peak MiB of caches, past the ceiling of $ceiling MiB"; }
+
+# a spill cap too small for the clouds stops the render naming it
+if render capped +wt4 Max_Cache_Memory=8 Cache_Max_Size=0.0001; then fail "spilling past Cache_Max_Size rendered"; fi
+text capped
+has capped 'Cache_Max_Size' || { cat cachebudget_capped.log; fail "spilling past Cache_Max_Size was not named"; }
+
 render one +wt1 Max_Cache_Memory=8 || { cat cachebudget_one.log; fail "the scene did not render on one thread under a budget"; }
 pixels one
 cmp -s cachebudget_plain.px cachebudget_one.px || fail "one thread under a budget rendered differently"
@@ -44,6 +62,7 @@ render ample +wt4 Max_Cache_Memory=4096 || { cat cachebudget_ample.log; fail "th
 text ample; pixels ample
 cmp -s cachebudget_plain.px cachebudget_ample.px || fail "an ample budget changed the image"
 has ample 'spilled' && fail "an ample budget spilled"
+[ ! -e cachebudget_ample.pov-state.caches ] || fail "an ample budget made a spill folder"
 
 # thousands of spheres fill the bounding tree, which cannot spill: past a 1 MB budget the render stops before its first pixel
 if render pinned +wt2 Max_Cache_Memory=1 Declare=Blocks=0 Declare=MediaCells=0 Declare=Spheres=40000; then fail "pinned caches past the budget rendered"; fi
@@ -60,4 +79,4 @@ done
 if (POV_CACHE_MEMORY=abc; export POV_CACHE_MEMORY; render bad_env Declare=Blocks=1); then fail "POV_CACHE_MEMORY=abc was accepted"; fi
 text bad_env
 has bad_env 'POV_CACHE_MEMORYmustbeawholenumberof' || { cat cachebudget_bad_env.log; fail "POV_CACHE_MEMORY=abc was not refused by name"; }
-echo "cache_budget: subsurface cells and media grids spill and come back with the same image on 1 and 4 threads and from POV_CACHE_MEMORY; no budget logs nothing; an ample budget spills nothing; pinned overflow named before the first pixel; bad budgets refused"
+echo "cache_budget: subsurface cells and media grids spill and come back with the same image on 1, 4 and 16 threads and from POV_CACHE_MEMORY, 16 threads within the logged ceiling; spill capped, logged and its folder cleaned up; no budget logs nothing; an ample budget spills nothing; pinned overflow named before the first pixel; bad budgets refused"

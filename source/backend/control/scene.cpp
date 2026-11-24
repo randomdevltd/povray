@@ -146,8 +146,15 @@ void Scene::StartParser(POVMS_Object& parseOptions)
         }
     }
     if (cacheMemory > 0)
+    {
+        // the spill file's live sections are capped by Cache_Max_Size, as the saved caches are; 0 leaves both uncapped
+        const float spillGiB = parseOptions.TryGetFloat(kPOVAttrib_CacheMaxSize, float(PreparedCaches::kDefaultMaxBytes >> 30));
+        const std::uint64_t spillCap = (spillGiB > 0.0f) ? std::uint64_t(double(spillGiB) * double(std::uint64_t(1) << 30)) : 0;
         sceneData->cacheBudget = std::make_shared<CacheBudget>(CacheBudget::FromMegabytes(cacheMemory),
-                                                               UCS2toSysString(parseOptions.TryGetUCS2String(kPOVAttrib_SpillPath, "spill")));
+                                                               UCS2toSysString(parseOptions.TryGetUCS2String(kPOVAttrib_SpillPath, "spill")),
+                                                               false, spillCap,
+                                                               unsigned(clip<int>(parseOptions.TryGetInt(kPOVAttrib_MaxRenderThreads, 1), 1, SIGNED16_MAX)));
+    }
 
     sceneData->inputFile = parseOptions.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov");
     sceneData->headerFile = parseOptions.TryGetUCS2String(kPOVAttrib_IncludeHeader, "");

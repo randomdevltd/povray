@@ -26,7 +26,7 @@ check() {
     [ "$(gathered "$1")" -gt 0 ] || fail "$2 gathered no photon method 2 deposits"
     set -- $(levels "$1") "$2"
     [ "$1" -gt 0 ] || fail "$4 received no photon light"
-    [ "$2" -eq 0 ] || fail "$4 has $2 channels at full scale, as a NaN would leave them"
+    [ "$2" -eq 0 ] || fail "$4 has $2 channels at full scale, as an infinite or runaway value would leave them"
 }
 
 render dark +wt2 Declare=Photons=0

@@ -990,20 +990,22 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
     for (const std::shared_ptr<SubsurfaceCell>& cell : all)
     {
         std::lock_guard<std::mutex> cellLock(cell->mutex);
-        // a cell the budget spilled is described by the figures kept when it went, without reading it back
-        const bool spilled = !cell->Resident();
-        const size_t count = spilled ? cell->figures.points : cell->points.size();
-        if (cell->usable && (count > 0))
+        // no spill or read-back can run while it is inspected, whether or not render threads are still about; a cell the
+        // budget spilled is described by the figures kept when it went, without reading it back
+        cell->Inspect([&](bool resident)
         {
+            const size_t count = resident ? cell->points.size() : cell->figures.points;
+            if (!cell->usable || (count == 0))
+                return;
             double points = double(count);
             stats.cells += 1.0;
             stats.reused += (cell->view != view) ? 1.0 : 0.0;
             stats.points += points;
-            stats.read += double(spilled ? cell->figures.read : cell->PointsRead());
+            stats.read += double(resident ? cell->PointsRead() : cell->figures.read);
             stats.termCells[cell->term] += 1.0;
             stats.termPoints[cell->term] += points;
-            stats.digest ^= spilled ? cell->figures.digest : cell->Digest();
-        }
+            stats.digest ^= resident ? cell->Digest() : cell->figures.digest;
+        });
     }
     return stats;
 }

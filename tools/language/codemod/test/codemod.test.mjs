@@ -15,7 +15,7 @@ const check = (path, text) => {
   assert.equal(text, readFileSync(expected(path), 'latin1'));
 };
 
-for (const scene of ['declarations', 'control', 'values', 'expressions', 'framing', 'tags', 'photons', 'interior_fields', 'interior_emission', 'surface_light']) {
+for (const scene of ['declarations', 'control', 'values', 'expressions', 'framing', 'tags', 'photons', 'interior_fields', 'interior_emission', 'surface_light', 'photon_memory']) {
   test(`converts ${scene}.pov`, () => {
     const [result] = new Program().convertScene(join(dir, `${scene}.pov`));
     assert.deepEqual(result.refusals, []);
@@ -77,4 +77,33 @@ test('rewrites the photon cap in 4.0 scenes to photon_memory, nothing else named
   assert.equal(text, 'global_settings { photons { method 2 photon_memory 4 } subsurface { memory 30 } }\nlet memory = 3;\n');
   assert.deepEqual(changes, [{ line: 1, column: 38, from: 'memory', to: 'photon_memory' }]);
   assert.equal(rewritePov4(text).changes.length, 0);
+});
+
+test('rewrites only memory heading an item of the global_settings photons block', () => {
+  const cases = [
+    ['let memory = 3;\nglobal_settings { photons { quality memory } }\n', null],
+    ['let memory = 3;\nglobal_settings { photons { count memory } }\n', null],
+    ['let memory = 3;\nsphere { 0, 1 photons { target memory } }\n', null],
+    ['sphere { 0, 1 photons { memory 4 } }\n', null],
+    ['global_settings { photons { if (x) { memory 4 } } }\n', 'global_settings { photons { if (x) { photon_memory 4 } } }\n'],
+    ['global_settings { photons { if (x) { quality 2 } else { memory 4 } } }\n',
+      'global_settings { photons { if (x) { quality 2 } else { photon_memory 4 } } }\n'],
+    ['global_settings { photons { method m memory (4) quality memory memory - 1 } }\n',
+      'global_settings { photons { method m photon_memory (4) quality memory photon_memory - 1 } }\n'],
+  ];
+  for (const [input, output] of cases) {
+    const { text } = rewritePov4(input);
+    assert.equal(text, output ?? input, input);
+    assert.equal(rewritePov4(text).changes.length, 0, input);
+  }
+});
+
+test('the classic photon_memory fixture converts to a 4.0 scene the rewriter leaves alone', () => {
+  const [result] = new Program().convertScene(join(dir, 'photon_memory.pov'));
+  assert.deepEqual(result.text.split('\n').filter((l) => l.includes('photon_memory')), [
+    'global_settings { photons { method 2 photon_memory 4 } subsurface { memory 30 } }',
+    'global_settings { photons { method 2 if (Cap) { photon_memory 4 } } }',
+    'global_settings { photons { method 2 if (Cap) { photon_memory 4 } else { photon_memory 2 } } }',
+  ]);
+  assert.equal(rewritePov4(result.text).changes.length, 0);
 });

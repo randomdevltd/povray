@@ -9,6 +9,8 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <sys/stat.h>
+#include <thread>
 #include <vector>
 using namespace pov;
 
@@ -130,9 +132,19 @@ int main()
         Check(message.find("test tree 2.0 MiB") != std::string::npos && message.find("test photons 4.0 MiB") != std::string::npos,
               ("pinned caches past the budget did not fail naming them: " + message).c_str());
 
-        for (const auto& block : blocks)
-            budget->Forget(*block);
+        // a forgotten block's section is given back, and a later spill reuses its space before the file grows
+        const std::uint64_t live = budget->Spill().LiveBytes(), length = budget->Spill().Bytes();
         for (const auto& block : more)
+            budget->Forget(*block);
+        Check(budget->Spill().LiveBytes() < live, "forgotten blocks kept their spill space");
+        std::vector<std::unique_ptr<TestBlock>> again;
+        for (std::uint64_t i = 0; i < 8; ++i)
+        {
+            again.emplace_back(new TestBlock(blockBytes / sizeof(std::uint64_t), 200 + i));
+            budget->Admit(*again.back(), account);
+        }
+        Check(budget->Spill().Bytes() == length, "the spill file grew although freed sections had room");
+        for (const auto& block : again)
             budget->Forget(*block);
         Check(budget->Report().size() >= 3, "the report has no line per cache");
         grid.clear();
@@ -155,7 +167,7 @@ int main()
         try
         {
             PreparedCacheFile file(spill);
-            Check(!file.Missing() && (file.Entries().size() >= 14), "the spill file's index holds too few sections");
+            Check(!file.Missing() && (file.Entries().size() >= 12), "the spill file's index holds too few sections");
             file.Check();
         }
         catch (const std::exception& error)
@@ -166,6 +178,68 @@ int main()
     }
     std::remove(dir.c_str());
 
+    // arrays sealed side by side reserve both their copies at once, so together they never pass the budget
+    {
+        auto budget = std::make_shared<CacheBudget>(8 * blockBytes, dir, false);
+        CacheAccount& grids = budget->Account("test grids", false);
+        std::vector<CacheArray<float>> arrays(8);
+        std::vector<std::thread> threads;
+        for (std::size_t t = 0; t < arrays.size(); ++t)
+            threads.emplace_back([&, t]()
+            {
+                arrays[t] = std::vector<float>(2 * blockBytes / sizeof(float), float(t));
+                arrays[t].Budget(budget, &grids);
+                arrays[t].Seal("test lattice");
+            });
+        for (std::thread& thread : threads)
+            thread.join();
+        Check(budget->Peak() <= 8 * blockBytes, "arrays sealed side by side passed the budget together");
+        bool same = true;
+        for (std::size_t t = 0; t < arrays.size(); ++t)
+            for (std::size_t i = 0; i < arrays[t].size(); i += 4096)
+                same = same && (arrays[t][i] == float(t));
+        Check(same, "an array sealed side by side reads other values");
+        arrays.clear();
+    }
+    struct stat info;
+    Check(stat(dir.c_str(), &info) != 0, "the spill directory a render made was left behind");
+
+    // a budget that never spills makes no spill directory
+    {
+        auto budget = std::make_shared<CacheBudget>(64 * blockBytes, dir + "/spill", false);
+        TestBlock block(blockBytes / sizeof(std::uint64_t), 1);
+        budget->Admit(block, budget->Account("test blocks", false));
+        budget->Forget(block);
+    }
+    Check(stat(dir.c_str(), &info) != 0, "a budget that never spilled made a spill directory");
+
+    // spilling past the cap stops with an error naming the cap; a spill directory that cannot be made names itself
+    {
+        auto budget = std::make_shared<CacheBudget>(blockBytes, dir, false, 2 * blockBytes);
+        CacheAccount& account = budget->Account("test blocks", false);
+        std::vector<std::unique_ptr<TestBlock>> blocks;
+        std::string message;
+        try
+        {
+            for (std::uint64_t i = 0; i < 8; ++i)
+            {
+                blocks.emplace_back(new TestBlock(blockBytes / sizeof(std::uint64_t), i));
+                budget->Admit(*blocks.back(), account);
+            }
+        }
+        catch (const std::exception& error) { message = error.what(); }
+        Check(message.find("Cache_Max_Size") != std::string::npos, ("spilling past the cap did not fail naming it: " + message).c_str());
+        Check(budget->Spill().LiveBytes() <= 2 * blockBytes, "the spill file passed its cap");
+        for (const auto& block : blocks)
+            budget->Forget(*block);
+    }
+    {
+        auto budget = std::make_shared<CacheBudget>(blockBytes, "/proc/no-such-dir/spill", false);
+        std::string message;
+        try { budget->Spill(); } catch (const std::exception& error) { message = error.what(); }
+        Check(message.find("/proc/no-such-dir/spill") != std::string::npos, ("an unusable spill directory was not named: " + message).c_str());
+    }
+
     // without a budget an array stays a plain vector in memory
     CacheArray<int> plain(std::vector<int>{ 1, 2, 3 });
     plain.Seal("plain");
@@ -173,6 +247,7 @@ int main()
 
     if (failures == 0)
         std::cout << "cache_budget: blocks within the budget, pins held, spill round trip identical, pinned overflow named, "
-                     "sealed arrays mapped in place, spill file in the cache format" << std::endl;
+                     "sealed arrays mapped in place, spill file in the cache format, freed space reused, side-by-side seals "
+                     "within the budget, spill capped and its directory made only when used" << std::endl;
     return failures == 0 ? 0 : 1;
 }

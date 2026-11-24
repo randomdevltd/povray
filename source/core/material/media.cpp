@@ -175,6 +175,15 @@ static void UseCacheBudget(CacheArray<T>& values, const TraceThreadData *td)
         values.Budget(budget, &budget->Account("media grids", false));
 }
 
+/// Under Max_Cache_Memory, builds a light lattice in the budget's pages, counted while it fills and spillable once sealed.
+template<class T>
+static void UseLatticeBudget(CacheArray<T>& values, const TraceThreadData *td)
+{
+    const std::shared_ptr<CacheBudget>& budget = td->GetSceneData()->cacheBudget;
+    if (budget != nullptr)
+        values.Budget(budget, &budget->Account("light lattices", false));
+}
+
 class Media::FastCache final
 {
     public:
@@ -2909,14 +2918,17 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
         }
         else
         {
-            vector<MathColour> values(count);
+            // built in the budget's pages, so it is counted while it fills
+            CacheArray<MathColour> values;
+            UseLatticeBudget(values, td);
+            values.resize(count);
             parallel(count, [&](size_t node, TraceThreadData *worker, size_t) {
                 const MathColour value = colourAt(layout->Node(node), worker);
                 values[node] = value;
                 if (value.Weight() > 0.0)
                     positiveField.store(true, std::memory_order_relaxed);
             });
-            nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(values), td->GetSceneData()->cacheBudget);
+            nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(values));
             field = nodes;
         }
         MathColour integral;
@@ -3015,7 +3027,9 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     // the node colours, occupancy and masses are bricks of the light's lattice
     const CacheGridBounds nodeBounds = LatticeBounds(layout->Low(), layout->CellSize(), true);
     const CacheGridBounds cellBounds = LatticeBounds(layout->Low(), layout->CellSize(), false);
-    vector<MathColour> loadedValues;
+    CacheArray<MathColour> loadedValues;
+    if (unit.Loading())
+        UseLatticeBudget(loadedValues, td);
     if (!solid)
     {
         if (unit.Loading())
@@ -3024,7 +3038,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             unit.Grid("light nodes", const_cast<CacheArray<MathColour>&>(nodes->Values()), layout->NodeCounts(), nodeBounds);
     }
     if (!solid && unit.Loading())
-        nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(loadedValues), td->GetSceneData()->cacheBudget);
+        nodes = std::make_shared<const PreparedSourceColourField>(layout, std::move(loadedValues));
     if (occupied)
     {
         std::shared_ptr<vector<DBL>> occupancy = unit.Loading() ? std::make_shared<vector<DBL>>() : nullptr;

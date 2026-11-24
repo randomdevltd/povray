@@ -1074,9 +1074,19 @@ void PreparedCacheUnit::Finish()
 }
 
 
-CacheSpillFile::CacheSpillFile(const std::string& directory, const std::string& name, bool keepFile) :
-    keep(keepFile)
+CacheSpillFile::CacheSpillFile(const std::string& directory, const std::string& name, bool keepFile, uint64_t capBytes) :
+    keep(keepFile),
+    cap(capBytes)
 {
+    // the directories missing now are made, and removed again with the file when they are left empty
+    for (std::size_t at = 1; at <= directory.size(); ++at)
+    {
+        if ((at < directory.size()) && (directory[at] != '/') && (directory[at] != '\\'))
+            continue;
+        struct stat info;
+        if (stat(directory.substr(0, at).c_str(), &info) != 0)
+            made.push_back(directory.substr(0, at));
+    }
     if (!MakeDirectories(directory))
         throw std::runtime_error("cannot create the spill directory " + directory);
     path = directory + "/" + name + "-" + std::to_string(ProcessId()) + "-" + Hex(Uniquifier()) + ".povc";
@@ -1108,6 +1118,13 @@ CacheSpillFile::~CacheSpillFile()
 #endif
     if (linked && !keep)
         std::remove(path.c_str());
+    if (!keep)
+        for (auto dir = made.rbegin(); dir != made.rend(); ++dir)
+#if defined(_WIN32)
+            _rmdir(dir->c_str());
+#else
+            rmdir(dir->c_str());
+#endif
 }
 
 void CacheSpillFile::WriteAt(uint64_t offset, const void *data, std::size_t n)
@@ -1167,11 +1184,36 @@ std::size_t CacheSpillFile::Append(const char *label, const void *data, std::siz
         std::lock_guard<std::mutex> guard(lock);
         if (finished)
             throw std::runtime_error("the spill file " + path + " is finished");
+        if ((cap > 0) && (live + n > cap))
+            throw CacheSpillFull("the spill file " + path + " would hold " + Size(live + n) + " of live sections, past its cap of " +
+                                 Size(cap) + " (Cache_Max_Size)");
         const uint64_t align = (n >= kPage) ? kPage : kSmallAlign;
-        entry.offset = (end + align - 1) / align * align;
-        end = entry.offset + n;
+        entry.offset = end;
+        // first fit in the space freed sections left, else at the end
+        for (auto hole = holes.begin(); hole != holes.end(); ++hole)
+        {
+            const uint64_t start = (hole->first + align - 1) / align * align, stop = hole->second;
+            if (start + n > stop)
+                continue;
+            const uint64_t from = hole->first;
+            holes.erase(hole);
+            if (from < start)
+                holes[from] = start;
+            if (start + n < stop)
+                holes[start + n] = stop;
+            entry.offset = start;
+            break;
+        }
+        if (entry.offset == end)
+        {
+            entry.offset = (end + align - 1) / align * align;
+            end = entry.offset + n;
+        }
+        live += n;
+        peakLive = std::max(peakLive, live);
         index = entries.size();
         entries.push_back(entry);
+        freed.push_back(false);
     }
     if (n > 0)
         WriteAt(entry.offset, data, n);
@@ -1202,10 +1244,60 @@ int CacheSpillFile::Descriptor() const
 #endif
 }
 
+void CacheSpillFile::Free(std::size_t index) noexcept
+{
+    PreparedCacheFile::Entry entry;
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        if ((index >= entries.size()) || freed[index] || finished)
+            return;
+        freed[index] = true;
+        entry = entries[index];
+    }
+    if (entry.length == 0)
+        return;
+#if defined(__linux__)
+    // the disk blocks go back before the space is offered again, so no later section can be punched
+    fallocate(file, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, off_t(entry.offset), off_t(entry.length));
+#endif
+    std::lock_guard<std::mutex> guard(lock);
+    live -= std::min(live, entry.length);
+    uint64_t start = entry.offset, stop = entry.offset + entry.length;
+    // merged with the freed space either side
+    auto next = holes.lower_bound(start);
+    if ((next != holes.end()) && (next->first == stop))
+    {
+        stop = next->second;
+        next = holes.erase(next);
+    }
+    if (next != holes.begin())
+    {
+        auto before = std::prev(next);
+        if (before->second == start)
+        {
+            start = before->first;
+            holes.erase(before);
+        }
+    }
+    holes[start] = stop;
+}
+
 uint64_t CacheSpillFile::Bytes() const
 {
     std::lock_guard<std::mutex> guard(lock);
     return end;
+}
+
+uint64_t CacheSpillFile::LiveBytes() const
+{
+    std::lock_guard<std::mutex> guard(lock);
+    return live;
+}
+
+uint64_t CacheSpillFile::PeakLiveBytes() const
+{
+    std::lock_guard<std::mutex> guard(lock);
+    return peakLive;
 }
 
 void CacheSpillFile::Finish()
@@ -1217,7 +1309,9 @@ void CacheSpillFile::Finish()
         if (finished)
             return;
         finished = true;
-        written = entries;
+        for (std::size_t i = 0; i < entries.size(); ++i)
+            if (!freed[i])
+                written.push_back(entries[i]);
         indexOffset = (end + 7) / 8 * 8;
     }
     const std::string index = IndexBytes(written);

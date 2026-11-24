@@ -12,22 +12,20 @@ namespace pov
 class PreparedSourceColourField final : public PreparedColourField
 {
 public:
-    /// Under a `budget`, the lattice is sealed once checked, so the budget can spill it.
-    PreparedSourceColourField(std::shared_ptr<const PreparedSourceDomain> domain,
-                              std::vector<pov_base::MathColour> values, const std::shared_ptr<CacheBudget>& budget = nullptr) :
+    PreparedSourceColourField(std::shared_ptr<const PreparedSourceDomain> domain, std::vector<pov_base::MathColour> values) :
+        PreparedSourceColourField(std::move(domain), CacheArray<pov_base::MathColour>(std::move(values))) {}
+    /// A lattice built in a memory budget's pages (CacheArray::Budget before sizing it), so it was counted while it was
+    /// filled; it is sealed once checked, and the budget may then spill it.
+    PreparedSourceColourField(std::shared_ptr<const PreparedSourceDomain> domain, CacheArray<pov_base::MathColour>&& values) :
         domain(std::move(domain)), values(std::move(values))
     {
         if (!this->domain || this->values.size() != this->domain->NodeCount())
             throw std::invalid_argument("Prepared source colour count must match its domain");
-        for (const auto& value : this->values)
+        for (const pov_base::MathColour& value : this->values)
             for (int channel = 0; channel < pov_base::MathColour::channels; ++channel)
                 if (!IsFiniteNumber(value[channel]) || value[channel] < 0)
                     throw std::invalid_argument("Prepared source colour must be finite and nonnegative");
-        if (budget != nullptr)
-        {
-            this->values.Budget(budget, &budget->Account("light lattices", false));
-            this->values.Seal("light lattice");
-        }
+        this->values.Seal("light lattice");
     }
 
     pov_base::MathColour Sample(const Vector3d& point) const override
@@ -47,7 +45,6 @@ public:
 private:
     const std::shared_ptr<const PreparedSourceDomain> domain;
     CacheArray<pov_base::MathColour> values; ///< not changed once constructed
-
 };
 
 }

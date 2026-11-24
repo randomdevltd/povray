@@ -90,6 +90,12 @@ class SpillBlock
         }
         void Unpin() noexcept { pins.fetch_sub(1, std::memory_order_release); }
         bool Resident() const noexcept { return resident.load(std::memory_order_acquire); }
+        /// Calls f(resident) with no eviction or read-back under way, for a reader that must not fault the block in.
+        template<class F> void Inspect(F&& f) const
+        {
+            std::lock_guard<std::mutex> guard(blockMutex);
+            f(resident.load(std::memory_order_acquire));
+        }
     protected:
         /// The bytes the block holds in memory now.
         virtual std::size_t HeldBytes() const = 0;
@@ -104,7 +110,7 @@ class SpillBlock
         static constexpr int kEvicting = -(1 << 30);
         std::atomic<int> pins{0};
         std::atomic<bool> resident{true}, referenced{true};
-        std::mutex blockMutex;
+        mutable std::mutex blockMutex;
         CacheAccount *account = nullptr;
         std::size_t section = ~std::size_t(0); ///< its section of the spill file once written
         std::size_t charged = 0; ///< the bytes the budget counts for it
@@ -141,7 +147,10 @@ class CacheRegion final
         CacheAccount *account = nullptr;
         std::string label;
         std::size_t slot = ~std::size_t(0);
+        std::size_t section = ~std::size_t(0); ///< its section of the spill file while mapped from it
+        bool busy = false; ///< being written to the spill file outside the budget's lock; Release waits for it
         std::size_t trimmed = 0; ///< where the next trim of its mapped pages starts
+        void *Pages(std::size_t n);
 };
 
 /// The budget: every large cache's resident bytes counted against one figure. Past it, sealed regions are mapped from the
@@ -150,8 +159,10 @@ class CacheRegion final
 class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
 {
     public:
-        /// `bytes` above zero; spills go to a file in `spillDirectory`, created when first needed.
-        CacheBudget(std::uint64_t bytes, const std::string& spillDirectory, bool keepSpill = false);
+        /// `bytes` above zero; spills go to a file in `spillDirectory`, created when first needed, whose live sections may
+        /// take at most `spillCap` bytes (0 for no cap); `threads` render threads, for the reported ceiling.
+        CacheBudget(std::uint64_t bytes, const std::string& spillDirectory, bool keepSpill = false, std::uint64_t spillCap = 0,
+                    unsigned threads = 1);
         ~CacheBudget();
         std::uint64_t Bytes() const { return budget; }
         const std::string& SpillDirectory() const { return directory; }
@@ -159,6 +170,8 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         CacheAccount& Account(const std::string& name, bool pinned);
         /// Adds bytes (or with a negative count, removes them) to an account; past the budget, evicts what it can.
         void Charge(CacheAccount& account, std::int64_t bytes);
+        /// Charges `bytes` only if the total stays within the budget, atomically against every other charge; else false.
+        bool Reserve(CacheAccount& account, std::int64_t bytes);
         /// A complete block, resident and unpinned, now counted under `account` and evictable.
         void Admit(SpillBlock& block, CacheAccount& account);
         /// A block going away, evicted or not; whoever calls holds no pin on it.
@@ -170,6 +183,15 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         /// The total resident, counted and measured.
         std::uint64_t Resident() const;
         std::uint64_t Peak() const { return peakTotal.load(std::memory_order_relaxed); }
+        /// How far the caches passed the budget at most, held by pins and builds that could not be spilled at the time.
+        std::uint64_t Overshoot() const { return pinnedOver.load(std::memory_order_relaxed); }
+        /// The largest section spilled or mapped so far: a cell's arrays or a whole sealed grid.
+        std::uint64_t LargestSection() const { return largestSection.load(std::memory_order_relaxed); }
+        /// The documented ceiling on the caches' peak: the budget plus threads x kOvershootSections x the largest section.
+        std::uint64_t Ceiling() const { return budget + std::uint64_t(threads) * kOvershootSections * LargestSection(); }
+        /// Sections one thread can hold unspillable at once: 2 nested gathers of up to 27 cells, 2 nested cells being
+        /// built and a read-back's two copies.
+        static constexpr unsigned kOvershootSections = 2 * 27 + 2 + 2;
         /// Throws, listing them, when the pinned caches alone pass the budget; before the first pixel.
         void CheckPinned() const;
         /// One line for each cache with figures, then a total.
@@ -178,6 +200,8 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         CacheSpillFile& Spill();
         /// Whether any bytes went to the spill file.
         bool Spilled() const { return spillUsed.load(std::memory_order_relaxed); }
+        /// Gives a spilled section's disk space back, for a block or region going away; never throws.
+        void FreeSection(std::size_t section) noexcept;
         /// The process's peak resident memory, from the system, or 0 where it cannot be read.
         static std::uint64_t ProcessPeak();
         /// The budget a Max_Cache_Memory option or POV_CACHE_MEMORY gives, in MB (MiB, 1024 x 1024 bytes), as bytes; 0 for none.
@@ -187,10 +211,12 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         std::uint64_t budget;
         std::string directory;
         bool keepSpill;
+        std::uint64_t spillCap;
+        unsigned threads;
         mutable std::mutex lock;
         std::deque<CacheAccount> accounts;
         std::unique_ptr<CacheSpillFile> spill;
-        std::mutex spillLock;
+        mutable std::mutex spillLock;
         std::atomic<bool> spillUsed{false};
         std::atomic<std::int64_t> counted{0}; ///< every account's resident bytes; mapped pages are measured instead
         std::atomic<std::uint64_t> peakTotal{0};
@@ -198,18 +224,21 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         std::size_t hand = 0;
         std::vector<CacheRegion *> regions; ///< sealed regions held in memory, evictable by mapping
         std::vector<CacheRegion *> mappings; ///< regions mapped from the spill file, whose pages can be dropped
-        std::size_t regionHand = 0, mappingHand = 0;
-        std::atomic<std::uint64_t> baselineFilePages{0};
-        std::atomic<std::uint64_t> mappedResident{0}; ///< the mapped pages last measured in memory
-        std::atomic<std::uint64_t> pinnedOver{0}; ///< how far pinned caches passed the budget during the render
+        std::size_t mappingHand = 0;
+        std::atomic<std::uint64_t> mappedResident{0}; ///< the mapped regions' pages last measured in this process's page tables
+        std::atomic<std::uint64_t> pinnedOver{0}; ///< how far pinned and in-use caches passed the budget during the render
+        std::atomic<std::uint64_t> largestSection{0};
         std::thread watcher;
-        std::condition_variable wake;
+        std::condition_variable wake, regionIdle;
         bool stopping = false;
         void Note(std::int64_t total);
         void MakeRoom();
         bool EvictOne();
         bool MapOne();
         std::uint64_t TrimMapped(std::uint64_t bytes);
+        void NoteSection(std::uint64_t bytes);
+        void StartWatcher();
+        std::size_t SpillSection(const std::string& label, const void *data, std::size_t n);
         void Seal(CacheRegion& region);
         bool MapCopy(CacheRegion& region, const void *source);
         void Unregister(CacheRegion& region);
@@ -268,6 +297,9 @@ class CacheArray final
             region.swap(other.region);
             std::swap(view, other.view);
             std::swap(count, other.count);
+            // the budget goes with the contents, so a lattice built in its pages can be sealed by whoever takes it
+            budget.swap(other.budget);
+            std::swap(budgetAccount, other.budgetAccount);
         }
 
         /// Uses the budget's pages for later sizes: those of `bytes` or more can then be mapped once sealed.

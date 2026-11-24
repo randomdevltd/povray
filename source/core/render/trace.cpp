@@ -8967,6 +8967,10 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.photonEntry.assign(count * MathColour::channels, 0.0f);
             if (key.radiosity)
                 cell.ambient.assign(count * MathColour::channels, std::numeric_limits<float>::quiet_NaN());
+            // the lighting stage's arrays are counted while they fill, before the cell is ready and can be spilled
+            threadData->subsurfaceCache->Stage(cell, cell.visibility.capacity() * sizeof(float) + cell.entry.capacity() * sizeof(float) +
+                                                     cell.internal.capacity() * sizeof(float) + cell.internalPart.capacity() * sizeof(cell.internalPart[0]) +
+                                                     cell.photonEntry.capacity() * sizeof(float) + cell.ambient.capacity() * sizeof(float));
             {
                 std::lock_guard<std::mutex> lock(cell.mutex);
                 cell.stage = SubsurfaceCell::kLighting;
@@ -10310,7 +10314,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
             threadData->subsurfaceCache->CheckCap();
             throw POV_EXCEPTION_STRING("A subsurface point cloud cell could not be built.");
         }
-        // under a budget the cell is pinned until the next gather, read back first if it was spilled
+        // under a budget the cell is pinned until the point that gathered it is shaded, read back first if it was spilled
         if (budget != nullptr)
         {
             SubsurfaceCell *pinned = const_cast<SubsurfaceCell*>(known);
@@ -11968,6 +11972,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // Method 2's light enters through the perturbed surface, averaged over the area each estimate of it stands for; it
     // leaves by the surface's own normal (see doc/PERF.md), and the paths inside keep that normal too.
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
+    // the cells its gather pins are let go once this point is shaded, so a thread pins at most two gathers' cells at once
+    struct Unpin final { SubsurfaceCloud& c; ~Unpin() { c.pins.Release(); c.cells.clear(); c.coords.clear(); } } unpin{cloudData};
     std::vector<Vector3d>& bumped = cloudData.bumped;
     std::vector<double>& shares = cloudData.bumpedShare;
     bumped.clear();

@@ -50,6 +50,7 @@
 
 // POSIX and platform header files
 #if !defined(_WIN32)
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
@@ -93,17 +94,49 @@ std::string MiB(double bytes)
     return text;
 }
 
-/// The file pages the process holds in memory, from the system; 0 where it cannot be read.
-std::uint64_t FilePages()
+#if !defined(_WIN32)
+/// The pages of [at, at + n) in this process's page tables: its own mapping's share of its resident memory.
+std::uint64_t ResidentBytes(const void *at, std::size_t n)
 {
+    const std::size_t page = PageBytes();
+    const std::uintptr_t first = reinterpret_cast<std::uintptr_t>(at) / page;
+    const std::size_t pages = (n + page - 1) / page;
+    std::uint64_t present = 0;
 #if defined(__linux__)
-    std::ifstream statm("/proc/self/statm");
-    std::uint64_t size = 0, resident = 0, shared = 0;
-    if (statm >> size >> resident >> shared)
-        return shared * PageBytes();
+    // a page's entry has bit 63 set while it is mapped in memory; readable by the process without privileges
+    static const int pagemap = open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
+    if (pagemap >= 0)
+    {
+        std::uint64_t entries[4096];
+        bool ok = true;
+        for (std::size_t done = 0; ok && (done < pages); )
+        {
+            const std::size_t want = std::min<std::size_t>(pages - done, sizeof(entries) / sizeof(entries[0]));
+            const ssize_t got = pread(pagemap, entries, want * sizeof(entries[0]), off_t((first + done) * sizeof(entries[0])));
+            ok = (got == ssize_t(want * sizeof(entries[0])));
+            for (std::size_t i = 0; ok && (i < want); ++i)
+                present += (entries[i] >> 63) & 1;
+            done += want;
+        }
+        if (ok)
+            return present * page;
+        present = 0;
+    }
 #endif
-    return 0;
+    // elsewhere the page cache's copy counts as well, which can only overstate
+    std::vector<unsigned char> in(pages);
+#if defined(__APPLE__)
+    char *vector = reinterpret_cast<char *>(in.data());
+#else
+    unsigned char *vector = in.data();
+#endif
+    if (mincore(reinterpret_cast<void *>(first * page), n, vector) != 0)
+        return n;
+    for (unsigned char bit : in)
+        present += bit & 1;
+    return present * page;
 }
+#endif
 
 }
 // end of anonymous namespace
@@ -113,11 +146,8 @@ CacheRegion::~CacheRegion()
     Release();
 }
 
-void *CacheRegion::Allocate(std::size_t n, const std::shared_ptr<CacheBudget>& owner, CacheAccount *owned)
+void *CacheRegion::Pages(std::size_t n)
 {
-    Release();
-    budget = owner;
-    account = owned;
     bytes = n;
 #if !defined(_WIN32)
     if ((budget != nullptr) && (n >= kRegionPages))
@@ -136,6 +166,15 @@ void *CacheRegion::Allocate(std::size_t n, const std::shared_ptr<CacheBudget>& o
         data = ::operator new(std::max<std::size_t>(n, 1));
         pages = false;
     }
+    return data;
+}
+
+void *CacheRegion::Allocate(std::size_t n, const std::shared_ptr<CacheBudget>& owner, CacheAccount *owned)
+{
+    Release();
+    budget = owner;
+    account = owned;
+    Pages(n);
     if ((budget != nullptr) && (account != nullptr))
         budget->Charge(*account, std::int64_t(length));
     return data;
@@ -146,17 +185,28 @@ void CacheRegion::Adopt(const void *source, std::size_t n, const std::shared_ptr
     Release();
     label = name;
 #if !defined(_WIN32)
-    // a copy holds the data twice for a moment, so it is made only where both fit; else the file holds it from the start
-    if ((owner != nullptr) && (n >= kRegionPages) && (owner->Resident() + 2 * n > owner->Bytes()))
+    if ((owner != nullptr) && (owned != nullptr) && (n >= kRegionPages))
     {
+        const std::int64_t whole = std::int64_t((n + PageBytes() - 1) / PageBytes() * PageBytes());
         budget = owner;
         account = owned;
+        // a copy holds the data twice for a moment: both copies are reserved at once, so threads sealing side by side
+        // cannot each find room for one and together pass the budget
+        if (owner->Reserve(*owned, 2 * whole))
+        {
+            std::memcpy(Pages(n), source, n);
+            // the source's share: the caller frees it as this returns
+            owner->Charge(*owned, -whole);
+            return;
+        }
+        // else the file holds it from the start
         bytes = n;
-        length = (n + PageBytes() - 1) / PageBytes() * PageBytes();
-        if (budget->MapCopy(*this, source))
+        length = std::size_t(whole);
+        if (owner->MapCopy(*this, source))
             return;
         budget.reset();
         account = nullptr;
+        bytes = length = 0;
     }
 #endif
     std::memcpy(Allocate(n, owner, owned), source, n);
@@ -176,6 +226,7 @@ void CacheRegion::Release()
     bool wasMapped = false;
     if (budget != nullptr)
     {
+        // waits for a spill of it under way
         budget->Unregister(*this);
         wasMapped = mapped.load(std::memory_order_acquire);
         if (!wasMapped && (account != nullptr))
@@ -187,6 +238,10 @@ void CacheRegion::Release()
     else
 #endif
         ::operator delete(data);
+    // unmapped first, so its disk space can be given back
+    if ((budget != nullptr) && (section != ~std::size_t(0)))
+        budget->FreeSection(section);
+    section = ~std::size_t(0);
     data = nullptr;
     bytes = length = 0;
     mapped.store(false, std::memory_order_release);
@@ -194,13 +249,13 @@ void CacheRegion::Release()
     account = nullptr;
 }
 
-CacheBudget::CacheBudget(std::uint64_t bytes, const std::string& spillDirectory, bool keep) :
+CacheBudget::CacheBudget(std::uint64_t bytes, const std::string& spillDirectory, bool keep, std::uint64_t cap, unsigned threadCount) :
     budget(bytes),
     directory(spillDirectory),
-    keepSpill(keep)
-{
-    baselineFilePages = FilePages();
-}
+    keepSpill(keep),
+    spillCap(cap),
+    threads(std::max(threadCount, 1u))
+{}
 
 CacheBudget::~CacheBudget()
 {
@@ -253,20 +308,81 @@ void CacheBudget::Charge(CacheAccount& account, std::int64_t bytes)
         MakeRoom();
 }
 
+bool CacheBudget::Reserve(CacheAccount& account, std::int64_t bytes)
+{
+    std::int64_t now = counted.load(std::memory_order_relaxed);
+    do
+    {
+        if (std::uint64_t(std::max<std::int64_t>(now + std::int64_t(mappedResident.load(std::memory_order_relaxed)), 0)) + std::uint64_t(bytes) > budget)
+            return false;
+    }
+    while (!counted.compare_exchange_weak(now, now + bytes, std::memory_order_relaxed));
+    const std::int64_t held = account.resident.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+    std::int64_t peak = account.peak.load(std::memory_order_relaxed);
+    while ((held > peak) && !account.peak.compare_exchange_weak(peak, held, std::memory_order_relaxed)) {}
+    Note(now + bytes + std::int64_t(mappedResident.load(std::memory_order_relaxed)));
+    return true;
+}
+
 void CacheBudget::MakeRoom()
 {
-    // sealed regions are mapped from the file first, which loses nothing as their pages come back on demand; then blocks
-    // are evicted, least recently used first; then mapped pages are dropped
+    // mapped pages are dropped first, which loses nothing as they come back from the file on demand; then sealed regions are
+    // mapped from the file; then blocks are evicted, least recently used first
+    bool trimmed = false;
     while (Resident() > budget)
     {
+        const std::uint64_t mapped = mappedResident.load(std::memory_order_relaxed);
+        if (!trimmed && (mapped > 0))
+        {
+            trimmed = true;
+            if (TrimMapped(std::min(Resident() - budget, mapped)) > 0)
+                continue;
+        }
         if (MapOne() || EvictOne())
             continue;
-        const std::uint64_t over = Resident() - budget, mapped = mappedResident.load(std::memory_order_relaxed);
-        if (mapped > 0)
-            TrimMapped(std::min(over, mapped));
         break;
     }
-    // what remains is pinned or in use this moment: the overshoot is counted in the peak
+    // what remains is pinned or in use this moment: the overshoot is kept for the report
+    const std::uint64_t now = Resident();
+    if (now > budget)
+    {
+        std::uint64_t over = pinnedOver.load(std::memory_order_relaxed);
+        while ((now - budget > over) && !pinnedOver.compare_exchange_weak(over, now - budget, std::memory_order_relaxed)) {}
+    }
+}
+
+void CacheBudget::NoteSection(std::uint64_t bytes)
+{
+    std::uint64_t largest = largestSection.load(std::memory_order_relaxed);
+    while ((bytes > largest) && !largestSection.compare_exchange_weak(largest, bytes, std::memory_order_relaxed)) {}
+}
+
+std::size_t CacheBudget::SpillSection(const std::string& label, const void *data, std::size_t n)
+{
+    CacheSpillFile& file = Spill();
+    try
+    {
+        const std::size_t index = file.Append(label.c_str(), data, n);
+        spillUsed.store(true, std::memory_order_relaxed);
+        NoteSection(n);
+        return index;
+    }
+    catch (const CacheSpillFull& error)
+    {
+        throw POV_EXCEPTION(pov_base::kFileDataErr, ("Max_Cache_Memory: the " + label + " cannot spill to disk: " + error.what() +
+                                           ". Raise Max_Cache_Memory or Cache_Max_Size.").c_str());
+    }
+    catch (const std::exception& error)
+    {
+        throw POV_EXCEPTION(pov_base::kFileDataErr, ("Max_Cache_Memory: the " + label + " cannot spill to disk: " + error.what() + ".").c_str());
+    }
+}
+
+void CacheBudget::FreeSection(std::size_t section) noexcept
+{
+    std::lock_guard<std::mutex> guard(spillLock);
+    if (spill != nullptr)
+        spill->Free(section);
 }
 
 void CacheBudget::Admit(SpillBlock& block, CacheAccount& account)
@@ -302,7 +418,7 @@ void CacheBudget::Forget(SpillBlock& block)
                 hand = 0;
         }
     }
-    std::size_t freed = 0;
+    std::size_t freed = 0, section;
     CacheAccount *account;
     {
         // an eviction in progress holds the block's mutex, so this waits for it
@@ -312,9 +428,14 @@ void CacheBudget::Forget(SpillBlock& block)
             freed = block.charged;
         block.charged = 0;
         block.account = nullptr;
+        section = block.section;
+        block.section = ~std::size_t(0);
     }
     if ((account != nullptr) && (freed > 0))
         Charge(*account, -std::int64_t(freed));
+    // its copy on disk is no longer needed
+    if (section != ~std::size_t(0))
+        FreeSection(section);
 }
 
 bool CacheBudget::EvictOne()
@@ -365,8 +486,7 @@ bool CacheBudget::EvictOne()
         {
             // written once: a block never changes after it is complete, so a later eviction only frees it
             const std::string bytes = victim->SpillBytes();
-            victim->section = Spill().Append(account.name.c_str(), bytes.data(), bytes.size());
-            spillUsed.store(true, std::memory_order_relaxed);
+            victim->section = SpillSection(account.name, bytes.data(), bytes.size());
             account.spillWrites.fetch_add(1, std::memory_order_relaxed);
             account.spillWriteBytes.fetch_add(bytes.size(), std::memory_order_relaxed);
         }
@@ -386,7 +506,7 @@ bool CacheBudget::EvictOne()
         catch (const pov_base::Exception&) { throw; }
         catch (const std::exception& error)
         {
-            throw POV_EXCEPTION_STRING(("Max_Cache_Memory: the " + account.name + " cannot spill to disk: " + error.what() + ".").c_str());
+            throw POV_EXCEPTION(pov_base::kFileDataErr, ("Max_Cache_Memory: the " + account.name + " cannot spill to disk: " + error.what() + ".").c_str());
         }
     }
     victim->resident.store(false, std::memory_order_relaxed);
@@ -412,6 +532,7 @@ void CacheBudget::Fault(SpillBlock& block)
             // the section's bytes and the arrays they fill are both held while it is read back: counted before, so the
             // budget makes room for them
             transient = 2 * std::int64_t(entry.length);
+            NoteSection(entry.length);
             if (account != nullptr)
                 Charge(*account, transient);
             std::string bytes(std::size_t(entry.length), '\0');
@@ -424,7 +545,7 @@ void CacheBudget::Fault(SpillBlock& block)
             {
                 if (account != nullptr)
                     Charge(*account, -transient);
-                throw POV_EXCEPTION_STRING(("Max_Cache_Memory: a spilled cache could not be read back: " + std::string(error.what()) + ".").c_str());
+                throw POV_EXCEPTION(pov_base::kFileDataErr, ("Max_Cache_Memory: a spilled cache could not be read back: " + std::string(error.what()) + ".").c_str());
             }
             held = block.HeldBytes();
             block.charged = held;
@@ -466,7 +587,9 @@ void CacheBudget::Seal(CacheRegion& region)
 
 void CacheBudget::Unregister(CacheRegion& region)
 {
-    std::lock_guard<std::mutex> guard(lock);
+    std::unique_lock<std::mutex> guard(lock);
+    // a region being written to the spill file goes only once it is written and mapped
+    regionIdle.wait(guard, [&region]() { return !region.busy; });
     for (std::vector<CacheRegion *> *list : { &regions, &mappings })
     {
         auto found = std::find(list->begin(), list->end(), &region);
@@ -476,35 +599,44 @@ void CacheBudget::Unregister(CacheRegion& region)
     region.slot = ~std::size_t(0);
 }
 
+void CacheBudget::StartWatcher()
+{
+    // under the lock
+    if (!watcher.joinable())
+        watcher = std::thread([this]() { Watch(); });
+}
+
 bool CacheBudget::MapCopy(CacheRegion& region, const void *source)
 {
 #if defined(_WIN32)
     (void)region; (void)source;
     return false;
 #else
-    std::lock_guard<std::mutex> guard(lock);
+    // no other thread knows the region yet, so it is written without the budget's lock
+    const std::size_t index = SpillSection(region.label, source, region.bytes);
     CacheSpillFile& file = Spill();
-    if (mappings.empty())
-        baselineFilePages = FilePages();
-    const std::size_t index = file.Append(region.label.c_str(), source, region.bytes);
     const std::uint64_t offset = file.Entry(index).offset;
-    if (offset % PageBytes() != 0)
-        return false;
-    void *at = mmap(nullptr, region.length, PROT_READ | PROT_WRITE, MAP_PRIVATE, file.Descriptor(), off_t(offset));
+    void *at = (offset % PageBytes() == 0) ? mmap(nullptr, region.length, PROT_READ | PROT_WRITE, MAP_PRIVATE, file.Descriptor(), off_t(offset))
+                                           : MAP_FAILED;
     if (at == MAP_FAILED)
+    {
+        FreeSection(index);
         return false;
+    }
+    // read where the render looks, so the kernel reads no pages ahead that the budget did not ask for
+    madvise(at, region.length, MADV_RANDOM);
     region.data = at;
     region.pages = true;
+    region.section = index;
     region.mapped.store(true, std::memory_order_release);
-    mappings.push_back(&region);
-    spillUsed.store(true, std::memory_order_relaxed);
     if (region.account != nullptr)
     {
         region.account->spillWrites.fetch_add(1, std::memory_order_relaxed);
         region.account->spillWriteBytes.fetch_add(region.bytes, std::memory_order_relaxed);
     }
-    if (!watcher.joinable())
-        watcher = std::thread([this]() { Watch(); });
+    std::lock_guard<std::mutex> guard(lock);
+    mappings.push_back(&region);
+    StartWatcher();
     return true;
 #endif
 }
@@ -515,6 +647,10 @@ bool CacheBudget::MapOne()
     return false;
 #else
     CacheRegion *region = nullptr;
+    std::string label;
+    void *data;
+    std::size_t length;
+    CacheAccount *account;
     {
         std::lock_guard<std::mutex> guard(lock);
         if (regions.empty())
@@ -522,29 +658,59 @@ bool CacheBudget::MapOne()
         // the oldest sealed region first: it is written once and read from the file's pages after
         region = regions.front();
         regions.erase(regions.begin());
-        // under the lock, so that the region is not released while it is written and mapped
-        CacheSpillFile& file = Spill();
-        // the file pages held before the first mapping are the program's own, not the caches'
-        if (mappings.empty())
-            baselineFilePages = FilePages();
-        const std::size_t index = file.Append(region->label.c_str(), region->data, region->length);
-        const std::uint64_t offset = file.Entry(index).offset;
-        void *at = mmap(region->data, region->length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, file.Descriptor(), off_t(offset));
-        if (at != region->data)
-            throw POV_EXCEPTION_STRING(("Max_Cache_Memory: the " + region->label + " could not be mapped from the spill file " +
-                                        file.Path() + " (" + std::strerror(errno) + ").").c_str());
-        spillUsed.store(true, std::memory_order_relaxed);
+        // busy, it cannot be released while it is written and mapped without the lock; what is needed is copied now
+        region->busy = true;
+        label = region->label;
+        data = region->data;
+        length = region->length;
+        account = region->account;
+    }
+    auto restore = [this, region]()
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        region->busy = false;
+        regions.insert(regions.begin(), region);
+        regionIdle.notify_all();
+    };
+    std::size_t index;
+    try
+    {
+        index = SpillSection(label, data, length);
+    }
+    catch (...)
+    {
+        restore();
+        throw;
+    }
+    CacheSpillFile& file = Spill();
+    const std::uint64_t offset = file.Entry(index).offset;
+    void *at = (offset % PageBytes() == 0) ? mmap(data, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, file.Descriptor(), off_t(offset))
+                                           : MAP_FAILED;
+    if (at != data)
+    {
+        const std::string reason = (at == MAP_FAILED) ? std::strerror(errno) : "mapped elsewhere";
+        FreeSection(index);
+        restore();
+        throw POV_EXCEPTION(pov_base::kFileDataErr, ("Max_Cache_Memory: the " + label + " could not be mapped from the spill file " + file.Path() +
+                                           " (" + reason + ").").c_str());
+    }
+    madvise(data, length, MADV_RANDOM);
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        region->section = index;
         region->mapped.store(true, std::memory_order_release);
         mappings.push_back(region);
-        if (!watcher.joinable())
-            watcher = std::thread([this]() { Watch(); });
+        region->busy = false;
+        StartWatcher();
     }
-    if (region->account != nullptr)
+    regionIdle.notify_all();
+    // the region may be gone from here on: only the copies are used
+    if (account != nullptr)
     {
-        region->account->spillWrites.fetch_add(1, std::memory_order_relaxed);
-        region->account->spillWriteBytes.fetch_add(region->length, std::memory_order_relaxed);
-        region->account->evictions.fetch_add(1, std::memory_order_relaxed);
-        Charge(*region->account, -std::int64_t(region->length));
+        account->spillWrites.fetch_add(1, std::memory_order_relaxed);
+        account->spillWriteBytes.fetch_add(length, std::memory_order_relaxed);
+        account->evictions.fetch_add(1, std::memory_order_relaxed);
+        Charge(*account, -std::int64_t(length));
     }
     return true;
 #endif
@@ -562,15 +728,20 @@ std::uint64_t CacheBudget::TrimMapped(std::uint64_t want)
         std::uint64_t total = 0;
         for (const CacheRegion *region : mappings)
             total += region->length;
-        // round the mapped regions from where the last trim stopped, a chunk at a time
-        while ((dropped < want) && (dropped < total) && !mappings.empty())
+        // round the mapped regions from where the last trim stopped, a chunk at a time, at most once round; only the pages
+        // that were in memory count as dropped
+        for (std::uint64_t visited = 0; (dropped < want) && (visited < total) && !mappings.empty(); )
         {
             if (mappingHand >= mappings.size())
                 mappingHand = 0;
             CacheRegion& region = *mappings[mappingHand];
             const std::size_t length = std::min(kTrimChunk, region.length - region.trimmed);
-            madvise(static_cast<char *>(region.data) + region.trimmed, length, MADV_DONTNEED);
-            dropped += length;
+            char *at = static_cast<char *>(region.data) + region.trimmed;
+            const std::uint64_t held = ResidentBytes(at, length);
+            if (held > 0)
+                madvise(at, length, MADV_DONTNEED);
+            dropped += held;
+            visited += length;
             region.trimmed += length;
             if (region.trimmed >= region.length)
             {
@@ -579,16 +750,24 @@ std::uint64_t CacheBudget::TrimMapped(std::uint64_t want)
             }
         }
     }
-    MeasureMapped();
+    // pages read meanwhile are counted at the next measure
+    std::uint64_t mapped = mappedResident.load(std::memory_order_relaxed);
+    while (!mappedResident.compare_exchange_weak(mapped, mapped - std::min(mapped, dropped), std::memory_order_relaxed)) {}
     return dropped;
 #endif
 }
 
 std::uint64_t CacheBudget::MeasureMapped()
 {
-    // the file pages the process holds past those it held when the budget began: the mapped regions' pages in memory
-    const std::uint64_t now = FilePages();
-    const std::uint64_t mapped = (now > baselineFilePages) ? now - baselineFilePages : 0;
+    std::uint64_t mapped = 0;
+#if !defined(_WIN32)
+    {
+        // the mapped regions' own pages in this process's page tables, not the page cache nor other files
+        std::lock_guard<std::mutex> guard(lock);
+        for (const CacheRegion *region : mappings)
+            mapped += ResidentBytes(region->data, region->length);
+    }
+#endif
     mappedResident.store(mapped, std::memory_order_relaxed);
     Note(counted.load(std::memory_order_relaxed) + std::int64_t(mapped));
     return mapped;
@@ -603,6 +782,7 @@ void CacheBudget::Watch()
         if (stopping)
             break;
         guard.unlock();
+        // only trims, which cannot throw; spilling is left to the render threads, which report its errors
         const std::uint64_t mapped = MeasureMapped();
         if ((mapped > 0) && (Resident() > budget))
             TrimMapped(std::min(Resident() - budget, mapped));
@@ -617,11 +797,11 @@ CacheSpillFile& CacheBudget::Spill()
     {
         try
         {
-            spill.reset(new CacheSpillFile(directory, "spill", keepSpill));
+            spill.reset(new CacheSpillFile(directory, "spill", keepSpill, spillCap));
         }
         catch (const std::exception& error)
         {
-            throw POV_EXCEPTION_STRING((std::string("Max_Cache_Memory: caches cannot spill to disk: ") + error.what() + ".").c_str());
+            throw POV_EXCEPTION(pov_base::kCannotOpenFileErr, (std::string("Max_Cache_Memory: caches cannot spill to disk: ") + error.what() + ".").c_str());
         }
     }
     return *spill;
@@ -670,11 +850,21 @@ std::vector<std::string> CacheBudget::Report() const
     }
     const std::uint64_t process = ProcessPeak();
     std::string total = "Cache memory: budget " + MiB(double(budget)) + " (Max_Cache_Memory); peak " + MiB(double(Peak())) + " of caches resident";
-    if (spill != nullptr)
-        total += "; spill file " + MiB(double(spill->Bytes())) + " in " + directory;
     if (process > 0)
         total += "; process peak " + MiB(double(process));
     lines.push_back(total + ".");
+    char text[256];
+    std::snprintf(text, sizeof(text), "Cache memory: largest section %s; ceiling %s for %u threads (budget + threads x %u x largest section); "
+                  "passed the budget by at most %s.", MiB(double(LargestSection())).c_str(), MiB(double(Ceiling())).c_str(), threads,
+                  kOvershootSections, MiB(double(Overshoot())).c_str());
+    lines.push_back(text);
+    {
+        std::lock_guard<std::mutex> spillGuard(spillLock);
+        if (spill != nullptr)
+            lines.push_back("Cache memory: spill file " + spill->Path() + ": " + MiB(double(spill->LiveBytes())) + " live, peak " +
+                            MiB(double(spill->PeakLiveBytes())) + " live, " + MiB(double(spill->Bytes())) + " long" +
+                            (spill->Cap() > 0 ? ", cap " + MiB(double(spill->Cap())) + " (Cache_Max_Size)." : "."));
+    }
     return lines;
 }
 

@@ -188,7 +188,9 @@ this many MB of memory, an MB being 1024 x 1024 bytes, a whole number greater th
 past it they spill to a file in the cache directory and are read back as needed, with
 the same image. \fBPOV_CACHE_MEMORY\fP gives it when the option is not given. Caches
 that cannot be divided stay in memory; if they alone pass it the render stops before its
-first pixel. Unset by default: nothing spills.
+first pixel. What threads are using at a moment cannot spill, so the caches stay below
+the budget plus threads x 58 x the largest section, as logged at the end. The spill
+file's live sections are capped by \fBCache_Max_Size\fP. Unset by default: nothing spills.
 .TP
 \fBML\fP\fIn.n\fP or \fBPov4_Version\fP=\fIn.n\fP
 Run a .pov4 scene with the defaults of language version n.n instead of 4.0.

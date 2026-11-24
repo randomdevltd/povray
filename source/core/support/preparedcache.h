@@ -284,32 +284,51 @@ class PreparedCacheFile final
         std::vector<Entry> entries;
 };
 
+/// A spill that would take the spill file's live sections past its cap.
+class CacheSpillFull final : public std::runtime_error
+{
+    public:
+        explicit CacheSpillFull(const std::string& what) : std::runtime_error(what) {}
+};
+
 /// A cache file a render spills to: sections are appended once, from any thread, and read back alone, each checked against
 /// its checksum. Finish writes its index and header, so the file then reads as any saved cache.
 class CacheSpillFile final
 {
     public:
-        /// Creates a file named after `name` in `directory`. Unless `keep`, it is unlinked at once where the system allows,
-        /// so a render that dies leaves nothing behind, and else removed on destruction. Throws std::runtime_error on failure.
-        CacheSpillFile(const std::string& directory, const std::string& name, bool keep = false);
+        /// Creates a file named after `name` in `directory`, whose live sections may take at most `cap` bytes (0 for no cap).
+        /// Unless `keep`, it is unlinked at once where the system allows, so a render that dies leaves nothing behind, and else
+        /// removed on destruction, with the directories it made if they are then empty. Throws std::runtime_error on failure.
+        CacheSpillFile(const std::string& directory, const std::string& name, bool keep = false, std::uint64_t cap = 0);
         ~CacheSpillFile();
         CacheSpillFile(const CacheSpillFile&) = delete;
         CacheSpillFile& operator=(const CacheSpillFile&) = delete;
         const std::string& Path() const { return path; }
-        /// Appends a section, page aligned when a page or more so it can be mapped; returns its number. Throws on a failed write.
+        /// Appends a section, page aligned when a page or more so it can be mapped, in a freed section's space where one fits;
+        /// returns its number. Throws CacheSpillFull past the cap, std::runtime_error on a failed write.
         std::size_t Append(const char *label, const void *data, std::size_t n, const CacheSection *section = nullptr);
+        /// Gives a section's space back for later sections, and its disk blocks to the system where it allows.
+        void Free(std::size_t index) noexcept;
         PreparedCacheFile::Entry Entry(std::size_t index) const;
         /// A section's bytes into `data`, which holds its length; throws CacheFormatError if they do not match their checksum.
         void Read(std::size_t index, void *data) const;
         /// The descriptor sections map from; -1 where they cannot be mapped.
         int Descriptor() const;
-        /// Bytes appended so far, padding included.
+        /// The file's length, padding and freed sections included.
         std::uint64_t Bytes() const;
+        /// The bytes of the sections not freed, now and at most so far.
+        std::uint64_t LiveBytes() const;
+        std::uint64_t PeakLiveBytes() const;
+        std::uint64_t Cap() const { return cap; }
         /// Writes the index and header; later appends throw.
         void Finish();
     private:
         std::string path;
+        std::vector<std::string> made; ///< the directories it created, innermost last
         bool keep, linked = true, finished = false;
+        std::uint64_t cap, live = 0, peakLive = 0;
+        std::vector<bool> freed;
+        std::map<std::uint64_t, std::uint64_t> holes; ///< freed space within the file, start to end
 #if defined(_WIN32)
         std::FILE *file = nullptr;
 #else
