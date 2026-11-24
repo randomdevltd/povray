@@ -133,6 +133,10 @@ class TraceThreadData : public ThreadData
         GenericMessenger* mediaMessages = nullptr;
         /// The progress report of scene preparation; set only on the thread that prepares.
         PreparationProgress* preparationProgress = nullptr;
+        /// Where preparation steps run side by side: the workers each may use (0 for the scene's thread count) and the
+        /// ordinal its saved cache takes among its kind (-1 for the next).
+        unsigned int preparationWorkers = 0;
+        int preparationCacheOrdinal = -1;
 
         bool preciseInside = false;
         double isoShadowFrom;

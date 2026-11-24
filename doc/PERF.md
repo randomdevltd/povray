@@ -2586,6 +2586,23 @@ every 60 seconds while it stays flat; the phase is still running. `<step>` is te
 
     Preparation: bounce 18432/61440 4.0s; o2/2 t3/7 surface
 
+After a phase's `finished` line comes its cost, where the platform has thread CPU clocks:
+
+    Preparation cost: <phase> CPU <cpu>s, critical path <path>s (<cpu/path>x)
+
+`<cpu>` is the CPU the phase's threads spent on it. `<path>` is the thread CPU along its longest chain: the preparing
+thread's own work, with each parallel loop counted at its busiest worker. Both are models, not measurements of elapsed
+time. `<path>` stands for the phase's wall time only on an idle machine with one core per thread, and `<cpu/path>` for
+how many threads the phase would keep busy there; with `+WTn`, that over n is the modelled parallel efficiency. Thread
+clocks do not run while a thread waits on a lock or on file reads and writes, so such waits are on neither figure, while
+a thread spinning on a flag counts as busy. Other load on the machine does not move them. Work on threads that a phase
+starts outside the shared parallel loops is counted in neither the CPU nor the path.
+
+Spreading the surface bounce splits over every worker and preparing lights side by side shortened these modelled paths
+at `+WT8` on `tests/render/parallel_preparation.pov`: the bounce path 1.87 times (case 2, 25.8 s to 13.8 s) and the
+volume-light path 4.3 times (case 1, 1.3 s to 0.3 s), for the same instructions. Those are modelled ratios for an idle
+machine with one core per thread, not measured speed-ups.
+
 
 ## Embedded volume sources in subsurface solids
 

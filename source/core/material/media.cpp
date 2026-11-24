@@ -44,6 +44,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <set>
 #include <limits>
 #include <mutex>
 #include <unordered_set>
@@ -77,6 +78,7 @@
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
 #include "core/scene/scenedata.h"
+#include "core/shape/mesh.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
 #include "core/support/preparationprogress.h"
@@ -1841,6 +1843,9 @@ void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& c
                 throw POV_EXCEPTION_STRING("Unbounded prepared emission without extinction has a divergent integral.");
 }
 
+// Nodes from which a volume light's own loops keep the workers busy, so it is prepared alone.
+static const size_t kPrepareAloneNodes = 65536;
+
 void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooperate)
 {
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
@@ -1875,34 +1880,88 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
             throw POV_EXCEPTION_STRING("Interior light has no prepared geometry binding.");
         if (light->portal)
             throw POV_EXCEPTION_STRING("Prepared volume light paths through portals are not supported.");
-        light->emitter->ResolveGeometry();
+        light->emitter->ResolveGeometry(*scene);
     }
+    std::vector<std::shared_ptr<const PreparedSourceDomain>> layouts(scene->mediaLights.size());
+    for (size_t index = 0; index < scene->mediaLights.size(); ++index)
+    {
+        const LightSource *light = scene->mediaLights[index];
+        if (light->emitter->IsSurface())
+            continue;
+        layouts[index] = sourceDomains.at(light->emitterContainer);
+        if (!layouts[index])
+            throw POV_EXCEPTION_STRING("A varying interior light requires finite prepared coordinates.");
+    }
+    // Large volume lights alone on every worker, the rest side by side on one each; caches numbered per kind in scene order.
+    std::vector<size_t> alone, together;
+    std::vector<int> ordinals(scene->mediaLights.size(), -1);
+    {
+        std::set<const Emitter *> seen;
+        int surfaces = 0, volumes = 0;
+        for (size_t index = 0; index < scene->mediaLights.size(); ++index)
+        {
+            const LightSource *light = scene->mediaLights[index];
+            if (!seen.insert(light->emitter.get()).second)
+                continue;
+            const bool surface = light->emitter->IsSurface();
+            ordinals[index] = surface ? surfaces++ : volumes++;
+            (!surface && (layouts[index]->NodeCount() >= kPrepareAloneNodes) ? alone : together).push_back(index);
+        }
+    }
+    const size_t threads = std::max<size_t>(1, scene->workThreads), side = std::min(together.size(), threads);
+    std::vector<std::unique_ptr<TraceThreadData>> lanes;
+    for (size_t lane = 0; lane < std::max<size_t>(1, side); ++lane)
+    {
+        lanes.emplace_back(new TraceThreadData(scene, lane, false));
+        lanes.back()->stochasticRandomSeedBase = td->stochasticRandomSeedBase;
+        lanes.back()->mediaMessages = td->mediaMessages;
+    }
+    const std::shared_ptr<std::atomic<bool>> cancelled = scene->meshBuildCancelled;
+    const std::function<void()> stopped = [cancelled]()
+    {
+        if (cancelled->load(std::memory_order_relaxed))
+            throw POV_EXCEPTION_CODE(kUserAbortErr);
+    };
+    const auto prepare = [&](size_t index, TraceThreadData *worker, unsigned workers, const std::function<void()>& poll)
+    {
+        worker->preparationCacheOrdinal = ordinals[index];
+        worker->preparationWorkers = workers;
+        scene->mediaLights[index]->emitter->PrepareAxis(layouts[index], worker, poll);
+        worker->preparationCacheOrdinal = -1;
+        worker->preparationWorkers = 0;
+        AdvancePreparation(td->preparationProgress);
+    };
+    for (size_t index : alone)
+    {
+        if (cooperate)
+            cooperate();
+        StepPreparation(td->preparationProgress, "l" + std::to_string(index + 1) + "/" + std::to_string(scene->mediaLights.size()) + " volume");
+        prepare(index, td, 0, cooperate);
+    }
+    if (!together.empty())
+        StepPreparation(td->preparationProgress, std::to_string(together.size()) + " side by side");
+    // only the preparing thread reports progress and answers the task
+    ParallelFor(together.size(), side, [&](size_t i, size_t lane)
+    {
+        prepare(together[i], lanes[lane].get(), 1, (lane == 0) ? cooperate : stopped);
+    }, [&]() { if (cooperate) cooperate(); });
+    for (const auto& lane : lanes)
+        td->Stats() += lane->Stats();
     for (size_t index = 0; index < scene->mediaLights.size(); ++index)
     {
         LightSource *light = scene->mediaLights[index];
-        if (cooperate)
-            cooperate();
-        {
-            const bool surface = light->emitter->IsSurface();
-            StepPreparation(td->preparationProgress, "l" + std::to_string(index + 1) + "/" +
-                            std::to_string(scene->mediaLights.size()) + (surface ? " surface" : " volume"));
-            std::shared_ptr<const PreparedSourceDomain> layout;
-            if (!surface)
-                layout = sourceDomains.at(light->emitterContainer);
-            if (!surface && !layout)
-                throw POV_EXCEPTION_STRING("A varying interior light requires finite prepared coordinates.");
-            light->emitter->PrepareAxis(layout, td, cooperate);
-            if (!surface && !light->emitter->PreparedAxis())
-                throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
-            if (!surface && td->mediaMessages)
-                td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
-                    unsigned(layout->Counts()[X]), unsigned(layout->Counts()[Y]), unsigned(layout->Counts()[Z]),
-                    unsigned(light->index), light->lightGroupLight ? " in light group" : "");
-            light->colour = light->emitter->Intensity() / M_PI;
-            light->Center = light->emitter->Centre();
-            light->lawRadius = light->emitter->Radius();
-        }
-        AdvancePreparation(td->preparationProgress);
+        const bool surface = light->emitter->IsSurface();
+        if (!surface && !light->emitter->PreparedAxis())
+            throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
+        if (!surface && td->mediaMessages)
+            td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
+                unsigned(layouts[index]->Counts()[X]), unsigned(layouts[index]->Counts()[Y]), unsigned(layouts[index]->Counts()[Z]),
+                unsigned(light->index), light->lightGroupLight ? " in light group" : "");
+        light->colour = light->emitter->Intensity() / M_PI;
+        light->Center = light->emitter->Centre();
+        light->lawRadius = light->emitter->Radius();
+        if (ordinals[index] < 0)
+            AdvancePreparation(td->preparationProgress);
     }
     // Shared interior fields gain their lights on this thread, in scene order.
     for (LightSource *light : scene->mediaLights)
@@ -2205,6 +2264,7 @@ class VolumeEmitter final : public Emitter
             }
             return result;
         }
+        void ResolveGeometry(const SceneData& scene) const override;
         void PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                          const std::function<void()>& cooperate) const override;
 
@@ -2639,6 +2699,20 @@ static DBL CellIntegral(const PreparedSourceDomain& layout, size_t cell, const F
 
 // A copy or a transform of a CSG drops its child trees; an emitter's copy of its container indexes its children again, as
 // the scene's objects are, so that its chords and inside tests do not visit every member of a union of many.
+// Bounding resolves no mesh that only clips or bounds a shape, and resolving one writes shared data, so it is done here.
+static void ResolveEmitterMeshes(ObjectPtr object)
+{
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        mesh->Resolve();
+    if (object->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
+            ResolveEmitterMeshes(child);
+    for (ObjectPtr clip : object->Clip)
+        ResolveEmitterMeshes(clip);
+    for (ObjectPtr bound : object->Bound)
+        ResolveEmitterMeshes(bound);
+}
+
 static void IndexEmitterGeometry(ObjectPtr geometry, const SceneData& scene)
 {
     if (scene.boundingMethod == 0)
@@ -2648,18 +2722,12 @@ static void IndexEmitterGeometry(ObjectPtr geometry, const SceneData& scene)
     Prepare_CSG_Child_Trees(geometry, CSG_Child_Tree_Minimum(), visited, built);
 }
 
-void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
-                                const std::function<void()>& cooperate) const
+void VolumeEmitter::ResolveGeometry(const SceneData& scene) const
 {
-    std::lock_guard<std::mutex> lock(prepareMutex);
-    if (axis)
+    // a shape copy shares the shape's data by a plain reference count, so lights are copied here, on one thread
+    if (geometry)
         return;
-    if (!layout)
-        throw POV_EXCEPTION_STRING("Interior light requires its prepared field layout.");
     VolumeEmitter *emitter = const_cast<VolumeEmitter*>(this);
-    const MediaLight& settings = *sourceSettings;
-    if (settings.pigment && PigmentRequiresRayContext(settings.pigment))
-        throw POV_EXCEPTION_STRING("Interior light requires ray context and cannot be published.");
     if (!UsablePreparedContainer(container))
     {
         throw POV_EXCEPTION_STRING("Interior light requires a finite container.");
@@ -2674,9 +2742,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     }
     emitter->centre = emitter->low + emitter->size * 0.5;
     emitter->radius = emitter->size.length() * 0.5;
-    Destroy_Object(emitter->geometry);
-    emitter->geometry = nullptr;
     emitter->geometry = Copy_Object(container);
+    ResolveEmitterMeshes(emitter->geometry);
     emitter->PrepareOccupancyBoundaries(emitter->geometry);
     TRANSFORM translation, scaling;
     const Vector3d displacement = -emitter->centre, scale(1.0 / emitter->radius);
@@ -2684,7 +2751,23 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    IndexEmitterGeometry(emitter->geometry, *td->GetSceneData());
+    IndexEmitterGeometry(emitter->geometry, scene);
+}
+
+void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
+                                const std::function<void()>& cooperate) const
+{
+    std::lock_guard<std::mutex> lock(prepareMutex);
+    if (axis)
+        return;
+    if (!layout)
+        throw POV_EXCEPTION_STRING("Interior light requires its prepared field layout.");
+    if (!geometry)
+        throw POV_EXCEPTION_STRING("Interior light geometry was not resolved before preparation.");
+    VolumeEmitter *emitter = const_cast<VolumeEmitter*>(this);
+    const MediaLight& settings = *sourceSettings;
+    if (settings.pigment && PigmentRequiresRayContext(settings.pigment))
+        throw POV_EXCEPTION_STRING("Interior light requires ray context and cannot be published.");
     // a bounce-only block casts no primary light; a unit normalizes the input below, else the emission alias casts its
     // glow times brightness and a unitless pigment takes the mean chord 4V/A
     const bool nits = settings.nits;
@@ -2694,7 +2777,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     CacheKey detail;
     detail.Add(emitter->low).Add(emitter->size).Add(layout->Low()).Add(layout->Size())
           .Add(std::uint64_t(layout->NodeCount())).Add(std::uint64_t(layout->CellCount()));
-    PreparedCacheUnit unit(td->GetSceneData()->preparedCaches.get(), "light", detail.Value());
+    PreparedCacheUnit unit(td->GetSceneData()->preparedCaches.get(), "light", detail.Value(), td->preparationCacheOrdinal);
     std::shared_ptr<const PreparedColourField> field;
     std::shared_ptr<const PreparedSourceColourField> nodes;
     MathColour solidValue;
@@ -2703,7 +2786,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     unit.Record("emission", [&]()
     {
         // every serial estimate below is gathered per index on the workers, then summed in index order
-        const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
+        const size_t workers = std::max<size_t>(1, td->preparationWorkers ? td->preparationWorkers : td->GetSceneData()->workThreads);
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
         for (size_t i = 1; i < workers; i++)
             helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));

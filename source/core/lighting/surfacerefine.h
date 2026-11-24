@@ -188,10 +188,9 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
             }
         return found;
     };
-    // The records of a piece's part, shaded once each, front and (seen from inside too) back.
-    auto shade = [&](const Map::Part& p, std::size_t worker, std::vector<Point>& out)
+    // The records of a piece's part found again, in record order, each with its hit and not yet shaded.
+    auto locate = [&](const Map::Part& p, std::size_t worker, std::vector<Point>& out)
     {
-        Trace* const shader = shaders[worker];
         TraceThreadData* const td = workers.Thread(worker);
         std::vector<Intersection> hits;
         view.Hits(p, td, hits);
@@ -208,13 +207,27 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
                 point.normal = view.Normal(r);
                 point.jacobian = view.Weight(p, r) / p.weight;
                 point.id = Map::Id(p, *chunk, i);
-                const ConstObjectPtr host = part.internal ? part.owner : nullptr;
-                point.front = shader->BounceExport(hits[n], point.normal, point.id, part.directions, host);
-                if (part.inside)
-                    point.back = shader->BounceExport(hits[n], -point.normal, BounceOrderMix(point.id), part.directions, host);
-                if (part.keepHits) point.hit = hits[n];
+                point.hit = hits[n];
                 out.push_back(std::move(point));
             }
+    };
+    // A located point's light, front and (seen from inside too) back; a function of the point alone, on any worker.
+    auto light = [&](Point& point, std::size_t worker)
+    {
+        Trace* const shader = shaders[worker];
+        const ConstObjectPtr host = part.internal ? part.owner : nullptr;
+        point.front = shader->BounceExport(point.hit, point.normal, point.id, part.directions, host);
+        if (part.inside)
+            point.back = shader->BounceExport(point.hit, -point.normal, BounceOrderMix(point.id), part.directions, host);
+        if (!part.keepHits) point.hit = Intersection();
+    };
+    // The records of a piece's part, shaded once each.
+    auto shade = [&](const Map::Part& p, std::size_t worker, std::vector<Point>& out)
+    {
+        const std::size_t first = out.size();
+        locate(p, worker, out);
+        for (std::size_t i = first; i < out.size(); ++i)
+            light(out[i], worker);
     };
     auto lines = [](const Map::Part& p)
     {
@@ -230,67 +243,103 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
         return c.points.empty() ? 0.0 : sum / double(c.points.size());
     };
 
-    // A cell's split, read and shaded entirely by one worker, so it is a function of the cell alone.
-    auto split = [&](const Cell& from, std::size_t worker, Split& out)
+    // Splits as flat work, child cubes then points, so one split keeps every worker busy; each still depends on its cell alone.
+    struct Pending final
     {
-        TraceThreadData* const td = workers.Thread(worker);
-        const double side = map.Spacing(from.level + 1);
-        std::vector<std::vector<std::uint32_t>> inherited(8);
-        for (std::uint32_t i : from.points)
+        std::size_t split = 0;
+        bool meets = false, found = false;
+        std::size_t traced = 0;
+        Child child;
+    };
+    auto splitAll = [&](const std::vector<const Cell*>& from, std::vector<Split>& out)
+    {
+        std::vector<Pending> pending;
+        pending.reserve(8 * from.size());
+        for (std::size_t s = 0; s < from.size(); ++s)
         {
-            int o = 0;
-            for (int a = X; a <= Z; ++a)
+            const Cell& parent = *from[s];
+            const double side = map.Spacing(parent.level + 1);
+            std::vector<std::vector<std::uint32_t>> inherited(8);
+            for (std::uint32_t i : parent.points)
             {
-                const std::int64_t k = std::int64_t(std::floor((store[i].frame[a] - map.Origin()[a]) / side));
-                o |= int(std::min<std::int64_t>(1, std::max<std::int64_t>(0, k - 2 * from.at[a]))) << a;
+                int o = 0;
+                for (int a = X; a <= Z; ++a)
+                {
+                    const std::int64_t k = std::int64_t(std::floor((store[i].frame[a] - map.Origin()[a]) / side));
+                    o |= int(std::min<std::int64_t>(1, std::max<std::int64_t>(0, k - 2 * parent.at[a]))) << a;
+                }
+                inherited[o].push_back(i);
             }
-            inherited[o].push_back(i);
+            const double mean = meanOf(parent), share = parent.weight;
+            for (int o = 0; o < 8; ++o)
+            {
+                Pending next;
+                next.split = s;
+                Cell& c = next.child.cell;
+                c.piece = parent.piece;
+                c.inclusion = parent.inclusion;
+                c.level = parent.level + 1;
+                c.read = parent.read + 1;
+                c.at = {2 * parent.at[X] + (o & 1), 2 * parent.at[Y] + ((o >> 1) & 1), 2 * parent.at[Z] + (o >> 2)};
+                c.key = keyOf(c.piece, c.level, c.at);
+                // the parent's points bound it, and those in it estimate it
+                c.ranked = !parent.points.empty();
+                for (std::uint32_t i : parent.points)
+                {
+                    c.rank += share * store[i].jacobian * std::fabs(store[i].Value() - mean);
+                    c.power += share * store[i].jacobian * store[i].Value();
+                }
+                if (c.ranked) c.rank += c.power / std::sqrt(double(parent.points.size()));
+                for (std::uint32_t i : inherited[o])
+                    c.local += share * store[i].jacobian * store[i].Value();
+                c.weight = parent.weight;
+                // a cube the piece's box does not meet holds none of it, so it is not read
+                const auto box = pieceBoxes.find(c.piece);
+                next.meets = box != pieceBoxes.end();
+                for (int a = X; next.meets && a <= Z; ++a)
+                {
+                    const double lo = map.Origin()[a] + map.Spacing(c.level) * double(c.at[a]), hi = lo + map.Spacing(c.level);
+                    next.meets = lo <= box->second.second[a] && hi >= box->second.first[a];
+                }
+                if (!next.meets && inherited[o].empty())
+                    continue;
+                c.points = std::move(inherited[o]);
+                pending.push_back(std::move(next));
+            }
         }
-        const double mean = meanOf(from), share = from.weight;
-        for (int o = 0; o < 8; ++o)
+        workers.Uncounted(pending.size(), cooperate, [&](std::size_t index, std::size_t worker)
         {
-            Child child;
-            Cell& c = child.cell;
-            c.piece = from.piece;
-            c.inclusion = from.inclusion;
-            c.level = from.level + 1;
-            c.read = from.read + 1;
-            c.at = {2 * from.at[X] + (o & 1), 2 * from.at[Y] + ((o >> 1) & 1), 2 * from.at[Z] + (o >> 2)};
-            c.key = keyOf(c.piece, c.level, c.at);
-            // the parent's points bound it, and those in it estimate it
-            c.ranked = !from.points.empty();
-            for (std::uint32_t i : from.points)
+            workers[worker].Watch(part.owner);
+            Pending& next = pending[index];
+            if (!next.meets)
+                return;
+            Cell& c = next.child.cell;
+            const Map::Points points = map.Read(c.level, c.at, c.read, workers.Thread(worker));
+            if (const Map::Part* p = partOf(points, c.piece))
             {
-                c.rank += share * store[i].jacobian * std::fabs(store[i].Value() - mean);
-                c.power += share * store[i].jacobian * store[i].Value();
-            }
-            if (c.ranked) c.rank += c.power / std::sqrt(double(from.points.size()));
-            for (std::uint32_t i : inherited[o])
-                c.local += share * store[i].jacobian * store[i].Value();
-            c.weight = from.weight;
-            // a cube the piece's box does not meet holds none of it, so it is not read
-            const auto box = pieceBoxes.find(c.piece);
-            bool meets = box != pieceBoxes.end();
-            for (int a = X; meets && a <= Z; ++a)
-            {
-                const double lo = map.Origin()[a] + map.Spacing(c.level) * double(c.at[a]), hi = lo + map.Spacing(c.level);
-                meets = lo <= box->second.second[a] && hi >= box->second.first[a];
-            }
-            if (!meets && inherited[o].empty())
-                continue;
-            const Map::Points points = meets ? map.Read(c.level, c.at, c.read, td) : Map::Points();
-            const Map::Part* p = partOf(points, c.piece);
-            if (p != nullptr)
-            {
+                next.found = true;
                 c.weight = p->weight * c.inclusion;
-                out.traced += lines(*p);
-                shade(*p, worker, child.fresh);
-                for (const Point& point : child.fresh) c.area += point.jacobian * c.weight;
+                next.traced = lines(*p);
+                locate(*p, worker, next.child.fresh);
             }
-            c.own = child.fresh.size();
-            c.points = inherited[o];
-            // a cube the piece's box does not meet holds none of it; one it meets is kept even when its read found none
-            if (p != nullptr || !c.points.empty()) out.children.push_back(std::move(child));
+        });
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> located;
+        for (std::size_t index = 0; index < pending.size(); ++index)
+            for (std::size_t i = 0; i < pending[index].child.fresh.size(); ++i)
+                located.emplace_back(std::uint32_t(index), std::uint32_t(i));
+        workers.Uncounted(located.size(), cooperate, [&](std::size_t index, std::size_t worker)
+        {
+            workers[worker].Watch(part.owner);
+            light(pending[located[index].first].child.fresh[located[index].second], worker);
+        });
+        // a cube the piece's box does not meet holds none of it; one it meets is kept even when its read found none
+        for (Pending& next : pending)
+        {
+            Cell& c = next.child.cell;
+            for (const Point& point : next.child.fresh) c.area += point.jacobian * c.weight;
+            c.own = next.child.fresh.size();
+            out[next.split].traced += next.traced;
+            if (next.found || !c.points.empty()) out[next.split].children.push_back(std::move(next.child));
         }
     };
 
@@ -544,11 +593,7 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
         if (!ahead.empty())
         {
             std::vector<Split> done(ahead.size());
-            workers.For(ahead.size(), cooperate, [&](std::size_t i, std::size_t worker)
-            {
-                workers[worker].Watch(part.owner);
-                split(*ahead[i], worker, done[i]);
-            }, 0);
+            splitAll(ahead, done);
             for (std::size_t i = 0; i < ahead.size(); ++i) held.emplace(ahead[i], std::move(done[i]));
         }
         while (shaded < part.budget && !queue.empty())

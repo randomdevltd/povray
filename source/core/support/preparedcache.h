@@ -328,7 +328,7 @@ class PreparedCaches final
         std::set<std::string> used;
         unsigned int loaded = 0, built = 0, verified = 0, trimmed = 0;
         std::uint64_t loadedBytes = 0, builtBytes = 0, trimmedBytes = 0;
-        unsigned int Next(const std::string& kind);
+        unsigned int Next(const std::string& kind, int ordinal);
         void Use(const std::string& path);
         void TrimLocked();
         void Info(const std::string& line);
@@ -339,8 +339,9 @@ class PreparedCaches final
 class PreparedCacheUnit final
 {
     public:
-        /// No `caches` saves nothing; the store numbers each `kind` in preparation order, and `detail` joins the key.
-        PreparedCacheUnit(PreparedCaches *caches, const std::string& kind, std::uint64_t detail);
+        /// No `caches` saves nothing; the store numbers each `kind` in preparation order, or by `ordinal` where steps run
+        /// side by side, and `detail` joins the key.
+        PreparedCacheUnit(PreparedCaches *caches, const std::string& kind, std::uint64_t detail, int ordinal = -1);
         PreparedCacheUnit(const PreparedCacheUnit&) = delete;
         PreparedCacheUnit& operator=(const PreparedCacheUnit&) = delete;
         ~PreparedCacheUnit();

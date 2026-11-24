@@ -744,10 +744,14 @@ void PreparedCaches::TrimLocked()
     }
 }
 
-unsigned int PreparedCaches::Next(const std::string& kind)
+unsigned int PreparedCaches::Next(const std::string& kind, int ordinal)
 {
     std::lock_guard<std::mutex> guard(lock);
-    return ordinals[kind]++;
+    unsigned int& next = ordinals[kind];
+    if (ordinal < 0)
+        return next++;
+    next = std::max(next, unsigned(ordinal) + 1);
+    return unsigned(ordinal);
 }
 
 void PreparedCaches::Info(const std::string& line)
@@ -777,13 +781,13 @@ void PreparedCaches::Summarise()
                        Size(trimmedBytes).c_str(), directory.c_str(), Size(maxBytes).c_str());
 }
 
-PreparedCacheUnit::PreparedCacheUnit(PreparedCaches *store, const std::string& kind, uint64_t detail) :
+PreparedCacheUnit::PreparedCacheUnit(PreparedCaches *store, const std::string& kind, uint64_t detail, int ordinal) :
     caches(store)
 {
     if (caches == nullptr)
         return;
     start = std::chrono::steady_clock::now();
-    name = kind + std::to_string(caches->Next(kind));
+    name = kind + std::to_string(caches->Next(kind, ordinal));
     key = CacheKey(caches->SceneKey()).Add(name).Add(detail).Value();
     // the scene key in the name lets a render ask whether caches of its key exist before it knows their details
     path = caches->Directory() + "/" + name + "-" + Hex(caches->SceneKey()) + "-" + Hex(key) + ".povc";

@@ -276,7 +276,7 @@ public:
     TintedSurfaceEmitter(std::shared_ptr<const Emitter> primary, const MathColour& tint) :
         primary(std::move(primary)), tint(tint), intensity(this->primary->Intensity() * tint) {}
     bool IsSurface() const override { return true; }
-    void ResolveGeometry() const override { primary->ResolveGeometry(); }
+    void ResolveGeometry(const SceneData& scene) const override { primary->ResolveGeometry(scene); }
     void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { primary->AccumulateSurfaceGuide(target); }
     const Vector3d& Centre() const override { return primary->Centre(); }
     double Radius() const override { return primary->Radius(); }
@@ -337,7 +337,7 @@ public:
         intensity = this->field->IntegratedRadiance() + (includePrimary ? this->primary->Intensity() : MathColour());
     }
     bool IsSurface() const override { return true; }
-    void ResolveGeometry() const override { geometry.ResolveDeferred(); }
+    void ResolveGeometry(const SceneData&) const override { geometry.ResolveDeferred(); }
     void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { target.AddScaled(guide, 1.0); }
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
