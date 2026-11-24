@@ -651,6 +651,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/mesh_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/prepared_caches.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/cache_budget.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/cache_budget_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/shadow_order.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/thread_identity.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/csg_mesh_media_shadow.sh \$(top_builddir)/unix/povray \$(top_srcdir)
