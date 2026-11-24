@@ -449,6 +449,7 @@ SceneData::SceneData() :
     firstMediaPrecedence = UINT_MAX;
     subsurfaceErrorBound = 0.1;
     subsurfaceMemory = kSubsurfaceUncappedMB;
+    subsurfaceInternalPaths = false;
 
     bspMaxDepth = 0;
     bspObjectIsectCost = bspBaseAccessCost = bspChildAccessCost = bspMissChance = 0.0f;

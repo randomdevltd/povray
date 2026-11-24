@@ -1639,6 +1639,17 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       double(stats[Subsurface_Photon_Boundaries_Computed]), double(stats[Subsurface_Photon_Boundaries_Reused]), mean, sqrt(variance));
     }
 
+    if (stats[Emitter_Own_Draws] > 0)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Lighting", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Info("Volume light samples drawn by surfaces of the object holding the light: %.0f of %.0f emitter connections; "
+                      "%.0f dropped behind a one-sided receiver, %.0f shadow rays (of %.0f emitter shadow calls), %.0f of them fully "
+                      "blocked; %.3f thread-seconds.", double(stats[Emitter_Own_Draws]), double(stats[Emitter_Connections]),
+                      double(stats[Emitter_Own_Behind]), double(stats[Emitter_Own_Shadow_Rays]), double(stats[Emitter_Shadow_Calls]),
+                      double(stats[Emitter_Own_Shadow_Blocked]), double(stats[Emitter_Own_Nanoseconds]) * 1e-9);
+    }
+
     if ((stats[Subsurface_Cloud_Attempts] > 0) || (stats[Subsurface_Cloud_Estimated] > 0))
     {
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
@@ -1656,10 +1667,21 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       double(stats[Subsurface_Cloud_Lifted]), double(stats[Subsurface_Cloud_Dropped_Inside]),
                       double(stats[Subsurface_Cloud_Dropped_Outside]), double(stats[Subsurface_Cloud_Dropped_Thin]),
                       double(stats[Subsurface_Cloud_Dropped_Sheet]), double(stats[Subsurface_Cloud_Estimated]));
-        if (stats[Subsurface_Cloud_Internal_Read] + stats[Subsurface_Cloud_Internal_Walked] > 0)
-            messages.Info("Method 2 buried lights: %.0f shading points read their scattered light from the cloud; %.0f walked "
-                          "their own paths for all of it.", double(stats[Subsurface_Cloud_Internal_Read]),
-                          double(stats[Subsurface_Cloud_Internal_Walked]));
+        if (stats[Subsurface_Cloud_Internal_Read] + stats[Subsurface_Cloud_Internal_Estimate_Read] + stats[Subsurface_Cloud_Internal_Nearest] +
+            stats[Subsurface_Cloud_Internal_Unserved] + stats[Subsurface_Cloud_Internal_Walked] > 0)
+            messages.Info("Method 2 buried lights: %.0f shading points read their light from the cloud's points about them, %.0f of "
+                          "them below their minimum_influence; %.0f took the nearest point of their class, none lying within the "
+                          "gather; %.0f were left unserved; %.0f walked their own paths at render time.",
+                          double(stats[Subsurface_Cloud_Internal_Read] + stats[Subsurface_Cloud_Internal_Estimate_Read]),
+                          double(stats[Subsurface_Cloud_Internal_Estimate_Read]), double(stats[Subsurface_Cloud_Internal_Nearest]),
+                          double(stats[Subsurface_Cloud_Internal_Unserved]), double(stats[Subsurface_Cloud_Internal_Walked]));
+        if (stats[Subsurface_Discard_Single_Calls] + stats[Subsurface_Discard_Exit_Calls] + stats[Subsurface_Discard_Estimate_Calls] > 0)
+            messages.Info("Method 2 light draws tested for lying inside the material at render time: single scattering %.0f (%.0f "
+                          "discarded), exit irradiance %.0f (%.0f), minimum_influence estimate %.0f (%.0f); %.3f thread-seconds.",
+                          double(stats[Subsurface_Discard_Single_Calls]), double(stats[Subsurface_Discard_Single]),
+                          double(stats[Subsurface_Discard_Exit_Calls]), double(stats[Subsurface_Discard_Exit]),
+                          double(stats[Subsurface_Discard_Estimate_Calls]), double(stats[Subsurface_Discard_Estimate]),
+                          double(stats[Subsurface_Discard_Nanoseconds]) * 1e-9);
         if (stats[Subsurface_Cloud_Light_Nanoseconds] > 0)
             messages.Info("Method 2 cloud lighting: %.3f thread-seconds lighting cloud points; %.3f of them on %.0f points' buried "
                           "lights, %.0f paths (one per sample and colour channel) connecting at %.0f collisions.",
@@ -1698,14 +1720,6 @@ void View::GetStatistics(POVMS_Object& renderStats)
             }
             messages.Info("Method 2 tables: %.0f boundaries and %.0f layer tables built, %.0f dropped for the %g MB cap, peak %.2f MB alive.",
                           cloud.boundaries, cloud.layers, cloud.evicted, kSubsurfaceTablesMB, cloud.tablesPeakBytes / 1048576.0);
-            const char *reasons[kUnservedReasons] = {
-                "it is an open sheet (a disc, or a mesh whose triangles leave a border), with no inside for light to diffuse through",
-                "its part has a light the object's other parts were not found to have",
-                "the diffusion's reach is not finite",
-                "its cells lie too far from the origin to be numbered",
-                "its surface map found no surface on it at any level",
-                "",
-            };
             for (const auto& object : viewData.subsurfaceCache->Budgets())
                 messages.Info("Method 2 on the %s: area %.4g, domain_cells %.0f, points %.4g apart (surface map level %d).",
                               object.description.c_str(), object.area, object.budget, object.spacing, object.level);
@@ -1715,7 +1729,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
                                      "shading points of the %s; each was lit as its exit point.", double(object.count), object.description.c_str());
                 else
                     messages.Warning(kWarningGeneral, "Subsurface method 2 left %.0f shading points of the %s without diffuse subsurface light, "
-                                     "as %s.", double(object.count), object.description.c_str(), reasons[object.reason]);
+                                     "as %s.", double(object.count), object.description.c_str(), SubsurfaceUnservedText(object.reason));
         }
     }
 

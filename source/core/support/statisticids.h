@@ -342,6 +342,21 @@ typedef enum INTSTATS
     Subsurface_Cloud_Internal_Paths, ///< the paths walked for them, one per sample and colour channel
     Subsurface_Cloud_Internal_Collisions, ///< the collisions those paths connected to the buried lights from
     Subsurface_Cloud_Internal_Nanoseconds, ///< thread time those paths took
+    Subsurface_Cloud_Internal_Estimate_Read, ///< shading points below their minimum_influence that read their buried lights from the cloud
+    Subsurface_Cloud_Internal_Nearest, ///< shading points that took the nearest cloud point of their class, none lying within the gather
+    Subsurface_Cloud_Internal_Unserved, ///< shading points of a body with a buried light the cloud could not serve
+    Emitter_Own_Draws, ///< volume light samples drawn by ordinary surface shading of an object inside the light's container
+    Emitter_Own_Behind, ///< of them, dropped behind a one-sided receiver before any shadow ray
+    Emitter_Own_Shadow_Rays, ///< of them, shadow rays traced
+    Emitter_Own_Shadow_Blocked, ///< of those, fully blocked
+    Emitter_Own_Nanoseconds, ///< thread time those draws took, shadow rays included
+    Subsurface_Discard_Single_Calls, ///< single scattering light draws tested for lying inside the material, then discarded if they do
+    Subsurface_Discard_Single,
+    Subsurface_Discard_Exit_Calls, ///< the cloud exit irradiance's light draws, tested the same way
+    Subsurface_Discard_Exit,
+    Subsurface_Discard_Estimate_Calls, ///< the minimum_influence estimate's light draws, tested the same way
+    Subsurface_Discard_Estimate,
+    Subsurface_Discard_Nanoseconds, ///< thread time those tests took at render time
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample

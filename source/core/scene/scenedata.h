@@ -364,6 +364,7 @@ class SceneData
         /// point-cloud method: the memory all clouds may take, in MB, past which the render stops; 0, the default,
         /// leaves the clouds uncapped
         double subsurfaceMemory;
+        bool subsurfaceInternalPaths; ///< walk each shading point's own buried-light paths at render time instead of reading the cloud: a reference
 
         // ********************************************************************************
         // temporary variables for BSP testing ... we may or may not keep these in future
