@@ -1660,6 +1660,12 @@ void View::GetStatistics(POVMS_Object& renderStats)
             messages.Info("Method 2 buried lights: %.0f shading points read their scattered light from the cloud; %.0f walked "
                           "their own paths for all of it.", double(stats[Subsurface_Cloud_Internal_Read]),
                           double(stats[Subsurface_Cloud_Internal_Walked]));
+        if (stats[Subsurface_Cloud_Light_Nanoseconds] > 0)
+            messages.Info("Method 2 cloud lighting: %.3f thread-seconds lighting cloud points; %.3f of them on %.0f points' buried "
+                          "lights, %.0f paths (one per sample and colour channel) connecting at %.0f collisions.",
+                          double(stats[Subsurface_Cloud_Light_Nanoseconds]) * 1e-9, double(stats[Subsurface_Cloud_Internal_Nanoseconds]) * 1e-9,
+                          double(stats[Subsurface_Cloud_Internal_Points]), double(stats[Subsurface_Cloud_Internal_Paths]),
+                          double(stats[Subsurface_Cloud_Internal_Collisions]));
         if (viewData.subsurfaceCache)
         {
             SubsurfaceCloudStatistics cloud = viewData.subsurfaceCache->Statistics();
