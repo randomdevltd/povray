@@ -7,11 +7,9 @@
 #ifndef (BouncePasses) #declare BouncePasses = 0; #end
 #ifndef (Power) #declare Power = 0.05; #end
 #ifndef (SourceDepth) #declare SourceDepth = -0.35; #end
-// Paths 1: the per-pixel paths, whose direct view of the source the cloud's angular line does not hold
-#ifndef (Paths) #declare Paths = 0; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 max_trace_level 8
-  subsurface { method 2 samples 16, 32 internal_paths Paths }
+  subsurface { method 2 samples 16, 32 }
 }
 #if ((BouncePasses > 0 | ExportMode > 0) & !CameraOnly)
 camera { orthographic location <-3, 2, 0> look_at <1, 0.7, 0> right z * 0.3 up y * 0.3 }

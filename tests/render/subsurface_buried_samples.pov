@@ -4,9 +4,7 @@
 #version 3.7;
 #ifndef (Single) #declare Single = 0; #end
 #ifndef (LightSamples) #declare LightSamples = 1; #end
-// Paths 1: the per-pixel paths instead of the cloud
-#ifndef (Paths) #declare Paths = 0; #end
-global_settings { assumed_gamma 1 mm_per_unit 1 subsurface { method 2 samples 16, Single internal_paths Paths } }
+global_settings { assumed_gamma 1 mm_per_unit 1 subsurface { method 2 samples 16, Single } }
 camera { orthographic location <0, 3, -0.001> look_at 0 right x * 2.4 up z * 1.8 }
 background { rgb 0 }
 box { <-1, -1, -1>, <1, 0, 1>

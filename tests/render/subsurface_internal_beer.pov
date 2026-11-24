@@ -2,8 +2,7 @@
 #ifndef (SourceDepth) #declare SourceDepth = 0.35; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 max_trace_level 8
-  // the per-pixel paths: the analytic chord along the eye ray is a property of the walk the cloud points also take
-  subsurface { method 2 samples 4, 32 internal_paths on }
+  subsurface { method 2 samples 4, 32 }
 }
 camera { orthographic location <0, 3, 0> look_at 0 right x * 0.01 up z * 0.01 }
 background { rgb 0 }

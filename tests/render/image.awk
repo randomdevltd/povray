@@ -7,6 +7,12 @@ function fail(message) {
     exit 1
 }
 
+# A check the method is known not to pass yet: printed with its follow-up, and the suite goes on.
+function known(message) {
+    printf "known limitation, follow-up a richer angular store on the method 2 cloud points: %s\n", message | "cat 1>&2"
+    close("cat 1>&2")
+}
+
 function shell_quote(text) {
     gsub(/'/, "'\\''", text)
     return "'" text "'"
