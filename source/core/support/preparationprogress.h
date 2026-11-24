@@ -3,6 +3,7 @@
 
 #include "core/configcore.h"
 #include "base/messenger.h"
+#include "core/support/parallel.h"
 
 #include <atomic>
 #include <cstdarg>
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -41,6 +43,8 @@ public:
     /// `counted`, if given, is work done that Advance does not count, read on the preparing thread when reporting.
     void Begin(const char *name, std::size_t phaseTotal, const std::function<std::size_t()>& counted = {})
     {
+        cost.reset();
+        cost.reset(new critical_path::Scope());
         phase = name;
         total = phaseTotal;
         extra = counted;
@@ -103,6 +107,11 @@ public:
         if (Done() != lastReported)
             Report(now);
         Emit(Format("finished %.1fs", Seconds(start, now)), false);
+        // CPU over the critical path is how many threads the phase kept busy, whatever else the machine ran
+        if ((messages != nullptr) && cost && (cost->Path() > 0.0))
+            messages->Info("%s", Format("Preparation cost: %s CPU %.1fs, critical path %.1fs (%.2fx)", phase.c_str(), cost->Cpu(),
+                                        cost->Path(), cost->Cpu() / cost->Path()).substr(0, width).c_str());
+        cost.reset();
         phase.clear();
         extra = nullptr;
         watched = nullptr;
@@ -149,6 +158,7 @@ private:
     std::function<std::string()> watched;
     std::atomic<std::size_t> done{0};
     Clock::time_point start, reported, moved, warned;
+    std::unique_ptr<critical_path::Scope> cost;
 };
 
 /// Advances the preparation progress, if there is one.

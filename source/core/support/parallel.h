@@ -10,12 +10,71 @@
 #include <cstddef>
 #include <condition_variable>
 #include <exception>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
 
+#include <time.h>
+
 namespace pov
 {
+
+/// Thread CPU along a stage's longest chain of work, measured where a stage opens a Scope on its thread: on an idle machine
+/// with enough cores it is the stage's wall time, and the stage's CPU over it is how many threads it keeps busy.
+namespace critical_path
+{
+
+inline double ThreadSeconds()
+{
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+    timespec now;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) == 0)
+        return double(now.tv_sec) + 1.0e-9 * double(now.tv_nsec);
+#endif
+    return 0.0;
+}
+
+/// This thread's own CPU since `start`, plus what parallel loops inside added beyond it: their longest worker to the path,
+/// all their workers to the CPU.
+struct Frame final
+{
+    double start = ThreadSeconds(), path = 0.0, cpu = 0.0;
+    double Own() const { return ThreadSeconds() - start; }
+};
+
+inline Frame*& Current()
+{
+    static thread_local Frame* frame = nullptr;
+    return frame;
+}
+
+/// Makes the work on this thread until it ends a frame of its own; on ending, the enclosing frame on this thread, if any,
+/// gains what parallel loops added to it.
+class Scope final
+{
+public:
+    Scope() : outer(Current()) { Current() = &frame; }
+    ~Scope()
+    {
+        Current() = outer;
+        if (outer != nullptr)
+        {
+            outer->path += frame.path;
+            outer->cpu += frame.cpu;
+        }
+    }
+    Scope(const Scope&) = delete;
+    Scope& operator=(const Scope&) = delete;
+    double Own() const { return frame.Own(); }
+    double Path() const { return frame.Own() + frame.path; }
+    double Cpu() const { return frame.Own() + frame.cpu; }
+private:
+    Frame frame;
+    Frame* outer;
+};
+
+}
 
 // Calls function(index, worker) for every index below count, the caller being worker 0. With `watched`, cooperate is
 // called between the caller's items, else at most every 100 ms. The failure reported is the lowest failing index's, else cooperate's.
@@ -37,6 +96,9 @@ void ParallelFor(std::size_t count, std::size_t threadCount, const Function& fun
         return;
     }
 
+    // inside a measured stage each worker is a frame; the loop adds its longest worker to the caller's path
+    critical_path::Frame* const measured = critical_path::Current();
+    std::vector<double> paths(measured ? threadCount : 0), cpus(measured ? threadCount : 0);
     std::atomic<std::size_t> next(0);
     std::atomic<std::size_t> limit(count);
     std::atomic<bool> stopped(false);
@@ -74,6 +136,13 @@ void ParallelFor(std::size_t count, std::size_t threadCount, const Function& fun
     };
     auto run = [&](std::size_t worker)
     {
+        std::unique_ptr<critical_path::Scope> scope(measured ? new critical_path::Scope() : nullptr);
+        struct Record final
+        {
+            critical_path::Scope* scope;
+            double* path, * cpu;
+            ~Record() { if (scope) { *path = scope->Path(); *cpu = scope->Cpu(); } }
+        } record{scope.get(), measured ? &paths[worker] : nullptr, measured ? &cpus[worker] : nullptr};
         while (!stopped.load(std::memory_order_relaxed))
         {
             const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
@@ -132,6 +201,13 @@ void ParallelFor(std::size_t count, std::size_t threadCount, const Function& fun
     }
     run(0);
     waitForWorkers(true);
+    if (measured)
+    {
+        // worker 0 is the caller's thread, whose frame already holds its own CPU and what its loops added
+        measured->path += *std::max_element(paths.begin(), paths.end()) - paths[0];
+        for (std::size_t worker = 1; worker < threadCount; ++worker)
+            measured->cpu += cpus[worker];
+    }
     if (failure)
         std::rethrow_exception(failure);
     if (stop)
