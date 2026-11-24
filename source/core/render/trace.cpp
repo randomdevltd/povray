@@ -2140,6 +2140,9 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     const bool byContribution = (mode == kLightSamplesByContribution) ||
                                                 ((mode == kLightSamplesDefault) && sceneData->lightSamplesByContribution);
                     lightingWeight = (byContribution && !ray.IsRadiosityRay()) ? std::min(1.0, double(weight) * filCol.WeightMaxAbs()) : 1.0;
+                    // experiment: a hit below the camera ray's first surface draws a quarter of its light samples
+                    if (byContribution && !ray.IsRadiosityRay() && (ray.GetTicket().traceLevel > 1))
+                        lightingWeight *= 0.25;
                     ComputeDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, layCol.colour(), classicContribution, att, isect.Object, relativeIor, rawnormal);
                     normalSpread = NormalSpread();
                     shadowFootprint = ShadowFootprint();
