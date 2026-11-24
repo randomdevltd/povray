@@ -7,7 +7,7 @@ trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 for setting in 1 2; do
     "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_source.pov" +w4 +h4 +wt2 +pr -a -d -p -v -gp \
-        +fp16 File_Gamma=1 Stochastic_Seed=0 Declare=Power=0.0$setting +o"internal$setting.ppm" >"internal$setting.log" 2>&1 ||
+        +fp16 File_Gamma=1 Stochastic_Seed=0 Declare=Power=0.0$setting Declare=Paths=1 +o"internal$setting.ppm" >"internal$setting.log" 2>&1 ||
         { cat "internal$setting.log"; exit 1; }
 done
 . "$SRCDIR/tests/render/image.sh"

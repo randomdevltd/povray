@@ -9,7 +9,8 @@
 #ifndef (Case) #declare Case=0; #end
 #ifndef (S) #declare S=1; #end
 #ifndef (Skin) #declare Skin=1e-6; #end
-global_settings { assumed_gamma 1 mm_per_unit 1000/S subsurface { method 2 samples 8,8 } }
+// the per-pixel paths: the exit search's roots are the walk's, which the cloud points also take, and pixels average its noise
+global_settings { assumed_gamma 1 mm_per_unit 1000/S subsurface { method 2 samples 8,8 internal_paths on } }
 background { rgb 0 }
 camera { location <0,0.03,-0.07>*S look_at <0,0,0> angle 40 }
 light_source { <0.05,0.08,-0.06>*S rgb 0.2 }
