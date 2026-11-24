@@ -1821,31 +1821,49 @@
    "items": [
     "bicubic_patch",
     "blob",
+    "bounded_by",
     "box",
+    "clipped_by",
     "composite",
     "cone",
     "cubic",
+    "cutaway_textures",
     "cylinder",
     "difference",
     "disc",
-    "global_lights",
+    "double_illuminate",
+    "dtag",
+    "finish",
     "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
     "intersection",
+    "inverse",
     "isosurface",
     "isosurface_mesh",
     "julia_fractal",
     "lathe",
     "lemon",
+    "light",
     "light_group",
     "light_source",
+    "material",
     "matrix",
     "merge",
     "mesh",
     "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
     "object",
     "ovus",
     "parametric",
     "photons",
+    "pigment",
     "plane",
     "poly",
     "polygon",
@@ -1854,6 +1872,7 @@
     "prism",
     "quadric",
     "quartic",
+    "radiosity",
     "rotate",
     "scale",
     "skein",
@@ -1862,15 +1881,20 @@
     "sor",
     "sphere",
     "sphere_sweep",
+    "split_union",
+    "sturm",
+    "subsurface",
     "superellipsoid",
     "tagged",
     "tags",
     "text",
+    "texture",
     "torus",
     "transform",
     "translate",
     "triangle",
-    "union"
+    "union",
+    "uv_mapping"
    ],
    "nested": {
     "photons": [
@@ -1879,11 +1903,17 @@
      "reflection",
      "refraction",
      "target"
+    ],
+    "radiosity": [
+     "importance"
+    ],
+    "subsurface": [
+     "domain_cells"
     ]
    },
    "sources": [
-    "parser.cpp:4388 Parse_Light_Group",
-    "parser.cpp:7574 Parse_Object"
+    "parser.cpp:7574 Parse_Object",
+    "parser.cpp:8813 Parse_Object_Mods"
    ]
   },
   "merge": {

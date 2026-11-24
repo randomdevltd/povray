@@ -30,9 +30,6 @@ const CURATION = {
     ...Object.fromEntries(SHAPE_BLOCKS.map((w) => [w, ['Parse_Object_Mods']])),
     ...Object.fromEntries(CSG_BLOCKS.map((w) => [w, ['Parse_Object', 'Parse_Object_Mods']])),
     ...Object.fromEntries(Object.entries(WITH_OWN_ITEMS).map(([w, fn]) => [w, [fn, 'Parse_Object_Mods']])),
-    // A light_group parses its own short modifier loop (transforms, global_lights, tags, photons), not the
-    // shared object-modifier loop, so a pigment or finish there is refused by both languages.
-    light_group: ['Parse_Light_Group', 'Parse_Object'],
     default: ['Parse_Default'],
     finish: ['Parse_Finish'],
     texture: ['Parse_Texture', 'Parse_Pattern'],

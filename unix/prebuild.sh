@@ -801,7 +801,6 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/volume_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/light_emission.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/surface_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/light_group_global_lights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/light_samples_by_contribution.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/trace_limit.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_legacy_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
