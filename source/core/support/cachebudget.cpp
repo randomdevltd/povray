@@ -40,6 +40,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 
 // C++ standard header files
 #include <algorithm>
@@ -176,7 +179,15 @@ void *CacheRegion::Allocate(std::size_t n, const std::shared_ptr<CacheBudget>& o
     account = owned;
     Pages(n);
     if ((budget != nullptr) && (account != nullptr))
+    {
+        // in its own pages it is built in place, unspillable until sealed
+        if (pages)
+        {
+            building = true;
+            budget->Building(std::int64_t(length));
+        }
         budget->Charge(*account, std::int64_t(length));
+    }
     return data;
 }
 
@@ -195,6 +206,8 @@ void CacheRegion::Adopt(const void *source, std::size_t n, const std::shared_ptr
         if (owner->Reserve(*owned, 2 * whole))
         {
             std::memcpy(Pages(n), source, n);
+            building = true;
+            owner->Building(whole);
             // the source's share: the caller frees it as this returns
             owner->Charge(*owned, -whole);
             return;
@@ -215,6 +228,11 @@ void CacheRegion::Adopt(const void *source, std::size_t n, const std::shared_ptr
 void CacheRegion::Seal(const char *name)
 {
     label = name;
+    if (building)
+    {
+        building = false;
+        budget->Building(-std::int64_t(length));
+    }
     if ((budget != nullptr) && pages)
         budget->Seal(*this);
 }
@@ -231,7 +249,10 @@ void CacheRegion::Release()
         wasMapped = mapped.load(std::memory_order_acquire);
         if (!wasMapped && (account != nullptr))
             budget->Charge(*account, -std::int64_t(length));
+        if (building)
+            budget->Building(-std::int64_t(length));
     }
+    building = false;
 #if !defined(_WIN32)
     if (pages)
         munmap(data, length);
@@ -255,7 +276,13 @@ CacheBudget::CacheBudget(std::uint64_t bytes, const std::string& spillDirectory,
     keepSpill(keep),
     spillCap(cap),
     threads(std::max(threadCount, 1u))
-{}
+{
+#if defined(__GLIBC__)
+    // large arrays come from and go back to the system directly, so a spilled cell's freed memory leaves the process
+    // instead of staying in a thread's heap arena
+    mallopt(M_MMAP_THRESHOLD, int(kRegionPages / 4));
+#endif
+}
 
 CacheBudget::~CacheBudget()
 {
@@ -303,6 +330,8 @@ void CacheBudget::Charge(CacheAccount& account, std::int64_t bytes)
     std::int64_t peak = account.peak.load(std::memory_order_relaxed);
     while ((held > peak) && !account.peak.compare_exchange_weak(peak, held, std::memory_order_relaxed)) {}
     const std::int64_t total = counted.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+    std::uint64_t most = peakHeld.load(std::memory_order_relaxed);
+    while ((total > std::int64_t(most)) && !peakHeld.compare_exchange_weak(most, std::uint64_t(total), std::memory_order_relaxed)) {}
     Note(total + std::int64_t(mappedResident.load(std::memory_order_relaxed)));
     if ((bytes > 0) && (Resident() > budget))
         MakeRoom();
@@ -320,6 +349,8 @@ bool CacheBudget::Reserve(CacheAccount& account, std::int64_t bytes)
     const std::int64_t held = account.resident.fetch_add(bytes, std::memory_order_relaxed) + bytes;
     std::int64_t peak = account.peak.load(std::memory_order_relaxed);
     while ((held > peak) && !account.peak.compare_exchange_weak(peak, held, std::memory_order_relaxed)) {}
+    std::uint64_t most = peakHeld.load(std::memory_order_relaxed);
+    while ((now + bytes > std::int64_t(most)) && !peakHeld.compare_exchange_weak(most, std::uint64_t(now + bytes), std::memory_order_relaxed)) {}
     Note(now + bytes + std::int64_t(mappedResident.load(std::memory_order_relaxed)));
     return true;
 }
@@ -342,19 +373,20 @@ void CacheBudget::MakeRoom()
             continue;
         break;
     }
-    // what remains is pinned or in use this moment: the overshoot is kept for the report
-    const std::uint64_t now = Resident();
-    if (now > budget)
-    {
-        std::uint64_t over = pinnedOver.load(std::memory_order_relaxed);
-        while ((now - budget > over) && !pinnedOver.compare_exchange_weak(over, now - budget, std::memory_order_relaxed)) {}
-    }
+    // what remains is pinned, being built or in use this moment, which the peak records
 }
 
-void CacheBudget::NoteSection(std::uint64_t bytes)
+void CacheBudget::NoteCell(std::uint64_t bytes)
 {
-    std::uint64_t largest = largestSection.load(std::memory_order_relaxed);
-    while ((bytes > largest) && !largestSection.compare_exchange_weak(largest, bytes, std::memory_order_relaxed)) {}
+    std::uint64_t largest = largestCell.load(std::memory_order_relaxed);
+    while ((bytes > largest) && !largestCell.compare_exchange_weak(largest, bytes, std::memory_order_relaxed)) {}
+}
+
+void CacheBudget::Building(std::int64_t bytes)
+{
+    const std::int64_t now = building.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+    std::uint64_t most = peakBuilding.load(std::memory_order_relaxed);
+    while ((now > std::int64_t(most)) && !peakBuilding.compare_exchange_weak(most, std::uint64_t(now), std::memory_order_relaxed)) {}
 }
 
 std::size_t CacheBudget::SpillSection(const std::string& label, const void *data, std::size_t n)
@@ -364,7 +396,6 @@ std::size_t CacheBudget::SpillSection(const std::string& label, const void *data
     {
         const std::size_t index = file.Append(label.c_str(), data, n);
         spillUsed.store(true, std::memory_order_relaxed);
-        NoteSection(n);
         return index;
     }
     catch (const CacheSpillFull& error)
@@ -487,6 +518,7 @@ bool CacheBudget::EvictOne()
             // written once: a block never changes after it is complete, so a later eviction only frees it
             const std::string bytes = victim->SpillBytes();
             victim->section = SpillSection(account.name, bytes.data(), bytes.size());
+            NoteCell(bytes.size());
             account.spillWrites.fetch_add(1, std::memory_order_relaxed);
             account.spillWriteBytes.fetch_add(bytes.size(), std::memory_order_relaxed);
         }
@@ -532,7 +564,7 @@ void CacheBudget::Fault(SpillBlock& block)
             // the section's bytes and the arrays they fill are both held while it is read back: counted before, so the
             // budget makes room for them
             transient = 2 * std::int64_t(entry.length);
-            NoteSection(entry.length);
+            NoteCell(entry.length);
             if (account != nullptr)
                 Charge(*account, transient);
             std::string bytes(std::size_t(entry.length), '\0');
@@ -849,14 +881,16 @@ std::vector<std::string> CacheBudget::Report() const
         lines.push_back(line + ".");
     }
     const std::uint64_t process = ProcessPeak();
-    std::string total = "Cache memory: budget " + MiB(double(budget)) + " (Max_Cache_Memory); peak " + MiB(double(Peak())) + " of caches resident";
+    std::string total = "Cache memory: budget " + MiB(double(budget)) + " (Max_Cache_Memory); peak " + MiB(double(Peak())) +
+                        " of caches resident with mapped pages, " + MiB(double(HeldPeak())) + " held";
     if (process > 0)
         total += "; process peak " + MiB(double(process));
     lines.push_back(total + ".");
-    char text[256];
-    std::snprintf(text, sizeof(text), "Cache memory: largest section %s; ceiling %s for %u threads (budget + threads x %u x largest section); "
-                  "passed the budget by at most %s.", MiB(double(LargestSection())).c_str(), MiB(double(Ceiling())).c_str(), threads,
-                  kOvershootSections, MiB(double(Overshoot())).c_str());
+    char text[512];
+    std::snprintf(text, sizeof(text), "Cache memory: ceiling on held caches %s for %u threads (budget + grids built at once %s + threads x %u "
+                  "x largest cell %s); held passed the budget by %s.", MiB(double(Ceiling())).c_str(), threads,
+                  MiB(double(BuildingPeak())).c_str(), kOvershootCells, MiB(double(LargestCell())).c_str(),
+                  MiB(double(HeldPeak() > budget ? HeldPeak() - budget : 0)).c_str());
     lines.push_back(text);
     {
         std::lock_guard<std::mutex> spillGuard(spillLock);

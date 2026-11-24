@@ -149,6 +149,7 @@ class CacheRegion final
         std::size_t slot = ~std::size_t(0);
         std::size_t section = ~std::size_t(0); ///< its section of the spill file while mapped from it
         bool busy = false; ///< being written to the spill file outside the budget's lock; Release waits for it
+        bool building = false; ///< in pages of its own and counted, but not yet sealed, so it cannot be spilled
         std::size_t trimmed = 0; ///< where the next trim of its mapped pages starts
         void *Pages(std::size_t n);
 };
@@ -182,16 +183,20 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         void Pin(SpillBlock& block) { if (!block.TryPin()) Fault(block); }
         /// The total resident, counted and measured.
         std::uint64_t Resident() const;
+        /// The peak of the caches with the mapped pages last measured.
         std::uint64_t Peak() const { return peakTotal.load(std::memory_order_relaxed); }
-        /// How far the caches passed the budget at most, held by pins and builds that could not be spilled at the time.
-        std::uint64_t Overshoot() const { return pinnedOver.load(std::memory_order_relaxed); }
-        /// The largest section spilled or mapped so far: a cell's arrays or a whole sealed grid.
-        std::uint64_t LargestSection() const { return largestSection.load(std::memory_order_relaxed); }
-        /// The documented ceiling on the caches' peak: the budget plus threads x kOvershootSections x the largest section.
-        std::uint64_t Ceiling() const { return budget + std::uint64_t(threads) * kOvershootSections * LargestSection(); }
-        /// Sections one thread can hold unspillable at once: 2 nested gathers of up to 27 cells, 2 nested cells being
-        /// built and a read-back's two copies.
-        static constexpr unsigned kOvershootSections = 2 * 27 + 2 + 2;
+        /// The peak of the caches held in memory, without mapped pages, which are clean file pages the system can drop.
+        std::uint64_t HeldPeak() const { return peakHeld.load(std::memory_order_relaxed); }
+        /// The most bytes of grids and lattices being built at once, counted but not spillable until they are sealed.
+        std::uint64_t BuildingPeak() const { return peakBuilding.load(std::memory_order_relaxed); }
+        /// The largest cell section spilled or read back so far.
+        std::uint64_t LargestCell() const { return largestCell.load(std::memory_order_relaxed); }
+        /// The documented ceiling on HeldPeak: the budget, the grids built at once, and threads x kOvershootCells x the
+        /// largest cell.
+        std::uint64_t Ceiling() const { return budget + BuildingPeak() + std::uint64_t(threads) * kOvershootCells * LargestCell(); }
+        /// Cells one thread can hold unspillable at once: 2 nested gathers of up to 27 cells, 2 nested cells being built
+        /// and a read-back's two copies.
+        static constexpr unsigned kOvershootCells = 2 * 27 + 2 + 2;
         /// Throws, listing them, when the pinned caches alone pass the budget; before the first pixel.
         void CheckPinned() const;
         /// One line for each cache with figures, then a total.
@@ -226,8 +231,8 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         std::vector<CacheRegion *> mappings; ///< regions mapped from the spill file, whose pages can be dropped
         std::size_t mappingHand = 0;
         std::atomic<std::uint64_t> mappedResident{0}; ///< the mapped regions' pages last measured in this process's page tables
-        std::atomic<std::uint64_t> pinnedOver{0}; ///< how far pinned and in-use caches passed the budget during the render
-        std::atomic<std::uint64_t> largestSection{0};
+        std::atomic<std::uint64_t> peakHeld{0}, peakBuilding{0}, largestCell{0};
+        std::atomic<std::int64_t> building{0};
         std::thread watcher;
         std::condition_variable wake, regionIdle;
         bool stopping = false;
@@ -236,7 +241,8 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         bool EvictOne();
         bool MapOne();
         std::uint64_t TrimMapped(std::uint64_t bytes);
-        void NoteSection(std::uint64_t bytes);
+        void NoteCell(std::uint64_t bytes);
+        void Building(std::int64_t bytes);
         void StartWatcher();
         std::size_t SpillSection(const std::string& label, const void *data, std::size_t n);
         void Seal(CacheRegion& region);

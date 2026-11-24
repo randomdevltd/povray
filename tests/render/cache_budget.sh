@@ -34,12 +34,12 @@ has tight 'Cachememory:budget8.0MiB(Max_Cache_Memory)' || fail "the budget line 
 has tight 'Cachememory:spillfile.*:[0-9.]*MiBlive,peak[0-9.]*MiBlive,[0-9.]*MiBlong,cap20480.0MiB(Cache_Max_Size)' ||
     { cat cachebudget_tight.log; fail "the spill file's size was not logged"; }
 
-# sixteen threads stay below the logged ceiling, the budget plus threads x 58 x the largest section
+# sixteen threads hold their caches below the logged ceiling: the budget, the grids built at once and threads x 58 x the largest cell
 render sixteen +wt16 Max_Cache_Memory=8 || { cat cachebudget_sixteen.log; fail "the scene did not render on 16 threads under a budget"; }
 text sixteen; pixels sixteen
 cmp -s cachebudget_plain.px cachebudget_sixteen.px || fail "16 threads under a budget rendered differently"
-peak=$(sed -n 's/.*peak\([0-9.]*\)MiBofcachesresident.*/\1/p' cachebudget_sixteen.txt)
-ceiling=$(sed -n 's/.*ceiling\([0-9.]*\)MiBfor16threads.*/\1/p' cachebudget_sixteen.txt)
+peak=$(sed -n 's/.*MiBofcachesresidentwithmappedpages,\([0-9.]*\)MiBheld.*/\1/p' cachebudget_sixteen.txt)
+ceiling=$(sed -n 's/.*ceilingonheldcaches\([0-9.]*\)MiBfor16threads.*/\1/p' cachebudget_sixteen.txt)
 awk -v p="$peak" -v c="$ceiling" 'BEGIN { exit !((p > 0) && (c > 8) && (p <= c)) }' ||
     { cat cachebudget_sixteen.log; fail "16 threads peaked at $peak MiB of caches, past the ceiling of $ceiling MiB"; }
 
