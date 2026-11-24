@@ -128,6 +128,21 @@ enum SubsurfaceUnserved
     kUnservedReasons
 };
 
+/// What a reason left a shading point without, as a warning names it.
+inline const char* SubsurfaceUnservedText(SubsurfaceUnserved reason)
+{
+    static const char* const reasons[kUnservedReasons + 1] = {
+        "it is an open sheet (a disc, or a mesh whose triangles leave a border), with no inside for light to diffuse through",
+        "its part has a light the object's other parts were not found to have",
+        "the diffusion's reach is not finite",
+        "its cells lie too far from the origin to be numbered",
+        "its surface map found no surface on it at any level",
+        "",
+        "",
+    };
+    return reasons[(reason >= 0 && reason <= kUnservedReasons) ? reason : kUnservedReasons];
+}
+
 /// The depth level of a cell whose step the diffusion and pixel rules alone set.
 const int kCloudNoDepthLevel = -10000;
 
@@ -204,7 +219,7 @@ struct SubsurfaceCell final
     std::vector<float> photonEntry; ///< entry-filtered photons, in point id order, for core reconstruction
     std::vector<float> entry; ///< where the body looks up flesh: per point, the flesh times skin its light enters by, then its emission, per channel
     std::vector<float> internal; ///< where the body holds a buried volume light: per point, the scattered radiance inside heading out and its lean with the cosine, per channel
-    std::vector<std::int32_t> internalPart; ///< beside internal: per point, the part whose material and lights it was found with, or -1 where the cloud cannot carry it
+    std::vector<std::uint64_t> internalClass; ///< beside internal: per point, the key of the buried lights and material constants it was found with (SubsurfaceInternalClass), 0 for none
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;

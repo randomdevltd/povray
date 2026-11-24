@@ -68,7 +68,7 @@ static const char* const kPov4BlockItems_triangle[] = { "bounded_by", "clipped_b
 static const char* const kPov4BlockItems_union[] = { "bicubic_patch", "blob", "bounded_by", "box", "clipped_by", "composite", "cone", "cubic", "cutaway_textures", "cylinder", "difference", "disc", "double_illuminate", "dtag", "finish", "height_field", "hierarchy", "hollow", "interior", "interior_texture", "intersection", "inverse", "isosurface", "isosurface_mesh", "julia_fractal", "lathe", "lemon", "light", "light_group", "light_source", "material", "matrix", "merge", "mesh", "mesh2", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "object", "ovus", "parametric", "photons", "pigment", "plane", "poly", "polygon", "polynomial", "portal", "prism", "quadric", "quartic", "radiosity", "rotate", "scale", "skein", "skein_mesh", "smooth_triangle", "sor", "sphere", "sphere_sweep", "split_union", "sturm", "subsurface", "superellipsoid", "tagged", "tags", "text", "texture", "torus", "transform", "translate", "triangle", "union", "uv_mapping" };
 static const char* const kPov4BlockItems_photons[] = { "adc_bailout", "area_light", "autostop", "collect", "count", "expand_thresholds", "gather", "global", "jitter", "load_file", "max_trace_level", "media", "memory", "method", "pass_through", "quality", "radius", "reflection", "refraction", "save_file", "spacing", "target" };
 static const char* const kPov4BlockItems_radiosity[] = { "adc_bailout", "always_sample", "brightness", "brilliance", "count", "error_bound", "gray_threshold", "grey_threshold", "importance", "load_file", "low_error_factor", "max_sample", "maximum_reuse", "media", "minimum_reuse", "nearest_count", "normal", "pretrace_end", "pretrace_start", "recursion_limit", "save_file", "subsurface" };
-static const char* const kPov4BlockItems_subsurface[] = { "anisotropy", "color", "colour", "depth", "domain_cells", "emission", "error_bound", "memory", "method", "minimum_influence", "pigment", "radiosity", "samples", "spread", "thickness", "translucency", "volume_sampling" };
+static const char* const kPov4BlockItems_subsurface[] = { "anisotropy", "color", "colour", "depth", "domain_cells", "emission", "error_bound", "internal_paths", "memory", "method", "minimum_influence", "pigment", "radiosity", "samples", "spread", "thickness", "translucency", "volume_sampling" };
 static const char* const kPov4BlockItems_bokeh[] = { "pigment" };
 static const char* const kPov4BlockItems_screen[] = { "camera", "fallback", "max_trace_level" };
 static const char* const kPov4BlockItems_reflection[] = { "exponent", "falloff", "fresnel", "metallic" };
@@ -84,7 +84,7 @@ static const char* const kPov4NestedItems_6[] = { "thickness", "turbulence" };
 static const char* const kPov4NestedItems_7[] = { "anisotropy", "color", "colour", "depth", "emission", "method", "minimum_influence", "pigment", "spread", "thickness", "translucency", "volume_sampling" };
 static const char* const kPov4NestedItems_8[] = { "adc_bailout", "autostop", "count", "expand_thresholds", "gather", "global", "jitter", "load_file", "max_trace_level", "media", "memory", "method", "quality", "radius", "save_file", "spacing" };
 static const char* const kPov4NestedItems_9[] = { "adc_bailout", "always_sample", "brightness", "brilliance", "count", "error_bound", "gray_threshold", "grey_threshold", "load_file", "low_error_factor", "max_sample", "maximum_reuse", "media", "minimum_reuse", "nearest_count", "normal", "pretrace_end", "pretrace_start", "recursion_limit", "save_file", "subsurface" };
-static const char* const kPov4NestedItems_10[] = { "error_bound", "memory", "method", "radiosity", "samples" };
+static const char* const kPov4NestedItems_10[] = { "error_bound", "internal_paths", "memory", "method", "radiosity", "samples" };
 static const char* const kPov4NestedItems_11[] = { "reflection", "refraction" };
 static const char* const kPov4NestedItems_12[] = { "area_light", "global", "reflection", "refraction" };
 static const char* const kPov4NestedItems_13[] = { "eccentricity", "extinction" };
@@ -206,7 +206,7 @@ static const Pov4NestedSchema kPov4NestedSchemas[] = {
     { "finish", { "subsurface", kPov4NestedItems_7, 12 } },
     { "global_settings", { "photons", kPov4NestedItems_8, 16 } },
     { "global_settings", { "radiosity", kPov4NestedItems_9, 21 } },
-    { "global_settings", { "subsurface", kPov4NestedItems_10, 5 } },
+    { "global_settings", { "subsurface", kPov4NestedItems_10, 6 } },
     { "height_field", { "photons", kPov4NestedItems_0, 5 } },
     { "height_field", { "radiosity", kPov4NestedItems_1, 1 } },
     { "height_field", { "subsurface", kPov4NestedItems_2, 1 } },

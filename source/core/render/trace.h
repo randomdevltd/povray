@@ -106,6 +106,7 @@ struct ContainingInteriorsPointObjectCondition final : public PointObjectConditi
 };
 
 struct EmitterDraw;
+class Emitter;
 
 struct LitInterval final
 {
@@ -1342,7 +1343,10 @@ class Trace
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
-            bool internalServed = false; ///< whether the map gather found the buried lights' radiance at the exit point, from points of its own part
+            bool internalServed = false; ///< whether the cloud gave the buried lights' radiance at the exit point, from points of its own class
+            bool internalTried = false; ///< whether the cloud was read for it
+            bool internalNearest = false; ///< whether it came from the nearest point of the class, none lying within the gather's reach
+            std::uint64_t internalClass = 0; ///< the exit point's class (SubsurfaceInternalClass), 0 where it reads none
             MathColour internalRaw[2]; ///< that radiance, inside the surface heading out, before its exit factor, at the pivot cosine and its lean per unit cosine
         };
 
@@ -1492,7 +1496,17 @@ class Trace
             const PreciseMathColour& absorption, const PreciseMathColour& scattering,
             const std::vector<const LightSource*>& lights, double lightSamples, bool nested, std::uint64_t key, bool homogeneous,
             const SubsurfaceFlesh* skin, SubsurfaceInternalPart part = SubsurfaceInternalPart::kAll, bool cloud = false,
-            MathColour* slope = nullptr);
+            MathColour* slope = nullptr, const char* unserved = nullptr);
+        /// A buried volume light as a material receives it: the light, the emitter its paths connect to, and its share.
+        struct SubsurfaceInternalSource { const LightSource* light; const Emitter* emitter; MathColour scale; };
+        std::vector<SubsurfaceInternalSource> ssltScratchInternalSources;
+        /// The buried lights a shading point's paths gather from, of the lights it receives.
+        void CollectInternalSources(const Intersection& out, const std::vector<const LightSource*>& lights, PreparedSetId preparedSetId,
+                                    std::vector<SubsurfaceInternalSource>& sources);
+        /// The key under which cloud points serve each other's exit points with buried light: their sources, relative index and
+        /// finish constants; never 0.
+        std::uint64_t SubsurfaceInternalClass(const Intersection& out, const FINISH* finish, bool homogeneous,
+                                              const std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         /// The mean cosine inside of viewing directions cosine-weighted outside that refract in, about which a cloud point keeps its light.
         static double SubsurfaceInternalPivot(double eta);
         /// The share of cosine-weighted directions outside that refract in.
@@ -1505,22 +1519,30 @@ class Trace
         /// What a buried light's radiance inside the surface, heading out, becomes towards the eye: Ft / eta^2 by the refracted
         /// eye ray's cosine, or 0 for an eye inside the material.
         double SubsurfaceInternalExit(const Intersection& out, const Ray& eye, double eta, double* insideCosine = nullptr);
-        /// The buried lights' light leaving towards the eye: the cloud's scattered light, when given, and the eye ray's own
-        /// uncollided light, else the eye ray's own paths for all of it.
+        /// The buried lights' light leaving towards the eye: the cloud's, when given. Else the eye ray's own paths, which run only
+        /// when the scene asks for per-pixel paths; otherwise a point they would light stops the render, naming unserved.
         MathColour ComputeInternalAtExit(const Intersection& out, Ray& eye, double eta, const PreciseMathColour& absorption,
             const PreciseMathColour& scattering, const std::vector<const LightSource*>& lights, double lightSamples, bool nested,
-            std::uint64_t key, bool homogeneous, const SubsurfaceFlesh* skin, const MathColour* scattered);
+            std::uint64_t key, bool homogeneous, const SubsurfaceFlesh* skin, const MathColour* scattered, const char* unserved);
         /// A cloud point's buried light: the radiance inside heading out, over cosine-weighted viewing directions, by its own
         /// material; see doc/PERF.md.
         bool CloudInternalRadiance(const Intersection& hit, const Vector3d& outward, const std::vector<const LightSource*>& lights,
-                                   std::uint64_t key, TraceTicket& ticket, MathColour& value, MathColour& slope);
+                                   std::uint64_t key, TraceTicket& ticket, MathColour& value, MathColour& slope, std::uint64_t& cls);
         /// The translucency a finish carries, its untransported channels given the carried ones' mean.
         static PreciseMathColour CarriedTranslucency(const FINISH *finish);
         std::vector<const LightSource*> ssltScratchInternalLights;
         void LightCloudInternal(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int k, const Intersection& hit,
                                 const Vector3d& outward, const std::vector<char>& uses, TraceTicket& ticket);
         bool GatherCloudInternal(const Vector3d& x, const Vector3d& n, const Vector3d& u1, const Vector3d& u2, double farDepth,
-                                 ConstObjectPtr part, SubsurfaceCloud& cloud, MathColour result[2]);
+                                 std::uint64_t cls, SubsurfaceCloud& cloud, MathColour result[2], bool* nearest);
+        /// Measurement: whether ordinary surface shading is drawing a volume light of the object it shades, and whether the
+        /// minimum_influence estimate is drawing its lights.
+        bool emitterOwnTally = false, ssltEstimateTally = false;
+        /// Counts a test of whether a light draw lies inside the material, the calls in calls and the discards in the next id.
+        template<typename Test> bool TallyDiscard(IntStatsIndex calls, Test&& test);
+        bool ReadCloudInternal(const Intersection& out, const Ray& eye, const Vector3d& base, const SubsurfaceProfile& profile,
+                               const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud, bool opened, TraceTicket& ticket,
+                               const char*& reason);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,

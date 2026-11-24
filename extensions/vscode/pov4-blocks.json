@@ -3172,6 +3172,7 @@
         ],
         "subsurface": [
           "error_bound",
+          "internal_paths",
           "memory",
           "method",
           "radiosity",

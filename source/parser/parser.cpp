@@ -8723,6 +8723,8 @@ void Parser::Parse_Global_Settings()
                         if (!(sceneData->subsurfaceMemory >= 1.0))
                             Error("Subsurface memory must be at least 1 (MB).");
                     }
+                    else if (CurrentTokenText() == "internal_paths")
+                        sceneData->subsurfaceInternalPaths = ((int)Parse_Float() != 0);
                     else
                     {
                         UNGET
