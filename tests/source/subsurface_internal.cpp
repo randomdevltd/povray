@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -122,26 +123,33 @@ int main()
             [] { return 0.99; }), -std::expm1(-2.0) / 2.0);
     }
 
-    // Collision NEE owns the next straight segment; a reflected continuation owns its new segment.
-    const std::vector<double> sequence{0.1, 0.5, 0.5, 0.99, 0.0, 0.99, 0.99};
+    // Collision NEE owns the next straight segment; a reflected continuation owns its new segment. Roulette follows each
+    // event at the weight's fall since the start (here the albedo 0.5, survived by the draw 0.0), and restores the weight.
+    const std::vector<double> sequence{0.1, 0.5, 0.5, 0.0, 0.99, 0.0, 0.99, 0.99};
     size_t index = 0, segments = 0, connections = 0;
     const double reflected = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
         1.0, 1.0, 1.5, boundary,
         [&](const Vector3d&, const Vector3d&, double, double) { ++segments; return 1.0; },
         [&](const Vector3d&, double) { ++connections; return 2.0; },
         [&] { assert(index < sequence.size()); return sequence[index++]; });
-    Near(reflected, 2.5);
+    Near(reflected, 3.0);
     assert(segments == 2 && connections == 1 && index == sequence.size());
 
-    // An internal reflection keeps what the skin it crosses there passes.
-    index = 0;
-    const double skinned = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
-        1.0, 1.0, 1.5, boundary,
-        [&](const Vector3d&, const Vector3d&, double, double) { return 1.0; },
-        [&](const Vector3d&, double) { return 2.0; },
-        [&] { assert(index < sequence.size()); return sequence[index++]; },
-        [](const Vector3d&) { return 0.25; });
-    Near(skinned, 2.0 + 0.5 * 0.25);
+    // An internal reflection keeps what the skin it crosses there passes, as the walk's chance to go on: the draw 0.0
+    // survives the skin's 0.25 and gathers the reflected segment, the draw 0.3 ends the walk there.
+    for (double survive : {0.0, 0.3})
+    {
+        const std::vector<double> skinSequence{0.1, 0.5, 0.5, 0.0, 0.99, 0.0, survive, 0.99, 0.99};
+        index = 0;
+        const double skinned = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
+            1.0, 1.0, 1.5, boundary,
+            [&](const Vector3d&, const Vector3d&, double, double) { return 1.0; },
+            [&](const Vector3d&, double) { return 2.0; },
+            [&] { assert(index < skinSequence.size()); return skinSequence[index++]; },
+            [](const Vector3d&) { return 0.25; });
+        Near(skinned, (survive < 0.25) ? 3.0 : 2.0);
+        assert(index == ((survive < 0.25) ? skinSequence.size() : 7));
+    }
 
     // In an infinite homogeneous source, L=j/sigma_a, independent of scattering.
     std::mt19937_64 generator(736411);
@@ -158,6 +166,39 @@ int main()
                 [&] { return uniform(generator); });
         Near(sum / 100000, 1.0, 0.008);
     }
+    // In a sphere of radius 1 with internal reflection, the uncollided and collided parts sum to the whole walk in
+    // expectation; the collided part's first collision is drawn within each segment, so in an optically thin sphere every
+    // path collides and none returns zero.
+    auto sphere = [](const Vector3d& p, const Vector3d& d)
+    {
+        const double b = dot(p, d), c = p.lengthSqr() - 1.0;
+        const double t = -b + std::sqrt(std::max(0.0, b * b - c));
+        const Vector3d at = p + d * t;
+        return SubsurfaceInternalBoundary{t, at, at.normalized()};
+    };
+    auto falling = [](const Vector3d& p, double extinction) { return (1.0 - 0.5 * p.length()) / extinction; };
+    for (double depth : {0.6, 6.0})
+    {
+        const Vector3d entry(0.0, 0.0, 1.0), inward = Vector3d(0.3, 0.0, -1.0).normalized();
+        const size_t walks = 200000;
+        double mean[3] = {}, square[3] = {};
+        size_t zeros = 0;
+        const SubsurfaceInternalPart parts[3] = {SubsurfaceInternalPart::kAll, SubsurfaceInternalPart::kUncollided, SubsurfaceInternalPart::kCollided};
+        for (int k = 0; k < 3; ++k)
+            for (size_t w = 0; w < walks; ++w)
+            {
+                const double value = SampleSubsurfaceInternalRadiance(entry, inward, 0.1 * depth, 0.9 * depth, 1.3, sphere, source, falling,
+                    [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, parts[k]);
+                mean[k] += value / walks;
+                square[k] += value * value / walks;
+                if ((k == 2) && !(value > 0.0)) ++zeros;
+            }
+        double spread = 0.0;
+        for (int k = 0; k < 3; ++k) spread += (square[k] - mean[k] * mean[k]) / walks;
+        std::cout << "sphere of optical radius " << depth << ": whole " << mean[0] << ", parts " << mean[1] << " + " << mean[2] << '\n';
+        Near(mean[1] + mean[2], mean[0], 4.0 * std::sqrt(spread));
+        assert(zeros == 0);
+    }
     bool rejected = false;
     try
     {
@@ -166,17 +207,50 @@ int main()
     }
     catch (const std::invalid_argument&) { rejected = true; }
     assert(rejected);
-    // A defective stream that always survives roulette must throw, never hang or return a truncated estimate.
-    rejected = false;
-    try
+    // Zero-distance reflections under lossless total internal reflection. In a unit cube a path aimed at an edge reflects off
+    // one face there and meets the other at zero distance: it turns and travels on, as every part. A zero-thickness sheet
+    // returns the walk's point each time and its normal facing the walk: the walk turns back out through the face it just
+    // reflected from and ends, never hangs, as every part.
+    auto cube = [](const Vector3d& p, const Vector3d& d)
     {
-        SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1), 0.0, 1.0, 1.0,
-            distant, source, zero, [] { return 0.0; });
-    }
-    catch (const std::runtime_error& e)
+        double t = std::numeric_limits<double>::infinity();
+        int axis = 0;
+        for (int a = 0; a < 3; ++a)
+            if (d[a] != 0.0)
+            {
+                const double s = std::max(0.0, (((d[a] > 0.0) ? 1.0 : 0.0) - p[a]) / d[a]);
+                if (s < t) { t = s; axis = a; }
+            }
+        Vector3d n, at = p + d * t;
+        n[axis] = (d[axis] > 0.0) ? 1.0 : -1.0;
+        for (int a = 0; a < 3; ++a) // a hit within rounding of a face lies on it, so an edge is met exactly
+            if (std::abs(at[a] - std::round(at[a])) < 1e-12) at[a] = std::round(at[a]);
+        return SubsurfaceInternalBoundary{t, at, n};
+    };
+    auto sheet = [](const Vector3d& p, const Vector3d& d)
+    { return SubsurfaceInternalBoundary{0.0, p, Vector3d(0, 0, (d[Z] > 0.0) ? 1.0 : -1.0)}; };
+    // The same sheet as a boundary search finds it: each face found again a rounding error ahead rather than at zero, within
+    // the rounding the search states. The walk still ends rather than ping-pong between the two faces for ever.
+    auto refound = [](const Vector3d& p, const Vector3d& d)
+    { return SubsurfaceInternalBoundary{1e-16, p + d * 1e-16, Vector3d(0, 0, (d[Z] > 0.0) ? 1.0 : -1.0), 1e-12}; };
+    for (SubsurfaceInternalPart part : {SubsurfaceInternalPart::kAll, SubsurfaceInternalPart::kUncollided, SubsurfaceInternalPart::kCollided})
     {
-        rejected = std::string(e.what()).find("this is a renderer bug") != std::string::npos;
+        size_t corners = 0;
+        auto counting = [&](const Vector3d& p, const Vector3d& d)
+        {
+            const auto hit = cube(p, d);
+            if (!(hit.distance > 0.0)) ++corners;
+            return hit;
+        };
+        const double value = SampleSubsurfaceInternalRadiance(Vector3d(0.4, 0.2, 0.4), Vector3d(0.6, 0.53, 0.6).normalized(),
+            1e-6, 0.0, 1.5, counting, source, zero, [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, part);
+        assert(std::isfinite(value) && corners > 0);
+        const double flat = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(1, 0, 0.2).normalized(), 0.0, 1.0, 1.5,
+            sheet, source, zero, [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, part);
+        assert(flat == 0.0);
+        const double near = SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(1, 0, 0.2).normalized(), 0.0, 1.0, 1.5,
+            refound, source, zero, [&] { return uniform(generator); }, [](const Vector3d&) { return 1.0; }, part);
+        assert(std::isfinite(near) && near >= 0.0);
     }
-    assert(rejected);
     std::cout << "Internal subsurface analytical transport passed\n";
 }
