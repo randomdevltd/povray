@@ -295,6 +295,8 @@ void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, s
     sceneData->workThreads = workers;
     // Parser teardown has released rejected roots, unused declarations and default materials.
     sceneData->FinalizeScreenCameras();
+    // every light's tags are final: match each lit_by_tags query against them once, for the sets to share
+    sceneData->ResolveLitByTags();
     sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(sceneData->parsedCamera.filterTags));
     for (const Camera& camera : sceneData->cameras)
         sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(camera.filterTags));

@@ -661,6 +661,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Flags   = Old->Flags & ~FRAME_TARGET_FLAG;
     New->tags = Old->tags;
     New->inheritTags = Old->inheritTags;
+    New->litByTags = Old->litByTags;
     New->subsurfaceDomainCells = Old->subsurfaceDomainCells;
     New->photonTargetGroup = Old->photonTargetGroup;
     New->surfaceLight = Old->surfaceLight ? std::make_shared<MediaLight>(*Old->surfaceLight) : nullptr;

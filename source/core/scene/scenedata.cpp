@@ -53,6 +53,7 @@
 #include "core/lighting/subsurface.h"
 #include "core/material/noise.h"
 #include "core/material/pattern.h"
+#include "core/material/texture.h"
 #include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
 #include "core/scene/atmosphere.h"
@@ -322,6 +323,18 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
                 appendTags(light->tags);
             }
         }
+    // what each lit_by_tags query selects here decides which lights photons may land by
+    for (size_t query = 0; query < litByQueries.size(); ++query)
+    {
+        key << 'q' << litByQueries[query].expression.size() << ':' << litByQueries[query].expression;
+        for (size_t ordinal = 0; ordinal < lightSources.size(); ++ordinal)
+            if (takesPart(lightSources[ordinal]) && litByMembers[query][ordinal])
+                key << ',' << ordinal;
+        for (size_t ordinal = 0; ordinal < lightGroupLightSources.size(); ++ordinal)
+            if (takesPart(lightGroupLightSources[ordinal]) && litByGroupMembers[query][ordinal])
+                key << ",l" << ordinal;
+        key << ';';
+    }
     for (size_t i = 0; i < preparedSets.size(); ++i)
         if (preparedSets[i]->photonKey == key.str())
         {
@@ -348,6 +361,18 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
             for (const LightSource *image : light->portalImages)
                 if (admitted(image))
                     set->globalPortalImages.push_back(image);
+    set->litByLights.resize(litByQueries.size());
+    set->litByPortalImages.resize(litByQueries.size());
+    for (size_t query = 0; query < litByQueries.size(); ++query)
+        for (unsigned int i : set->globalLights)
+            if (litByMembers[query][i])
+            {
+                set->litByLights[query].push_back(i);
+                for (const LightSource *image : lightSources[i]->portalImages)
+                    if (admitted(image))
+                        set->litByPortalImages[query].push_back(image);
+            }
+    set->litByGroupIn = litByGroupMembers;
     for (size_t i = 0; i < lightGroupLightSources.size(); ++i)
     {
         set->groupLightIn[i] = takesPart(lightGroupLightSources[i]);
@@ -376,6 +401,47 @@ bool SceneData::LightInPreparedSet(const LightSource& light, PreparedSetId index
     const LightSource& real = (light.imageOf != nullptr) ? *light.imageOf : light;
     const std::vector<bool>& in = real.lightGroupLight ? GetPreparedSet(index).groupLightIn : GetPreparedSet(index).globalLightIn;
     return (real.index < in.size()) && in[real.index];
+}
+
+int SceneData::AddLitByQuery(const TagFilter& filter)
+{
+    for (size_t query = 0; query < litByQueries.size(); ++query)
+        if (litByQueries[query] == filter)
+            return int(query);
+    litByQueries.push_back(filter);
+    return int(litByQueries.size() - 1);
+}
+
+void SceneData::ResolveLitByTags()
+{
+    if (litByMembers.size() == litByQueries.size())
+        return;
+    litByMembers.assign(litByQueries.size(), std::vector<bool>(lightSources.size(), false));
+    litByGroupMembers.assign(litByQueries.size(), std::vector<bool>(lightGroupLightSources.size(), false));
+    for (size_t query = 0; query < litByQueries.size(); ++query)
+    {
+        for (size_t i = 0; i < lightSources.size(); ++i)
+            litByMembers[query][i] = MatchesTags(lightSources[i]->tags, litByQueries[query]);
+        for (size_t i = 0; i < lightGroupLightSources.size(); ++i)
+            litByGroupMembers[query][i] = MatchesTags(lightGroupLightSources[i]->tags, litByQueries[query]);
+    }
+}
+
+bool SceneData::LitBy(int query, const LightSource& light) const
+{
+    if (query < 0)
+        return true;
+    const LightSource& real = (light.imageOf != nullptr) ? *light.imageOf : light;
+    const std::vector<bool>& members = (real.lightGroupLight ? litByGroupMembers : litByMembers).at(query);
+    return (real.index < members.size()) && members[real.index];
+}
+
+int SceneData::SurfaceLitBy(ConstObjectPtr object)
+{
+    for (const TEXTURE *layer = object->Texture; layer != nullptr; layer = layer->Next)
+        if (layer->Finish != nullptr)
+            return (layer->Finish->LitByTags >= 0) ? layer->Finish->LitByTags : object->litByTags;
+    return object->litByTags;
 }
 
 void SceneData::FinalizeScreenCameras()

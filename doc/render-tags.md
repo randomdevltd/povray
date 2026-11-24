@@ -71,6 +71,43 @@ Using a selection as a `look_at` target or in a declaration adds nothing to the 
 
 `tagged` is matched by its text: it is the selector only when `{` follows it in a 4.0 scene, and remains an ordinary identifier elsewhere.
 
+## Lighting by tags
+
+`lit_by_tags { EXPRESSION }` chooses which lights light something, by the same expression grammar matched against the lights' effective tags. It goes in four places:
+
+| Written in | Governs |
+| --- | --- |
+| an object | the default for every block of it, and of every object inside it, that has no query of its own |
+| `finish { }` | surface shading: diffuse, highlights and the photons that land on the surface |
+| `finish { subsurface { } }` | subsurface direct lighting and the method 2 point cloud, buried lights included |
+| `media { }` | the light the medium scatters, and its media photons |
+
+```pov
+light_source { <5, 8, -6> rgb 1 tags { "key" } }
+sphere {
+  0, 1
+  pigment { rgb 1 }
+  finish {
+    lit_by_tags { "key" }                                 // the surface: the lamp, not its own glow
+    subsurface { translucency 0.5 lit_by_tags { any } }   // beneath it: the lamp and the glow
+  }
+  interior { light { brightness 20 lumens } }
+  tags { "glow" }
+}
+```
+
+An object's query is inherited down the object tree as tags are: an object without one takes its parent's, and one of its own replaces it. A block's own query overrides its object's; the subsurface block falls back to the object's query, not its finish's. A medium takes the query of the object whose interior holds it, atmospheric media only their own. With no query anywhere, everything is lit by every light.
+
+A light answers to its effective tags; a surface or interior light (a `light { }` block) answers to its object's. An untagged light matches `none`, and `lit_by_tags { any & none }` selects no light.
+
+Queries are resolved once, after parsing, when the [scene sets](#phases-and-deferred-meshes) are made: each prepared set gets, for each query, the list of its lights that the query selects. A light a camera or portal filter leaves out of a view lights nothing in that view, whatever a query says. Rays only index these lists; no expression is evaluated while rendering, so a restricted object costs no more than an unrestricted one with the same lights, and less where it skips some.
+
+A query works together with light groups: a light reaches a surface, subsurface or medium only if both allow it, so a member of a `light_group` receives the group's lights that its query selects, and global lights only as the group and the query allow. Without a query, light groups work exactly as before.
+
+Shadows are not filtered: an object blocks a light whether or not that light lights it. Photons from a light aim only at targets whose surface it lights, land only on surfaces it lights, and are gathered only by media it lights. Where media of different queries overlap along a ray, each is lit by the lights of all of them, with a warning given once.
+
+`lit_by_tags` is matched by its text, stays free as an identifier, and is read at every `#version`; a `light_source` cannot take one.
+
 ## Cameras and defaults
 
 A camera uses its own `filter_tags`, then the final `global_settings { filter_tags { ... } }`, then all objects. A global default declared after the camera still applies. The main camera remains the last accepted scene camera. When the command-line filter rejects every scene camera, rendering uses the built-in camera and reports that fallback.

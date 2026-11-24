@@ -2638,6 +2638,12 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                         if (!(New->SubsurfaceMinimumInfluence >= 0.0))
                             Error("Subsurface minimum_influence must be 0 or more.");
                     }
+                    else if (CurrentTokenText() == "lit_by_tags")
+                    {
+                        // like minimum_influence, it tunes subsurface light without turning subsurface on
+                        influence = true;
+                        New->SubsurfaceLitByTags = Parse_Lit_By_Tags();
+                    }
                     else
                     {
                         UNGET
@@ -2660,7 +2666,9 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "light_samples")
+            if (CurrentTokenText() == "lit_by_tags")
+                New->LitByTags = Parse_Lit_By_Tags();
+            else if (CurrentTokenText() == "light_samples")
             {
                 New->LightSamples = Parse_Light_Samples();
                 // the optional mode is a value of light_samples, read from a table so it is not mined as a finish item
@@ -3913,6 +3921,8 @@ void Parser::Parse_Media(vector<Media>& medialist)
         OTHERWISE
             if (CurrentTokenText() == "light_samples")
                 IMedia->Light_Samples = Parse_Light_Samples();
+            else if (CurrentTokenText() == "lit_by_tags")
+                IMedia->litByTags = Parse_Lit_By_Tags();
             else if (CurrentTokenText() == "domain_cells")
             {
                 domainCellsSpecified = true;
@@ -3986,6 +3996,13 @@ void Parser::Parse_Light_Attenuation(MediaLight& light, bool surface)
     if (!std::isfinite(light.attenuationScale) || (light.attenuationScale < 0.0) ||
         !std::isfinite(light.attenuationPower) || (light.attenuationPower <= 0.0))
         Error("An attenuation block takes a power greater than 0 and a scale of 0 or more.");
+}
+
+int Parser::Parse_Lit_By_Tags()
+{
+    TagFilter filter;
+    Parse_Filter_Tags(filter, "lit_by_tags");
+    return sceneData->AddLitByQuery(filter);
 }
 
 double Parser::Parse_Light_Samples()

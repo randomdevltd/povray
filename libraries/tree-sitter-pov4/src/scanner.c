@@ -87,7 +87,7 @@ bool tree_sitter_pov4_external_scanner_scan(void *payload, TSLexer *lexer, const
     word[length] = '\0';
     bool call = (lexer->lookahead == '(');
     if (valid[TAG_KEYWORD] && (!strcmp(word, "filter_tags") || !strcmp(word, "front_filter_tags") ||
-                               !strcmp(word, "back_filter_tags") || !strcmp(word, "tagged")))
+                               !strcmp(word, "back_filter_tags") || !strcmp(word, "lit_by_tags") || !strcmp(word, "tagged")))
     {
         // tagged is contextual: a keyword only when a block follows
         lexer->mark_end(lexer);

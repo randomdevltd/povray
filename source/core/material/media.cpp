@@ -951,6 +951,8 @@ Media& Media::operator=(const Media& source)
         AA_Threshold = source.AA_Threshold;
         AA_Level = source.AA_Level;
         Light_Samples = source.Light_Samples;
+        litByTags = source.litByTags;
+        litBy = source.litBy;
         FastResolution = source.FastResolution;
         domainCells = source.domainCells;
         domainCellsStated = source.domainCellsStated;
@@ -5396,14 +5398,29 @@ void MediaFunction::ComputeMediaSampleInterval(LitIntervalVector& litintervals, 
 void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect,
                                               const MediaVector& medias)
 {
-    const PreparedSet& view = threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId());
+    const SceneData& scene = *threadData->GetSceneData();
+    const PreparedSet& view = scene.GetPreparedSet(ray.GetPreparedSetId());
+    // the lights the scattering media's lit_by_tags queries select; media of different queries along one ray share theirs
+    int litBy = -1;
+    bool scattering = false, mixed = false;
+    for (const Media *medium : medias)
+        if (medium->use_scattering)
+        {
+            mixed = mixed || (scattering && (medium->litBy != litBy));
+            litBy = medium->litBy;
+            scattering = true;
+        }
+    if (mixed && threadData->mediaMessages && !(scene.mediaWarningFlags.load(std::memory_order_relaxed) & kLitByMixed) &&
+        !(scene.mediaWarningFlags.fetch_or(kLitByMixed, std::memory_order_relaxed) & kLitByMixed))
+        threadData->mediaMessages->Warning(kWarningGeneral, "Media with different lit_by_tags overlap; where they do, each is lit by "
+                                           "the lights of all of them. Further warnings for this reason are suppressed.");
     if ((isect.Object == nullptr) || ((isect.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG))
-        for (unsigned int i : view.globalLights)
-            if (threadData->lightSources[i]->Media_Interaction)
+        for (unsigned int i : view.Lights(mixed ? -1 : litBy))
+            if (threadData->lightSources[i]->Media_Interaction && (!mixed || MediaLitBy(medias, *threadData->lightSources[i])))
                 AddMediaLight(threadData->lightSources[i], medias, lights, ray, isect);
     if (isect.Object != nullptr)
         for (LightSource *light : isect.Object->LLights)
-            if (light->Media_Interaction && view.UsesGroupLight(light->index))
+            if (light->Media_Interaction && view.UsesGroupLight(light->index, mixed ? -1 : litBy) && (!mixed || MediaLitBy(medias, *light)))
                 AddMediaLight(light, medias, lights, ray, isect);
 
     if(lights.empty() == false)
@@ -5493,6 +5510,14 @@ void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, Li
         }
 #endif
     }
+}
+
+bool MediaFunction::MediaLitBy(const MediaVector& medias, const LightSource& light) const
+{
+    for (const Media *medium : medias)
+        if (medium->use_scattering && threadData->GetSceneData()->LitBy(medium->litBy, light))
+            return true;
+    return false;
 }
 
 void MediaFunction::AddMediaLight(LightSource *light, const MediaVector& medias, LightSourceEntryVector& lights, const Ray& ray,
@@ -6106,8 +6131,12 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                 });
                 Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
             };
-            if (map.grouped)
-                gather([receiver, global](const ProgressiveVolumePhoton& photon) {
+            // photons of a light the media's lit_by_tags leave out do not light them either
+            const bool restricted = std::any_of(medias.begin(), medias.end(), [](const Media *m) { return m->use_scattering && (m->litBy >= 0); });
+            if (map.grouped || restricted)
+                gather([&](const ProgressiveVolumePhoton& photon) {
+                    if (restricted && (photon.light != nullptr) && !MediaLitBy(medias, *photon.light))
+                        return false;
                     return photon.grouped ? receiver != nullptr && PhotonLightAffectsObject(photon.light, receiver) : global;
                 });
             else

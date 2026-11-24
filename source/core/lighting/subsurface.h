@@ -274,11 +274,13 @@ struct SubsurfaceCellKey final
     /// camera spacing of a cell off the surface map (SubsurfaceStore::CameraId), the view whose radiosity cache a radiosity
     /// cell reads, and the shooting of the photon maps a cell with photons gathers.
     std::uint64_t camera = 0, view = 0, photonShot = 0;
+    /// the lights its object's parts receive (their lit_by_tags queries resolved in its view), as a hash of their indices
+    std::uint64_t lights = 0;
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
                photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples && normals == o.normals &&
-               camera == o.camera && view == o.view && photonShot == o.photonShot;
+               camera == o.camera && view == o.view && photonShot == o.photonShot && lights == o.lights;
     }
 };
 

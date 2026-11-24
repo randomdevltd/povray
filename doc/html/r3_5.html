@@ -213,6 +213,9 @@
   <td><div class="divh4"><a title="3.5.1.5.14" href="#r3_5_1_5_14">Tagged Selections</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.5.1.5.15" href="#r3_5_1_5_15">Lit By Tags</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.5.1.6" href="#r3_5_1_6">Portal</a></div></td>
 </tr>
 <tr>
@@ -4264,6 +4267,54 @@ nothing is an empty union, with a warning; placing it adds nothing. Unbounded ob
 <code>trace</code> and <code>inside</code> work on a declared selection, since it is a concrete object once declared.</p>
 <p><code>tagged</code> is matched by its text, only when a <code>{</code> follows it in a <code>#version 4.0</code> or
 <code>.pov4</code> scene, so it remains free as an identifier.</p>
+</div>
+
+<a name="r3_5_1_5_15"></a>
+<div class="content-level-h5" contains="Lit By Tags" id="r3_5_1_5_15">
+<h5>3.5.1.5.15 Lit By Tags</h5>
+<pre>
+lit_by_tags { TAG_EXPRESSION }
+</pre>
+<p>The <code>lit_by_tags</code> item chooses, by a <a href="r3_5.html#r3_5_1_5_13">tag expression</a> over the lights' tags, which lights light
+an object, a surface, a subsurface or a medium. It is written in four places, each governing one kind of light:</p>
+<table width="100%" class="option-list">
+<tr><td><code>OBJECT { ... lit_by_tags { } }</code></td><td>The default for every block of the object, and of every object inside it, that has no query of its own.</td></tr>
+<tr><td><code>finish { lit_by_tags { } }</code></td><td>The surface: diffuse, highlights and the photons that land on it.</td></tr>
+<tr><td><code>finish { subsurface { lit_by_tags { } } }</code></td><td>The light that enters the surface and diffuses beneath it: subsurface direct lighting and the method 2 point cloud, buried lights included.</td></tr>
+<tr><td><code>media { lit_by_tags { } }</code></td><td>The light the medium scatters, and its media photons.</td></tr>
+</table>
+<pre>
+light_source { &lt;5, 8, -6&gt; rgb 1 tags { "key" } }
+light_source { &lt;-6, 4, -3&gt; rgb 0.4 tags { "fill" } }
+sphere {
+  0, 1
+  pigment { rgb 1 }
+  finish {
+    lit_by_tags { "key" | "fill" }                         // the surface: both lamps, not its own glow
+    subsurface { translucency 0.5 lit_by_tags { any } }    // beneath it: every tagged light, the glow too
+  }
+  interior { light { brightness 20 lumens } }
+  tags { "glow" }
+}
+</pre>
+<p>An object's query is inherited down the object tree as <a href="r3_5.html#r3_5_1_5_12">tags</a> are: an object without one takes its
+parent's, and one of its own replaces it. A block's own query overrides its object's. The subsurface block falls back to its
+object's query, not to its finish's, so a finish can leave its surface out of a light that its subsurface still receives. A medium
+takes the query of the object whose interior holds it; an interior a CSG gives its children is the CSG's, and takes the CSG's
+query. Atmospheric media take only their own. Without a query anywhere, a block receives every light, as before.</p>
+<p>The expression is matched against each light's effective tags: those it was given, or inherited from the containers it was
+placed in. A light made from an object, a surface light or an interior light, answers to its object's tags. A light with no tags
+matches <code>none</code>, and <code>lit_by_tags { any &amp; none }</code> selects no light. Each query is resolved once, when the scene
+is prepared, into a fixed list of lights per view, so rays pay nothing for it, and a light that a view's
+<a href="r3_5.html#r3_5_1_5_13">filter</a> leaves out is not lit by in that view, whatever the query says.</p>
+<p>A query works together with <a href="r3_4.html#r3_4_3_2">light groups</a>: a light reaches a surface, subsurface or medium only
+if both allow it. A member of a light group receives its group's lights that its query selects, and global lights only as the group
+and the query allow; without a query, light groups work exactly as before.</p>
+<p>Shadows are not filtered: an object blocks a light whether or not it is lit by it. Photons from a light aim only at targets whose
+surface it lights, land only on surfaces it lights, and light only media it lights. Where media of different queries overlap along a
+ray, each is lit by all of their lights, and a warning says so once; give overlapping media the same query to keep them apart.</p>
+<p><code>lit_by_tags</code> is matched by its text, so it remains free as an identifier, and works at every <code>#version</code>. A
+<code>light_source</code> is not lit and cannot take one.</p>
 </div>
 
 <a name="r3_5_1_6"></a>

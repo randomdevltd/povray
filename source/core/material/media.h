@@ -124,6 +124,8 @@ typedef std::vector<MediaModifier> MediaModifierVector;
 
 /// SceneData::mediaWarningFlags bits for refraction field warnings, each given once per render.
 const unsigned kRefractionJump = 64, kThinOverlap = 128, kRefractionTrapped = 256, kRefractionIndex = 512;
+/// SceneData::mediaWarningFlags bit for media of different lit_by_tags sharing a ray's lights.
+const unsigned kLitByMixed = 4096;
 
 /// The media a ray's interiors show, in precedence order; without modifiers every interior adds its media.
 void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers);
@@ -281,6 +283,8 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect,
                                        const MediaVector& medias);
         /// Adds the light, or what the media here scatter in its place (LightSource::selfContainer).
+        /// Whether a scattering medium among these is lit by the light under its lit_by_tags.
+        bool MediaLitBy(const MediaVector& medias, const LightSource& light) const;
         void AddMediaLight(LightSource *light, const MediaVector& medias, LightSourceEntryVector& lights, const Ray& ray,
                            const Intersection& isect);
         void ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect);

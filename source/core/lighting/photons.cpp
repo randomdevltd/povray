@@ -143,10 +143,10 @@ bool PhotonTrace::PhotonLightAffectsObject(ConstObjectPtr object) const
 {
     const LightSource* light = threadData->photonSourceLight;
     if (sceneData->photonSettings.Progressive())
-        return pov::PhotonLightAffectsObject(light, object);
+        return pov::PhotonLightAffectsObject(light, object) && sceneData->LightsSurface(*light, object);
     if (!light->lightGroupLight)
-        return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
-    return std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end();
+        return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG) && sceneData->LightsSurface(*light, object);
+    return (std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end()) && sceneData->LightsSurface(*light, object);
 }
 
 class PhotonOriginQuery final : public RayRootQuery, public RayObjectCondition
@@ -1383,7 +1383,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
             if (!constant)
                 ComputeOneMediaSample(medias, lights, *i, ray, d0, C0, od0, 2, ignore_photons, use_scattering, true, prepared);
 
-            if (use_scattering && !ignore_photons)
+            if (use_scattering && !ignore_photons && MediaLitBy(medias, *threadData->photonSourceLight))
             {
                 if(!threadData->photonSourceLight->Parallel)
                 {

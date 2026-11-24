@@ -1,0 +1,12 @@
+// Case 4 of lit_by_tags.pov in the 4.0 language: the left sphere inherits the union's query, the right overrides it.
+let Lit = "a";
+global_settings { assumed_gamma 1 subsurface { method 2 } }
+background { rgb 0 }
+camera { location <0, 1.5, -6> look_at <0, 0.3, 0> right 4/3*x }
+light_source { <-4, 6, -5> rgb <1, 0.8, 0.6> tags { "a" } }
+light_source { <5, 4, -3> rgb <0.4, 0.6, 1> tags { "b" } }
+union {
+  sphere { -1.1*x, 1 pigment { rgb 1 } }
+  sphere { 1.1*x, 1 pigment { rgb 1 } finish { lit_by_tags { "b" } } }
+  lit_by_tags { Lit | ("b" & !"b") }
+}

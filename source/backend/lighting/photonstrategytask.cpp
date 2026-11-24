@@ -232,7 +232,7 @@ void PhotonStrategyTask::SearchThroughObjectsCreateUnits(vector<ObjectPtr>& Obje
            !((*Sib)->Type & LIGHT_SOURCE_OBJECT))
         {
             /* do not shoot photons if global lights are turned off for ObjectPtr */
-            if (PhotonLightAffectsTarget(*Sib, Light))
+            if (PhotonLightAffectsTarget(*Sib, Light) && GetSceneData()->LightsSurface(*Light, *Sib))
             {
                 strategy->createUnitsForCombo((*Sib), Light, preparedSetId, sceneData);
             }

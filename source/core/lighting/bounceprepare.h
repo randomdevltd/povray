@@ -296,11 +296,23 @@ inline void AdvanceLoaded(const PreparedCacheUnit& cache, TraceThreadData* td, s
         AdvancePreparation(td->preparationProgress, units);
 }
 
-inline bool Receives(ConstObjectPtr owner, const LightSource* light)
+inline bool Receives(const SceneData& scene, ConstObjectPtr owner, const LightSource* light)
 {
-    if (!light->lightGroupLight)
-        return !Test_Flag(owner, NO_GLOBAL_LIGHTS_FLAG);
-    return std::find(owner->LLights.begin(), owner->LLights.end(), light) != owner->LLights.end();
+    if (!light->lightGroupLight ? Test_Flag(owner, NO_GLOBAL_LIGHTS_FLAG) :
+        (std::find(owner->LLights.begin(), owner->LLights.end(), light) == owner->LLights.end()))
+        return false;
+    // a scattering medium of the owner's interior whose lit_by_tags selects the light
+    if (owner->interior == nullptr)
+        return true;
+    bool scattering = false;
+    for (const Media& medium : owner->interior->media)
+        if (medium.use_scattering)
+        {
+            if (scene.LitBy(medium.litBy, *light))
+                return true;
+            scattering = true;
+        }
+    return !scattering;
 }
 
 /// Draws per light at a bounced volume's nodes: its light's samples and its scattering media's largest light_samples.
@@ -569,7 +581,7 @@ inline bool EmitsPreparedSource(const LightSource& light)
 }
 
 // The previous order's lights a volume target gathers, its own bounced light scaled by its self share.
-inline Sources VolumeSources(const Target& target, unsigned int order,
+inline Sources VolumeSources(const SceneData& scene, const Target& target, unsigned int order,
                              const std::vector<std::shared_ptr<LightSource>>& previous,
                              const std::vector<const LightSource*>& previousOriginal)
 {
@@ -578,7 +590,7 @@ inline Sources VolumeSources(const Target& target, unsigned int order,
     {
         const MathColour scale = (order > 1 && previousOriginal[source] == target.light) ? target.self : MathColour(1.0);
         if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
-            previous[source]->Media_Interaction && Receives(target.light->emitterContainer, previousOriginal[source]) &&
+            previous[source]->Media_Interaction && Receives(scene, target.light->emitterContainer, previousOriginal[source]) &&
             !scale.IsZero())
         {
             sources.lights.push_back(previous[source].get());
@@ -1096,7 +1108,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 if (order > target.passes || target.surface)
                     continue;
                 const auto owner = target.light->emitterContainer;
-                const Sources sources = VolumeSources(target, order, previous, previousOriginal);
+                const Sources sources = VolumeSources(*scene, target, order, previous, previousOriginal);
                 const unsigned int draws = BounceGatherDraws(owner);
                 auto group = std::find_if(groups.begin(), groups.end(),
                                           [&](const SharedGroup& candidate)
@@ -1162,7 +1174,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         if (!candidate.surface && candidate.domain == target.domain &&
                             order <= candidate.passes &&
                             BounceGatherDraws(candidate.light->emitterContainer) == draws &&
-                            VolumeSources(candidate, order, previous, previousOriginal) == sources)
+                            VolumeSources(*scene, candidate, order, previous, previousOriginal) == sources)
                             contributing.push_back(&candidate);
                     std::vector<DBL> proposalMasses(target.domain->CellCount());
                     workers.Step(step + " proposal");

@@ -226,7 +226,7 @@ class TargetBounds final : public SurfaceBoxVisitor
 };
 
 /// The light's targets and, if asked, their bounds, each target's at its fineness (none listed: the coarsest).
-void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets,
+void ProgressiveTargets(const SceneData& scene, const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets,
                         std::vector<PhotonAimBound>* bounds, const std::vector<double>* fineness = nullptr)
 {
     for (ObjectPtr object : objects)
@@ -241,7 +241,7 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
                 continue;
             if (light->Parallel && Test_Flag(object, INFINITE_FLAG))
                 throw POV_EXCEPTION(kParamErr, "Parallel photon aiming needs bounded targets.");
-            if (!PhotonLightAffectsObject(light, object))
+            if (!PhotonLightAffectsObject(light, object) || !scene.LightsSurface(*light, object))
                 continue;
             const PhotonTargetGroup* group = object->photonTargetGroup.get();
             const void* key = group ? static_cast<const void*>(group) : object;
@@ -263,7 +263,7 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
             }
         }
         else if (object->Type & IS_COMPOUND_OBJECT)
-            ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets, bounds, fineness);
+            ProgressiveTargets(scene, static_cast<CSG*>(object)->children, light, targets, bounds, fineness);
     }
 }
 
@@ -364,7 +364,7 @@ void PrepareProgressiveAiming(SceneData& scene, const std::vector<PreparedSetId>
             {
                 targets.clear();
                 bounds.clear();
-                ProgressiveTargets(set.objects, light, targets, &bounds, &fineness);
+                ProgressiveTargets(scene, set.objects, light, targets, &bounds, &fineness);
                 if (targets.empty() || (!first && SameBounds(bounds, previous)))
                     break;
                 BuildDomain(domain, light, bounds);
@@ -402,7 +402,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
         for (size_t li = 0; li < count; ++li)
         {
             const LightSource* light = set.progressiveAiming[li].light;
-            ProgressiveTargets(set.objects, light, targets[li], nullptr);
+            ProgressiveTargets(*GetSceneData(), set.objects, light, targets[li], nullptr);
             if (!light->emitter && !light->Area_Light && !light->Parallel)
                 trace.FindContainingInteriors(light->Center, pointInteriors[li], setId);
             feedbackOffset.push_back(data->progressiveFeedback.size());

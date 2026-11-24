@@ -132,6 +132,16 @@ struct PreparedSet final
     bool groupLightsFiltered = false;
     bool UsesGroupLight(unsigned int index) const { return !groupLightsFiltered || groupLightIn[index]; }
     std::vector<const LightSource*> globalPortalImages;
+    /// by lit_by_tags query: the global lights of this set it selects, and those lights' images through portals in this set
+    std::vector<std::vector<unsigned int>> litByLights;
+    std::vector<std::vector<const LightSource*>> litByPortalImages;
+    /// The global lights a block with this lit_by_tags query receives here; -1 for no query, all of them.
+    const std::vector<unsigned int>& Lights(int query) const { return (query < 0) ? globalLights : litByLights[query]; }
+    const std::vector<const LightSource*>& PortalImages(int query) const { return (query < 0) ? globalPortalImages : litByPortalImages[query]; }
+    /// by lit_by_tags query, then group light index: whether the query selects that group light
+    std::vector<std::vector<bool>> litByGroupIn;
+    /// Whether a group member with this lit_by_tags query receives the group light here: both the set and the query must allow it.
+    bool UsesGroupLight(unsigned int index, int query) const { return UsesGroupLight(index) && ((query < 0) || litByGroupIn[query][index]); }
     /// by group light index: that light's images through portals in this set
     std::vector<std::vector<const LightSource*>> groupPortalImages;
     std::vector<const Portal*> portalMouths;
@@ -238,6 +248,21 @@ class SceneData
         PreparedSet& GetPreparedSet(PreparedSetId index) { return *preparedSets.at(index); }
         const PreparedSet& GetPreparedSet(PreparedSetId index) const { return *preparedSets.at(index); }
         bool LightInPreparedSet(const LightSource& light, PreparedSetId index) const;
+        /// lit_by_tags queries, one entry per distinct expression; a block names its own by index, -1 when it has none
+        std::vector<TagFilter> litByQueries;
+        /// by query, then by LightSource::index of a global light: whether the light's tags match; see ResolveLitByTags
+        std::vector<std::vector<bool>> litByMembers;
+        /// the same by LightSource::index of a group light; a group light reaches a member only if its query selects it too
+        std::vector<std::vector<bool>> litByGroupMembers;
+        int AddLitByQuery(const TagFilter& filter);
+        /// Matches every query against the global and group lights' final tags; runs once, before the first prepared set.
+        void ResolveLitByTags();
+        /// Whether a block with this query receives the light; -1 receives every light.
+        bool LitBy(int query, const LightSource& light) const;
+        /// The query an object's surface answers to: its first finish's own, else the object's.
+        static int SurfaceLitBy(ConstObjectPtr object);
+        /// Whether the light lights the object's surface, which is what photons from it need to aim at or land on the object.
+        bool LightsSurface(const LightSource& light, ConstObjectPtr object) const { return LitBy(SurfaceLitBy(object), light); }
         void FinalizeScreenCameras();
         /// list of all global light sources
         std::vector<LightSource*> lightSources;
