@@ -93,6 +93,9 @@ class SpillBlock
         /// The bytes it holds, for whoever has it pinned and complete, when it cannot change.
         std::size_t PinnedBytes() const { return HeldBytes(); }
         bool Resident() const noexcept { return resident.load(std::memory_order_acquire); }
+        /// The region schedule's eviction advice: 0 none, 1 needed by the cluster running now, larger needed later, kUnneeded never again.
+        void Advise(std::uint32_t rank) noexcept { advice.store(rank, std::memory_order_relaxed); }
+        static constexpr std::uint32_t kUnneeded = ~std::uint32_t(0);
         /// Calls f(resident) with no eviction or read-back under way, for a reader that must not fault the block in.
         template<class F> void Inspect(F&& f) const
         {
@@ -113,6 +116,7 @@ class SpillBlock
         static constexpr int kEvicting = -(1 << 30);
         std::atomic<int> pins{0};
         std::atomic<bool> resident{true}, referenced{true};
+        std::atomic<std::uint32_t> advice{0};
         mutable std::mutex blockMutex;
         CacheAccount *account = nullptr;
         std::size_t section = ~std::size_t(0); ///< its section of the spill file once written
@@ -220,6 +224,8 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         {
             return std::max(budget, UnspillablePeak()) + BuildingPeak() + std::uint64_t(threads) * (MostPinnedBytes() + kTransientCells * LargestCell());
         }
+        /// While on, eviction takes the block the region schedule needs latest (Belady's choice for a known order) before the clock's.
+        void Advised(bool on) { advised.store(on, std::memory_order_relaxed); }
         /// Throws, listing them, when the pinned caches alone pass the budget; before the first pixel.
         void CheckPinned() const;
         /// One line for each cache with figures, then a total.
@@ -246,6 +252,7 @@ class CacheBudget final : public std::enable_shared_from_this<CacheBudget>
         std::unique_ptr<CacheSpillFile> spill;
         mutable std::mutex spillLock;
         std::atomic<bool> spillUsed{false};
+        std::atomic<bool> advised{false};
         std::atomic<std::int64_t> counted{0}; ///< every account's resident bytes; mapped pages are measured instead
         std::atomic<std::uint64_t> peakTotal{0};
         std::vector<SpillBlock *> clock;

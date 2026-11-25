@@ -501,8 +501,43 @@ bool CacheBudget::EvictOne()
     SpillBlock *victim = nullptr;
     {
         std::lock_guard<std::mutex> guard(lock);
+        if (advised.load(std::memory_order_relaxed))
+        {
+            // the region schedule knows each block's next cluster: the one needed latest goes first, if it can go now
+            std::size_t best = clock.size();
+            std::uint32_t latest = 1;
+            for (std::size_t i = 0; i < clock.size(); ++i)
+            {
+                const std::uint32_t rank = clock[i]->advice.load(std::memory_order_relaxed);
+                if ((rank > latest) && (clock[i]->pins.load(std::memory_order_relaxed) == 0))
+                {
+                    latest = rank;
+                    best = i;
+                }
+            }
+            if (best < clock.size())
+            {
+                SpillBlock *block = clock[best];
+                int none = 0;
+                if (block->blockMutex.try_lock())
+                {
+                    if (block->pins.compare_exchange_strong(none, SpillBlock::kEvicting, std::memory_order_acquire))
+                    {
+                        clock[best] = clock.back();
+                        clock[best]->slot = best;
+                        clock.pop_back();
+                        block->slot = ~std::size_t(0);
+                        if (hand >= clock.size())
+                            hand = 0;
+                        victim = block;
+                    }
+                    else
+                        block->blockMutex.unlock();
+                }
+            }
+        }
         // the clock: a block used since the hand last passed gets a second chance
-        for (std::size_t visited = 0, n = clock.size(); (visited < 2 * n) && !clock.empty(); ++visited)
+        for (std::size_t visited = 0, n = clock.size(); (victim == nullptr) && (visited < 2 * n) && !clock.empty(); ++visited)
         {
             if (hand >= clock.size())
                 hand = 0;

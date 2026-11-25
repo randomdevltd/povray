@@ -193,6 +193,12 @@ below the budget plus the grids built at once plus threads x 58 x the largest
 cell, as logged at the end. The spill
 file's live sections are capped by \fBCache_Max_Size\fP. Unset by default: nothing spills.
 .TP
+\fBRegion_Schedule\fP=\fIauto|on|off\fP
+Under \fBMax_Cache_Memory\fP with \fB+PR\fP, when the cells the coarse levels touched do not
+fit the budget, render the finer levels cluster by cluster in an order that loads each cell
+as few times as it can, with the same image. \fBauto\fP (the default) schedules when the
+budget binds, \fBon\fP whenever there is a budget, \fBoff\fP never.
+.TP
 \fBML\fP\fIn.n\fP or \fBPov4_Version\fP=\fIn.n\fP
 Run a .pov4 scene with the defaults of language version n.n instead of 4.0.
 .TP

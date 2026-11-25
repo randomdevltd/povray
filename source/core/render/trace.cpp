@@ -10326,6 +10326,8 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
             ssltPinnedBytes += ssltPins.back().second;
             // a ring wider than a cell pins more than 27 cells, so the ceiling takes the most any thread held
             budget->NotePins(ssltPins.size(), ssltPinnedBytes);
+            if ((footprint != nullptr) && (footprint->empty() || (footprint->back().first != pinned)))
+                footprint->emplace_back(pinned, ssltPins.back().second);
         }
         if (!known->nodes.empty())
         {

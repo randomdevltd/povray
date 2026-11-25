@@ -723,6 +723,9 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
     bool keepSamples = progressive && ropts.TryGetBool(kPOVAttrib_Antialias, false);
     POVMSInt level = -1;
     std::vector<POVMSInt> levelSkip;
+    // each tile's finest finished level, which a region schedule lets differ by more than one; and the schedule itself
+    std::map<POVMSInt, POVMSInt> tileLevels;
+    std::vector<POVMSInt> regionOrder;
     unsigned int latticeWidth = ropts.TryGetInt(kPOVAttrib_Width, 160) + ((ProgressiveLattice(ropts) == 2) ? 1 : 0);
     unsigned int latticeHeight = ropts.TryGetInt(kPOVAttrib_Height, 120) + ((ProgressiveLattice(ropts) == 2) ? 1 : 0);
     std::vector<POVMSFloat> samples;
@@ -759,7 +762,7 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
                 throw POV_EXCEPTION(kFileDataErr, "Cannot read header from render state file.");
             if (memcmp (hdr.sig, RENDER_STATE_SIG, sizeof (hdr.sig)) != 0)
                 throw POV_EXCEPTION(kFileDataErr, "Render state file header appears to be invalid.");
-            if (memcmp (hdr.ver, RENDER_STATE_VER, sizeof (hdr.ver)) != 0)
+            if ((memcmp (hdr.ver, RENDER_STATE_VER, sizeof (hdr.ver)) != 0) && (memcmp (hdr.ver, RENDER_STATE_VER_0002, sizeof (hdr.ver)) != 0))
                 throw POV_EXCEPTION(kFileDataErr, "Render state file was written by another version of POV-Ray.");
             if (hdr.reserved[0] != ProgressiveLattice(ropts))
                 throw POV_EXCEPTION(kFileDataErr, "Render state file was written with other progressive render or anti-aliasing settings.");
@@ -783,6 +786,13 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
                         }
                         if ((msgLevel == level) && msg.Exist(kPOVAttrib_PixelId))
                             levelSkip.push_back(msg.GetInt(kPOVAttrib_PixelId));
+                        if (msg.Exist(kPOVAttrib_PixelId))
+                        {
+                            POVMSInt& tile = tileLevels.emplace(msg.GetInt(kPOVAttrib_PixelId), msgLevel).first->second;
+                            tile = max(tile, msgLevel);
+                        }
+                        if (msg.Exist(kPOVAttrib_RegionOrder))
+                            regionOrder = msg.GetIntVector(kPOVAttrib_RegionOrder);
                         if (keepSamples && (msg.GetIdentifier() == kPOVMsgIdent_PixelSet))
                         {
                             std::vector<POVMSInt> positions(msg.GetIntVector(kPOVAttrib_PixelPositions));
@@ -837,6 +847,16 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
     {
         ropts.SetInt(kPOVAttrib_ProgressLevel, level);
         skip = levelSkip;
+        std::vector<POVMSInt> pairs;
+        for (const auto& tile : tileLevels)
+        {
+            pairs.push_back(tile.first);
+            pairs.push_back(tile.second);
+        }
+        if (!pairs.empty())
+            ropts.SetIntVector(kPOVAttrib_ProgressTileLevels, pairs);
+        if (!regionOrder.empty())
+            ropts.SetIntVector(kPOVAttrib_RegionOrder, regionOrder);
         if (!samples.empty())
             ropts.SetFloatVector(kPOVAttrib_ProgressSamples, samples);
     }
@@ -1033,7 +1053,7 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
         in.seekg(0, IOBase::seek_set);
 
         Backup_File_Header hdr;
-        if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || (memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0))
+        if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || ((memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0) && (memcmp(hdr.ver, RENDER_STATE_VER_0002, sizeof(hdr.ver)) != 0)))
             throw POV_EXCEPTION(kFileDataErr, "Not a render state file of this version of POV-Ray.");
         if (!fill)
         {

@@ -1358,6 +1358,11 @@ class Trace
         /// The cells this thread's shading points have pinned with their bytes, innermost last: a nested point lets go of only its own.
         std::vector<std::pair<SpillBlock*, size_t>> ssltPins;
         size_t ssltPinnedBytes = 0; ///< what they hold
+        /// While set, each cell pinned is noted here with its bytes, for the region schedule's tile footprints.
+        std::vector<std::pair<SpillBlock*, size_t>> *footprint = nullptr;
+    public:
+        void SetFootprint(std::vector<std::pair<SpillBlock*, size_t>> *sink) { footprint = sink; }
+    protected:
         size_t ssltPinFloor = 0; ///< where the pins of the point being shaded start; a gather never lets go below it
         void UnpinSubsurfaceCells(size_t mark)
         {

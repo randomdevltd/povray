@@ -50,6 +50,7 @@
 #include <time.h>
 #include <limits>
 #include <new>
+#include <thread>
 #include <string>
 
 // POV-Ray header files (base module)
@@ -937,6 +938,8 @@ struct TraceTask::PassBlock final : ViewData::SharedBlock
 {
     POVRect rect;
     unsigned int serial = 0;
+    int level = 0;                  ///< its progressive level, which a region schedule sets per block
+    unsigned int step = 0;          ///< that level's lattice step
     std::vector<Vector2d> positions;
     std::vector<RGBTColour> colors;
     std::atomic<size_t> done{0};
@@ -953,17 +956,30 @@ void TraceTask::RunPass(PassStep open, PassItem item, PassStep close)
         std::shared_ptr<PassBlock> block;
         POVRect rect;
         unsigned int serial;
-        if(GetViewData()->GetNextRectangle(rect, serial))
+        int level;
+        unsigned int step;
+        bool wait;
+        if(GetViewData()->GetNextPassRectangle(rect, serial, level, step, wait))
         {
             block = std::make_shared<PassBlock>();
             block->rect = rect;
             block->serial = serial;
+            block->level = (level >= 0) ? level : progressLevel;
+            block->step = (level >= 0) ? step : latticeStep;
             (this->*open)(*block);
             if(shareBlocks && (block->count > 1))
                 GetViewData()->OfferBlock(block);
         }
         else if(shareBlocks)
             block = std::static_pointer_cast<PassBlock>(GetViewData()->BlockToHelp());
+        if(!block && wait)
+        {
+            // the scheduled tiles left wait on a coarser level of theirs still running
+            if(!trace.HelpSubsurfaceCells(std::chrono::milliseconds(0)))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            Cooperate();
+            continue;
+        }
         if(block)
         {
             if(idle)
@@ -989,11 +1005,28 @@ void TraceTask::WorkBlock(PassBlock& block, PassItem item, PassStep close)
     const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     if(!shareBlocks)
         radiosity.BeforeTile(highReproducibility? block.serial : 0, RadiosityFunction::FINAL_TRACE);
+    // the region schedule's footprints: the cells this worker's rays pin on the block
+    const bool record = GetViewData()->RecordsFootprints();
+    if(record)
+    {
+        footprint.clear();
+        trace.SetFootprint(&footprint);
+    }
     size_t did = 0;
     for(size_t i; (i = block.next.fetch_add(1, std::memory_order_relaxed)) < block.count; did++)
     {
         (this->*item)(block, i);
+        if(record && (footprint.size() > 4096))
+        {
+            std::sort(footprint.begin(), footprint.end());
+            footprint.erase(std::unique(footprint.begin(), footprint.end()), footprint.end());
+        }
         Cooperate();
+    }
+    if(record)
+    {
+        trace.SetFootprint(nullptr);
+        GetViewData()->AddFootprint(block.serial, footprint);
     }
     if(!shareBlocks)
         radiosity.AfterTile();
@@ -1018,12 +1051,14 @@ void TraceTask::OpenLevelBlock(PassBlock& block)
     // the last blocks of the area also own the pixel corners on its far edges
     unsigned int right = rect.right + ((corners && (rect.right == area.right)) ? 1 : 0);
     unsigned int bottom = rect.bottom + ((corners && (rect.bottom == area.bottom)) ? 1 : 0);
-    unsigned int left = ((rect.left + latticeStep - 1) / latticeStep) * latticeStep;
-    unsigned int top = ((rect.top + latticeStep - 1) / latticeStep) * latticeStep;
+    const unsigned int step = block.step;
+    const bool first = (block.level == 0) && latticeFirst;
+    unsigned int left = ((rect.left + step - 1) / step) * step;
+    unsigned int top = ((rect.top + step - 1) / step) * step;
 
-    for(unsigned int y = top; y <= bottom; y += latticeStep)
-        for(unsigned int x = left; x <= right; x += latticeStep)
-            if(latticeFirst || (x % (2 * latticeStep) != 0) || (y % (2 * latticeStep) != 0))
+    for(unsigned int y = top; y <= bottom; y += step)
+        for(unsigned int x = left; x <= right; x += step)
+            if(first || (x % (2 * step) != 0) || (y % (2 * step) != 0))
                 block.positions.push_back(Vector2d(x, y));
     block.colors.resize(block.positions.size());
     block.count = block.positions.size();
@@ -1064,9 +1099,11 @@ void TraceTask::CloseLevelBlock(PassBlock& block)
     if(block.positions.empty())
         GetViewData()->CompletedRectangle(block.rect, block.serial, 0.0f);
     else
-        GetViewData()->CompletedRectangle(block.rect, block.serial, block.positions, block.colors, latticeStep, true, true,
-                                          float(block.positions.size()) / float(block.rect.GetArea()), nullptr, progressLevel,
+        GetViewData()->CompletedRectangle(block.rect, block.serial, block.positions, block.colors, block.step, true, true,
+                                          float(block.positions.size()) / float(block.rect.GetArea()), nullptr, block.level,
                                           std::max<POV_LONG>(1, block.micros.load(std::memory_order_relaxed)));
+    // sent before a finer level of the tile may start, so the state file and display get the levels in order
+    GetViewData()->CompletedLevel(block.serial, block.level);
 }
 
 bool TraceTask::DiffersFromSample(const RGBTColour& gcCur, unsigned int x, unsigned int y)

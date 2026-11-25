@@ -195,7 +195,10 @@ std::string GetProgressTime(POVMS_Object& obj, POVMSType key);
 // end of namespace Message2Console
 
 #define RENDER_STATE_SIG "POV-Ray Render State File\0\0"
-#define RENDER_STATE_VER "0002"
+// 0003: a progressive render's tiles may finish its finer levels cluster by cluster (Region_Schedule), so a continued render
+// reads each tile's own level, and may find the schedule in the file; 0002 files, whose levels run whole, are still read
+#define RENDER_STATE_VER "0003"
+#define RENDER_STATE_VER_0002 "0002"
 
 struct Backup_File_Header final
 {
