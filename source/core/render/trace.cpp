@@ -2229,9 +2229,9 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         {
             const double share = ray.GetTicket().radiosityShare;
             ray.GetTicket().radiosityShare = share * roulette;
-            // a total reflection's colour is added unfiltered, so under +TF it is traced at the hit's weight, not the transmitted share's
+            // a total reflection's colour is added unfiltered, so it is traced at the hit's weight, not the transmitted share's
             tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight,
-                                            (textureFilterScale > 0.0) ? weight : new_Weight, SpreadDiff(secondaryDiff(), topSpread, layDiff), fold);
+                                            weight, SpreadDiff(secondaryDiff(), topSpread, layDiff), fold);
             ray.GetTicket().radiosityShare = share;
             rfrCol *= roulette;
         }

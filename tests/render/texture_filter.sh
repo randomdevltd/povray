@@ -1,5 +1,5 @@
 #!/bin/sh
-# texture_filter.sh <povray> <srcdir>: -TF changes nothing; +TF brings minified checkers, bumps, iridescent reflective bumps and a sky seen in bumps near a supersampled render, a sky under a filtering layer keeping its tint, each opt-out leaves its kind unfiltered, and a half-filtering layer keeps its mean colour.
+# texture_filter.sh <povray> <srcdir>: -TF changes nothing; +TF leaves plain glass with total internal reflection alone; +TF brings minified checkers, bumps, iridescent reflective bumps and a sky seen in bumps near a supersampled render, a sky under a filtering layer keeping its tint, each opt-out leaves its kind unfiltered, and a half-filtering layer keeps its mean colour.
 set -e
 W=160; H=120
 render() {
@@ -135,5 +135,11 @@ for c in 0 1; do
         echo "texture_filter: +TF moved channel $c of a sky under a filtering layer, as a share of the bare sky, from $a to $b (x1000)"; exit 1
     fi
 done
+# plain pigments and smooth normals filter to themselves, so light reflected totally inside glass must not change with +TF
+"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_tir.pov" +w$W +h$H -a -d -p -v -gp +fp +o"tf_tir_off.ppm"
+"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_tir.pov" +w$W +h$H -a -d -p -v -gp +fp +tf +o"tf_tir_on.ppm"
+tail -c $((W * H * 3)) tf_tir_off.ppm > tf_tir_off.px
+tail -c $((W * H * 3)) tf_tir_on.ppm > tf_tir_on.px
+same tir_off tir_on || { echo "texture_filter: +TF changed glass with plain pigments, where light reflects totally inside it"; exit 1; }
 rm -f tf_*.ppm tf_*.px tf_a.txt tf_b.txt
 echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and normals, iridescence and reflectivity over bumps, the sky, and carries through screens"
