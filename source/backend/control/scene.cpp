@@ -263,6 +263,7 @@ void Scene::StartParser(POVMS_Object& parseOptions)
         sceneData->preparedCacheSettings = settings.str();
         const float maxSize = parseOptions.TryGetFloat(kPOVAttrib_CacheMaxSize, float(PreparedCaches::kDefaultMaxBytes >> 30));
         sceneData->preparedCacheMaxBytes = (maxSize > 0.0f) ? std::uint64_t(double(maxSize) * double(std::uint64_t(1) << 30)) : 0;
+        sceneData->preparedCacheCheckpointSeconds = parseOptions.TryGetFloat(kPOVAttrib_CacheCheckpoint, float(PreparedCaches::kDefaultCheckpointSeconds));
         // known before the parse: the build, settings, every declare and the scene file's name
         CacheKey preKey(BuildHash());
         preKey.Add(ImageLibraryVersions()).Add(sceneData->preparedCacheSettings).Add(UCS2toSysString(sceneData->inputFile));

@@ -235,6 +235,8 @@ class SceneData
         std::uint64_t preparedCachePreKey = 0;
         /// Cache_Max_Size in bytes, 0 for no cap
         std::uint64_t preparedCacheMaxBytes = 0;
+        /// Cache_Checkpoint: seconds at least between a building cache's checkpoints, 0 at every chance, negative for none
+        double preparedCacheCheckpointSeconds = 30.0;
         /// the render settings a parse reads, and the renderer-provided declares it read, both part of the cache key
         std::string preparedCacheSettings;
         std::set<std::string> rendererDeclaresRead;

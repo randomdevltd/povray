@@ -360,16 +360,17 @@ bool EndsWith(const std::string& text, const char *suffix)
     return (text.size() >= n) && (text.compare(text.size() - n, n, suffix) == 0);
 }
 
-/// A saved cache or a scene manifest: the files the size cap counts.
+/// A saved cache, a checkpoint of one or a scene manifest: the files the size cap counts.
 bool CacheFileName(const std::string& name)
 {
-    return EndsWith(name, ".povc") || EndsWith(name, ".povk");
+    return EndsWith(name, ".povc") || EndsWith(name, ".povp") || EndsWith(name, ".povk");
 }
 
 /// A temporary file a writer has not renamed into place yet.
 bool TempFileName(const std::string& name)
 {
-    return (name.find(".povc.tmp") != std::string::npos) || (name.find(".povk.tmp") != std::string::npos);
+    return (name.find(".povc.tmp") != std::string::npos) || (name.find(".povp.tmp") != std::string::npos) ||
+           (name.find(".povk.tmp") != std::string::npos);
 }
 
 #if defined(_WIN32)
@@ -444,13 +445,13 @@ std::FILE *CreateTemp(const std::string& base, std::string& temp)
     {
         temp = base + ".tmp-" + Hex(uint64_t(ProcessId())) + "-" + Hex(Uniquifier());
 #if defined(_WIN32)
-        const int fd = _open(temp.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+        const int fd = _open(temp.c_str(), _O_RDWR | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
         if (fd >= 0)
-            return _fdopen(fd, "wb");
+            return _fdopen(fd, "w+b");
 #else
-        const int fd = open(temp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+        const int fd = open(temp.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
         if (fd >= 0)
-            return fdopen(fd, "wb");
+            return fdopen(fd, "w+b");
 #endif
         if (errno != EEXIST)
             break;
@@ -749,11 +750,12 @@ void PreparedCacheFile::Check() const
         Read(i);
 }
 
-PreparedCaches::PreparedCaches(const std::string& dir, uint64_t key, bool check, uint64_t cap) :
+PreparedCaches::PreparedCaches(const std::string& dir, uint64_t key, bool check, uint64_t cap, double checkpoint) :
     directory(dir),
     sceneKey(key),
     verify(check),
-    maxBytes(cap)
+    maxBytes(cap),
+    checkpointSeconds(checkpoint)
 {
     // a temporary file this old belongs to a render that stopped before renaming it
     const double now = double(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()) * 1e-9;
@@ -844,9 +846,117 @@ void PreparedCaches::Summarise()
                   loaded, Size(loadedBytes).c_str(), built, Size(builtBytes).c_str(), verified, directory.c_str());
     if (messages != nullptr)
         messages->Info("%s", line);
+    if (((resumed > 0) || (checkpoints > 0)) && (messages != nullptr))
+        messages->Info("Prepared caches: %u resumed from checkpoints, %u checkpoint(s) saved while building.", resumed, checkpoints);
     if ((trimmed > 0) && (messages != nullptr))
         messages->Info("Prepared caches: %u least recently used file(s) removed (%s) to keep %s within Cache_Max_Size (%s).", trimmed,
                        Size(trimmedBytes).c_str(), directory.c_str(), Size(maxBytes).c_str());
+}
+
+bool CacheFileWriter::Append(const std::string& path, const char *label, const std::string& bytes, const CacheSection *section,
+                             std::string& problem)
+{
+    if (out == nullptr)
+    {
+        const std::size_t slash = path.find_last_of("/\\");
+        if ((slash != std::string::npos) && !MakeDirectories(path.substr(0, slash)))
+        {
+            problem = "cannot create the directory " + path.substr(0, slash);
+            return false;
+        }
+        out = CreateTemp(path, temp);
+        const std::string blank(kHeaderBytes, '\0');
+        if ((out == nullptr) || (std::fwrite(blank.data(), 1, blank.size(), out) != blank.size()))
+        {
+            problem = "cannot write a temporary file beside " + path + " (" + std::strerror(errno) + ")";
+            Discard();
+            return false;
+        }
+        written = kHeaderBytes;
+        entries.clear();
+    }
+    const uint64_t page = CachePageBytes(), align = (bytes.size() >= page) ? page : kSmallAlign;
+    const uint64_t offset = (written + align - 1) / align * align;
+    const std::string pad(std::size_t(offset - written), '\0');
+    if ((std::fwrite(pad.data(), 1, pad.size(), out) != pad.size()) ||
+        (std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()))
+    {
+        problem = "writing " + temp + " failed (" + std::strerror(errno) + ")";
+        Discard();
+        return false;
+    }
+    entries.push_back(PreparedCacheFile::Entry{ offset, uint64_t(bytes.size()), ContentHash(bytes.data(), bytes.size(), 0), label,
+                                                section ? *section : CacheSection() });
+    written = offset + bytes.size();
+    return true;
+}
+
+bool CacheFileWriter::Publish(const std::string& path, uint64_t key, const std::string& name, std::string& problem)
+{
+    // a cache of no sections still records that its preparation was done
+    if (out == nullptr)
+    {
+        if (!Append(path, "", std::string(), nullptr, problem))
+            return false;
+        entries.pop_back();
+    }
+    const uint64_t indexOffset = (written + 7) / 8 * 8;
+    std::string index(std::size_t(indexOffset - written), '\0');
+    const std::size_t padding = index.size();
+    index += IndexBytes(entries);
+    const std::string header = HeaderBytes(key, entries.size(), indexOffset, ContentHash(index.data() + padding, index.size() - padding, 0), name);
+    bool ok = (std::fwrite(index.data(), 1, index.size(), out) == index.size()) && (std::fseek(out, 0, SEEK_SET) == 0) &&
+              (std::fwrite(header.data(), 1, header.size(), out) == header.size());
+    ok = (std::fclose(out) == 0) && ok;
+    out = nullptr;
+    // the rename publishes a complete file or nothing
+    ok = ok && (std::rename(temp.c_str(), path.c_str()) == 0);
+    if (!ok)
+    {
+        problem = "writing " + path + " failed (" + std::strerror(errno) + ")";
+        std::remove(temp.c_str());
+    }
+    temp.clear();
+    written = indexOffset + index.size() - padding;
+    return ok;
+}
+
+bool CacheFileWriter::ReadBack(std::size_t index, std::string& bytes)
+{
+    if ((out == nullptr) || (index >= entries.size()) || (std::fflush(out) != 0))
+        return false;
+    const PreparedCacheFile::Entry& entry = entries[index];
+    bytes.resize(std::size_t(entry.length));
+    if (bytes.empty())
+        return true;
+#if defined(_WIN32)
+    const bool ok = (_fseeki64(out, __int64(entry.offset), SEEK_SET) == 0) && (std::fread(&bytes[0], 1, bytes.size(), out) == bytes.size());
+    return (_fseeki64(out, 0, SEEK_END) == 0) && ok;
+#else
+    std::size_t got = 0;
+    while (got < bytes.size())
+    {
+        const ssize_t n = pread(fileno(out), &bytes[got], bytes.size() - got, off_t(entry.offset + got));
+        if (n <= 0)
+        {
+            if ((n < 0) && (errno == EINTR))
+                continue;
+            return false;
+        }
+        got += std::size_t(n);
+    }
+    return true;
+#endif
+}
+
+void CacheFileWriter::Discard()
+{
+    if (out != nullptr)
+        std::fclose(out);
+    out = nullptr;
+    if (!temp.empty())
+        std::remove(temp.c_str());
+    temp.clear();
 }
 
 PreparedCacheUnit::PreparedCacheUnit(PreparedCaches *store, const std::string& kind, uint64_t detail, int ordinal) :
@@ -854,7 +964,7 @@ PreparedCacheUnit::PreparedCacheUnit(PreparedCaches *store, const std::string& k
 {
     if (caches == nullptr)
         return;
-    start = std::chrono::steady_clock::now();
+    start = lastPiece = std::chrono::steady_clock::now();
     name = kind + std::to_string(caches->Next(kind, ordinal));
     key = CacheKey(caches->SceneKey()).Add(name).Add(detail).Value();
     // the scene key in the name lets a render ask whether caches of its key exist before it knows their details
@@ -864,10 +974,22 @@ PreparedCacheUnit::PreparedCacheUnit(PreparedCaches *store, const std::string& k
 
 PreparedCacheUnit::~PreparedCacheUnit()
 {
-    if (out != nullptr)
-        std::fclose(out);
-    if (!temp.empty())
-        std::remove(temp.c_str());
+}
+
+std::string PreparedCacheUnit::PiecePath(unsigned int number) const
+{
+    char suffix[24];
+    std::snprintf(suffix, sizeof(suffix), ".p%04u.povp", number);
+    return path.substr(0, path.size() - 5) + suffix;
+}
+
+namespace
+{
+/// The name a checkpoint's header carries: its cache's, its number and the index of its first section.
+std::string PieceName(const std::string& name, unsigned int number, std::size_t first)
+{
+    return name + ".p" + std::to_string(number) + "@" + std::to_string(first);
+}
 }
 
 void PreparedCacheUnit::Open()
@@ -876,26 +998,39 @@ void PreparedCacheUnit::Open()
     if (Read(problem))
     {
         mode = caches->Verify() ? Mode::Verify : Mode::Load;
+        // the whole cache supersedes any checkpoint of its key
+        RemovePieces(0);
         return;
     }
     mode = Mode::Build;
-    file.reset();
-    saved.clear();
+    files.clear();
+    loadable.clear();
     if (!problem.empty())
     {
         caches->Warn("Prepared cache " + path + " is rejected (" + problem + ") and rebuilt.");
         std::remove(path.c_str());
         reason = "; rebuilt after rejecting a damaged file";
-        return;
     }
-    // another key's file may serve another render sharing the directory, so it stays; the size cap ages it out
-    const std::string prefix = name + "-";
-    for (const std::string& entry : ListDirectory(caches->Directory()))
-        if ((entry.compare(0, prefix.size(), prefix) == 0) && EndsWith(entry, ".povc"))
-        {
-            reason = "; rebuilt because its key changed: the scene, an input file, a setting or the build differs from the saved one";
-            break;
-        }
+    else
+    {
+        // another key's file may serve another render sharing the directory, so it stays; the size cap ages it out
+        const std::string prefix = name + "-";
+        for (const std::string& entry : ListDirectory(caches->Directory()))
+            if ((entry.compare(0, prefix.size(), prefix) == 0) && EndsWith(entry, ".povc"))
+            {
+                reason = "; rebuilt because its key changed: the scene, an input file, a setting or the build differs from the saved one";
+                break;
+            }
+    }
+    if (caches->Verify() || (caches->CheckpointSeconds() < 0.0))
+        return;
+    ReadPieces();
+    if (!loadable.empty())
+    {
+        mode = Mode::Resume;
+        lastLoaded = true;
+        reason = "; resumed from " + std::to_string(pieces) + " checkpoint(s) holding " + std::to_string(loadable.size()) + " sections";
+    }
 }
 
 bool PreparedCacheUnit::Read(std::string& problem)
@@ -909,9 +1044,10 @@ bool PreparedCacheUnit::Read(std::string& problem)
             throw CacheFormatError("its header names another build, key or cache than its file name");
         // every section is checked before any is used, one at a time; a later increment checks only those a region reads
         opened->Check();
-        saved = opened->Entries();
+        for (std::size_t i = 0; i < opened->Entries().size(); ++i)
+            loadable.push_back(Loadable{ 0, i, opened->Entries()[i] });
         fileBytes = opened->Bytes();
-        file = std::move(opened);
+        files.push_back(std::move(opened));
         caches->Use(path);
         Touch(path);
         return true;
@@ -919,22 +1055,67 @@ bool PreparedCacheUnit::Read(std::string& problem)
     catch (const CacheFormatError& error)
     {
         problem = error.what();
+        files.clear();
+        loadable.clear();
         return false;
     }
+}
+
+void PreparedCacheUnit::ReadPieces()
+{
+    for (unsigned int number = 0; ; ++number)
+    {
+        const std::string piecePath = PiecePath(number);
+        try
+        {
+            std::unique_ptr<PreparedCacheFile> opened(new PreparedCacheFile(piecePath));
+            if (opened->Missing())
+                return;
+            if ((opened->Build() != BuildHash()) || (opened->Key() != key) || (opened->Name() != PieceName(name, number, loadable.size())))
+                throw CacheFormatError("its header names another build, key, cache or place in the sequence than its file name");
+            opened->Check();
+            for (std::size_t i = 0; i < opened->Entries().size(); ++i)
+                loadable.push_back(Loadable{ files.size(), i, opened->Entries()[i] });
+            fileBytes += opened->Bytes();
+            files.push_back(std::move(opened));
+            caches->Use(piecePath);
+            Touch(piecePath);
+            pieces = resumedPieces = number + 1;
+        }
+        catch (const CacheFormatError& error)
+        {
+            // the checkpoints after a damaged one cannot be used without it
+            caches->Warn("Prepared cache checkpoint " + piecePath + " is rejected (" + error.what() + "); building resumes before it.");
+            RemovePieces(number);
+            return;
+        }
+    }
+}
+
+void PreparedCacheUnit::RemovePieces(unsigned int from)
+{
+    const std::string base = path.substr(0, path.size() - 5) + ".p";
+    const std::size_t slash = base.find_last_of("/\\");
+    const std::string prefix = (slash == std::string::npos) ? base : base.substr(slash + 1);
+    for (const std::string& entry : ListDirectory(caches->Directory()))
+        if ((entry.compare(0, prefix.size(), prefix) == 0) && EndsWith(entry, ".povp") &&
+            (std::strtoul(entry.c_str() + prefix.size(), nullptr, 10) >= from))
+            std::remove((caches->Directory() + "/" + entry).c_str());
 }
 
 void PreparedCacheUnit::Mismatch(const std::string& what)
 {
     std::remove(path.c_str());
+    RemovePieces(0);
     throw POV_EXCEPTION_STRING(("Prepared cache " + path + " does not fit this scene's preparation: " + what +
-                                ". Its key missed an input that changed; it was deleted, so the next render rebuilds it.").c_str());
+                                ". Its key missed an input that changed; it was deleted, with its checkpoints, so the next render rebuilds it.").c_str());
 }
 
 void PreparedCacheUnit::Load(const char *label, const std::function<void(CacheArchive&)>& fields, const CacheSection *section)
 {
-    if (next >= saved.size())
+    if (next >= loadable.size())
         Mismatch(std::string("it holds fewer sections than the preparation reads, ending before ") + label);
-    const PreparedCacheFile::Entry& entry = saved[next];
+    const PreparedCacheFile::Entry& entry = loadable[next].entry;
     if (entry.label != std::string(label, 0, kLabelBytes - 1))
         Mismatch("section " + std::to_string(next) + " is " + entry.label + " where the preparation reads " + label);
     if (!(entry.section == (section ? *section : CacheSection())))
@@ -943,24 +1124,34 @@ void PreparedCacheUnit::Load(const char *label, const std::function<void(CacheAr
     try
     {
         // read now, from the file, and released when done
-        const std::string bytes = file->Read(next);
+        const std::string bytes = files[loadable[next].file]->Read(loadable[next].index);
         CacheArchive archive(bytes.data(), bytes.data() + bytes.size());
         fields(archive);
         if (!archive.Done())
             throw CacheFormatError("the section is longer than what was read");
+        // a resumed build writes the whole cache, the checkpoints' sections first
+        if (mode == Mode::Resume)
+            Keep(label, bytes, section);
     }
     catch (const CacheFormatError& error)
     {
         Mismatch("section " + std::to_string(next) + " (" + label + "): " + error.what());
     }
+    lastLoaded = true;
     ++next;
+    ++records;
+    if ((mode == Mode::Resume) && (next == loadable.size()))
+    {
+        lastPiece = std::chrono::steady_clock::now();
+        pieceFrom = records;
+    }
 }
 
 void PreparedCacheUnit::Note(const char *label, std::string& text)
 {
     if (mode == Mode::Off)
         return;
-    if (mode == Mode::Load)
+    if (Replays())
     {
         Load(label, [&](CacheArchive& archive) { Serialize(archive, text); }, nullptr);
         return;
@@ -977,12 +1168,24 @@ void PreparedCacheUnit::Note(const char *label, std::string& text)
     Store(label, std::move(bytes), nullptr);
 }
 
+void PreparedCacheUnit::Keep(const char *label, const std::string& bytes, const CacheSection *section)
+{
+    if (failed)
+        return;
+    std::string problem;
+    if (!whole.Append(path, label, bytes, section, problem))
+    {
+        failed = true;
+        caches->Warn("Prepared cache " + name + " is not saved: " + problem + ".");
+    }
+}
+
 void PreparedCacheUnit::Store(const char *label, std::string&& bytes, const CacheSection *section)
 {
     if (mode == Mode::Verify)
     {
-        const bool same = (next < saved.size()) && (saved[next].section == (section ? *section : CacheSection())) &&
-                          (file->Read(next) == bytes);
+        const bool same = (next < loadable.size()) && (loadable[next].entry.section == (section ? *section : CacheSection())) &&
+                          (files[loadable[next].file]->Read(loadable[next].index) == bytes);
         if (!same)
             throw POV_EXCEPTION_STRING(("Cache_Verify: the rebuilt " + name + " differs from its saved cache " + path + " at section " +
                                         std::to_string(next) + " (" + label + ", " + Describe(section ? *section : CacheSection()) +
@@ -990,73 +1193,66 @@ void PreparedCacheUnit::Store(const char *label, std::string&& bytes, const Cach
         ++next;
         return;
     }
-    if (failed)
+    lastLoaded = false;
+    ++records;
+    Keep(label, bytes, section);
+}
+
+void PreparedCacheUnit::Checkpoint()
+{
+    if (((mode != Mode::Build) && (mode != Mode::Resume)) || Replays() || pieceFailed || (caches->CheckpointSeconds() < 0.0) ||
+        (records == pieceFrom))
         return;
-    if (out == nullptr)
+    const auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration<double>(now - lastPiece).count() < caches->CheckpointSeconds())
+        return;
+    // the sections since the last checkpoint are read back from the whole cache's temporary file, so a cache that never
+    // checkpoints writes nothing twice
+    const std::size_t sections = records - pieceFrom;
+    const std::string piecePath = PiecePath(pieces);
+    std::string problem = "the whole cache is not being written";
+    bool ok = !failed && (whole.Sections() == records);
+    for (std::size_t i = pieceFrom; ok && (i < records); ++i)
     {
-        if (!MakeDirectories(caches->Directory()))
-        {
-            failed = true;
-            caches->Warn("Prepared cache " + name + " is not saved: cannot create the directory " + caches->Directory() + ".");
-            return;
-        }
-        out = CreateTemp(path, temp);
-        const std::string blank(kHeaderBytes, '\0');
-        if ((out == nullptr) || (std::fwrite(blank.data(), 1, blank.size(), out) != blank.size()))
-        {
-            failed = true;
-            caches->Warn("Prepared cache " + name + " is not saved: cannot write a temporary file beside " + path + " (" + std::strerror(errno) + ").");
-            return;
-        }
-        written = kHeaderBytes;
+        std::string bytes;
+        const PreparedCacheFile::Entry& entry = whole.Entries()[i];
+        ok = whole.ReadBack(i, bytes) && piece.Append(piecePath, entry.label.c_str(), bytes, &entry.section, problem);
+        if (!ok && (problem == "the whole cache is not being written"))
+            problem = "reading back its temporary file failed";
     }
-    const uint64_t page = CachePageBytes(), align = (bytes.size() >= page) ? page : kSmallAlign;
-    const uint64_t offset = (written + align - 1) / align * align;
-    const std::string pad(std::size_t(offset - written), '\0');
-    if ((std::fwrite(pad.data(), 1, pad.size(), out) != pad.size()) ||
-        (std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()))
+    ok = ok && piece.Publish(piecePath, key, PieceName(name, pieces, pieceFrom), problem);
+    if (!ok)
     {
-        failed = true;
-        caches->Warn("Prepared cache " + name + " is not saved: writing " + temp + " failed (" + std::strerror(errno) + ").");
+        piece.Discard();
+        pieceFailed = true;
+        caches->Warn("Prepared cache " + name + " saves no more checkpoints: " + problem + ".");
         return;
     }
-    PreparedCacheFile::Entry entry{ offset, uint64_t(bytes.size()), ContentHash(bytes.data(), bytes.size(), 0), label,
-                                    section ? *section : CacheSection() };
-    saved.push_back(entry);
-    written = offset + bytes.size();
+    pieceFrom = records;
+    ++pieces;
+    lastPiece = now;
+    caches->Use(piecePath);
+    {
+        std::lock_guard<std::mutex> guard(caches->lock);
+        ++caches->checkpoints;
+    }
+    char line[96];
+    std::snprintf(line, sizeof(line), "%.3f s", std::chrono::duration<double>(now - start).count());
+    caches->Info("Prepared cache " + name + ": checkpoint " + std::to_string(pieces) + " saved, " + Size(piece.Bytes()) + ", " +
+                 std::to_string(sections) + " sections, " + line + ".");
 }
 
 bool PreparedCacheUnit::Write()
 {
     if (failed)
         return false;
-    if (out == nullptr)
+    std::string problem;
+    if (!whole.Publish(path, key, name, problem))
     {
-        // a cache of no sections still records that its preparation was done
-        Store("", std::string(), nullptr);
-        saved.pop_back();
-        if (failed)
-            return false;
+        caches->Warn("Prepared cache " + name + " is not saved: " + problem + ".");
+        return false;
     }
-    const uint64_t indexOffset = (written + 7) / 8 * 8;
-    std::string index(std::size_t(indexOffset - written), '\0');
-    const std::size_t padding = index.size();
-    index += IndexBytes(saved);
-    const std::string header = HeaderBytes(key, saved.size(), indexOffset, ContentHash(index.data() + padding, index.size() - padding, 0), name);
-    bool ok = (std::fwrite(index.data(), 1, index.size(), out) == index.size()) && (std::fseek(out, 0, SEEK_SET) == 0) &&
-              (std::fwrite(header.data(), 1, header.size(), out) == header.size());
-    ok = (std::fclose(out) == 0) && ok;
-    out = nullptr;
-    // the rename publishes a complete file or nothing
-    ok = ok && (std::rename(temp.c_str(), path.c_str()) == 0);
-    if (!ok)
-    {
-        caches->Warn("Prepared cache " + name + " is not saved: writing " + path + " failed (" + std::strerror(errno) + ").");
-        std::remove(temp.c_str());
-    }
-    temp.clear();
-    written = indexOffset + index.size() - padding;
-    return ok;
+    return true;
 }
 
 void PreparedCacheUnit::Finish()
@@ -1067,36 +1263,45 @@ void PreparedCacheUnit::Finish()
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     char timing[64];
     std::snprintf(timing, sizeof(timing), "%.3f s", seconds);
-    if (mode == Mode::Build)
+    if ((mode == Mode::Build) || (mode == Mode::Resume))
     {
+        if (next != loadable.size())
+            Mismatch("its checkpoints hold " + std::to_string(loadable.size()) + " sections where the preparation read " + std::to_string(next));
+        piece.Discard();
+        files.clear();
         const bool ok = Write();
+        // the whole cache replaces its checkpoints; they stay where it could not be saved
+        if (ok)
+            RemovePieces(0);
         std::lock_guard<std::mutex> guard(caches->lock);
         if (ok)
         {
             ++caches->built;
-            caches->builtBytes += written;
+            caches->builtBytes += whole.Bytes();
             caches->used.insert(path);
             caches->TrimLocked();
         }
-        caches->Info("Prepared cache " + name + ": built" + (ok ? " and saved, " + Size(written) : std::string(", not saved")) + ", " +
-                     std::to_string(saved.size()) + " sections, " + timing + reason + ".");
+        if (mode == Mode::Resume)
+            ++caches->resumed;
+        caches->Info("Prepared cache " + name + ": built" + (ok ? " and saved, " + Size(whole.Bytes()) : std::string(", not saved")) + ", " +
+                     std::to_string(whole.Sections()) + " sections, " + timing + reason + ".");
         return;
     }
-    if (next != saved.size())
-        Mismatch("it holds " + std::to_string(saved.size()) + " sections where the preparation read " + std::to_string(next));
-    file.reset();
+    if (next != loadable.size())
+        Mismatch("it holds " + std::to_string(loadable.size()) + " sections where the preparation read " + std::to_string(next));
+    files.clear();
     std::lock_guard<std::mutex> guard(caches->lock);
     if (mode == Mode::Load)
     {
         ++caches->loaded;
         caches->loadedBytes += fileBytes;
-        caches->Info("Prepared cache " + name + ": loaded, " + Size(fileBytes) + ", " + std::to_string(saved.size()) + " sections, " + timing + ".");
+        caches->Info("Prepared cache " + name + ": loaded, " + Size(fileBytes) + ", " + std::to_string(loadable.size()) + " sections, " + timing + ".");
     }
     else
     {
         ++caches->verified;
         caches->Info("Prepared cache " + name + ": rebuilt and verified identical to its saved file, " + Size(fileBytes) + ", " +
-                     std::to_string(saved.size()) + " sections, " + timing + ".");
+                     std::to_string(loadable.size()) + " sections, " + timing + ".");
     }
 }
 

@@ -379,6 +379,7 @@ enum
     kPOVAttrib_CachePath             = 'CaPa',
     kPOVAttrib_CacheVerify           = 'CaVe',
     kPOVAttrib_CacheMaxSize          = 'CaMS',
+    kPOVAttrib_CacheCheckpoint       = 'CaCk',
     kPOVAttrib_MaxCacheMemory        = 'CaMM',
     kPOVAttrib_RegionSchedule        = 'RgSc',
     kPOVAttrib_SpillPath             = 'CaSp',

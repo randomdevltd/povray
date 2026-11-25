@@ -261,32 +261,25 @@ struct Target final
 
 // Progress units of a surface target's placement, however many points it shades.
 constexpr std::size_t kSurfaceUnits = 4096;
+// Points shaded between saved records in a pass that shades a placement again.
+constexpr std::size_t kShadeChunk = 1024;
+
+// The cells of a brick [first, end) of a grid of `counts`, x fastest, by their index in the brick and in the grid.
+inline std::size_t BrickCells(const std::array<std::size_t, 3>& first, const std::array<std::size_t, 3>& end)
+{
+    return (end[0] - first[0]) * (end[1] - first[1]) * (end[2] - first[2]);
+}
+inline std::size_t BrickCell(const std::array<std::size_t, 3>& counts, const std::array<std::size_t, 3>& first,
+                             const std::array<std::size_t, 3>& end, std::size_t index)
+{
+    const std::size_t nx = end[0] - first[0], ny = end[1] - first[1];
+    const std::size_t x = first[0] + index % nx, y = first[1] + (index / nx) % ny, z = first[2] + index / (nx * ny);
+    return (z * counts[1] + y) * counts[0] + x;
+}
 
 inline std::string Of(const char* name, std::size_t index, std::size_t count)
 {
     return name + std::to_string(index + 1) + "/" + std::to_string(count);
-}
-
-// A placed light's points and what they export; the node index is rebuilt from the points when read back.
-inline void SerializePlaced(CacheArchive& archive, surface_refine::Result& result)
-{
-    surface_refine::Layout& layout = result.layout;
-    Serialize(archive, layout.points);
-    Serialize(archive, layout.normals);
-    Serialize(archive, layout.spacings);
-    Serialize(archive, layout.areas);
-    Serialize(archive, layout.front);
-    Serialize(archive, layout.back);
-    Serialize(archive, layout.ids);
-    Serialize(archive, result.levels);
-    if (!archive.Reading())
-        return;
-    const std::size_t count = layout.points.size();
-    if ((layout.normals.size() != count) || (layout.spacings.size() != count) || (layout.areas.size() != count) ||
-        (layout.front.size() != count) || (layout.back.size() != count) || (layout.ids.size() != count))
-        throw CacheFormatError("a bounce light's point arrays differ in length");
-    result.points = count;
-    result.index = count ? std::make_shared<const SurfaceNodeIndex>(layout.points, layout.normals, layout.spacings) : nullptr;
 }
 
 // A loaded step still moves the progress line as far as building it would have.
@@ -475,6 +468,7 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
         cache.Grid("coefficient nodes", phase, constant ? std::array<std::size_t, 3>{{ 1, 1, 1 }} : target.domain->NodeCounts(),
                    LatticeBounds(target.domain->Low(), target.domain->CellSize(), true));
     AdvanceLoaded(cache, workers.td, target.domain->NodeCount());
+    cache.Checkpoint();
     for (auto& phase : values)
         if (constant)
             target.coefficients.push_back(std::make_shared<const PreparedConstantColourField>(phase.front()));
@@ -746,8 +740,8 @@ inline void PrepareInternalPrimaries(Workers& workers, const std::shared_ptr<Sce
         part.inside = (owner->Type & (PATCH_OBJECT | NO_INSIDE_OBJECT)) != 0;
         workers.Step("internal emission " + Describe(owner));
         surface_refine::Result result;
-        cache.Record("internal", [&]()
         {
+            // placement reads its own records back, building only what they do not hold
             const PassLights lights(workers, *scene);
             const SubsurfaceScope scope(workers, scene);
             std::vector<std::unique_ptr<Trace>> traces;
@@ -759,10 +753,10 @@ inline void PrepareInternalPrimaries(Workers& workers, const std::shared_ptr<Sce
                                               context.radiosity));
                 shaders.push_back(traces.back().get());
             }
-            result = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits);
-        }, [&](CacheArchive& archive) { SerializePlaced(archive, result); });
+            result = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits, &cache, "internal");
+        }
         NoteReport(cache, "internal report", result.report);
-        AdvanceLoaded(cache, td, kSurfaceUnits);
+        cache.Checkpoint();
         AdvancePreparation(td->preparationProgress);
         if (result.points == 0)
         {
@@ -921,10 +915,10 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             const surface_refine::Part& part = parts[target.part];
             const auto owner = const_cast<ObjectPtr>(target.light->emitterContainer);
             workers.Step("o1 " + Describe(owner));
-            cache.Record("o1", [&]() { placed[t] = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits); },
-                         [&](CacheArchive& archive) { SerializePlaced(archive, placed[t]); });
+            // placement reads its own records back, building only what they do not hold
+            placed[t] = surface_refine::Place(workers, part, shaders, cooperate, kSurfaceUnits, &cache, "o1");
             NoteReport(cache, "o1 report", placed[t].report);
-            AdvanceLoaded(cache, td, kSurfaceUnits);
+            cache.Checkpoint();
             const surface_refine::Result& result = placed[t];
             totalSurfaceNodes += result.points;
             AdvancePreparation(td->preparationProgress);
@@ -971,7 +965,10 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             {
                 for (const Target& target : targets)
                     if (!target.surface && !target.orders.empty())
+                    {
                         FeedVolume(target, td, cache);
+                        cache.Checkpoint();
+                    }
                 for (std::size_t worker = 0; worker < workers.Count(); ++worker)
                     for (std::size_t i = 0; i < copyOf.size(); ++i)
                         if (copyOf[i] < targets.size())
@@ -1013,27 +1010,39 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         continue;
                     const auto start = std::chrono::steady_clock::now();
                     const surface_refine::Part& part = parts[target.part];
-                    const surface_refine::Layout& layout = placed[t].layout;
+                    surface_refine::Layout& layout = placed[t].layout;
                     workers.Step(item + " " + Describe(part.owner));
-                    cache.Record("shade", [&]()
+                    const std::size_t count = layout.points.size();
+                    fronts[t].assign(count, MathColour());
+                    backs[t].assign(count, MathColour());
+                    // a chunk of points at a time, each a step the preparation can resume from
+                    for (std::size_t first = 0; first < count; first += kShadeChunk)
                     {
-                        fronts[t].assign(layout.points.size(), MathColour());
-                        backs[t].assign(layout.points.size(), MathColour());
-                        workers.For(layout.points.size(), cooperate, [&](std::size_t i, std::size_t worker)
+                        const std::size_t end = std::min(count, first + kShadeChunk);
+                        cache.Record("shade", [&]()
                         {
-                            workers[worker].Watch(part.owner);
-                            fronts[t][i] = shaders[worker]->BounceExport(layout.hits[i], layout.normals[i], layout.ids[i], part.directions);
-                            if (part.inside)
-                                backs[t][i] = shaders[worker]->BounceExport(layout.hits[i], -layout.normals[i], BounceOrderMix(layout.ids[i]),
-                                                                            part.directions);
-                        }, 0);
-                    }, [&](CacheArchive& archive)
-                    {
-                        Serialize(archive, fronts[t]);
-                        Serialize(archive, backs[t]);
-                        if (archive.Reading() && ((fronts[t].size() != layout.points.size()) || (backs[t].size() != layout.points.size())))
-                            throw CacheFormatError("a bounce pass's shading does not match its points");
-                    });
+                            surface_refine::Relocate(workers, part, layout, cooperate);
+                            workers.For(end - first, cooperate, [&](std::size_t k, std::size_t worker)
+                            {
+                                const std::size_t i = first + k;
+                                workers[worker].Watch(part.owner);
+                                fronts[t][i] = shaders[worker]->BounceExport(layout.hits[i], layout.normals[i], layout.ids[i], part.directions);
+                                if (part.inside)
+                                    backs[t][i] = shaders[worker]->BounceExport(layout.hits[i], -layout.normals[i], BounceOrderMix(layout.ids[i]),
+                                                                                part.directions);
+                            }, 0);
+                        }, [&](CacheArchive& archive)
+                        {
+                            std::uint64_t from = first, to = end;
+                            Serialize(archive, from);
+                            Serialize(archive, to);
+                            if (archive.Reading() && ((from != first) || (to != end)))
+                                throw CacheFormatError("a bounce pass's shading does not match its points");
+                            SerializeRow(archive, &fronts[t][first], end - first);
+                            SerializeRow(archive, &backs[t][first], end - first);
+                        });
+                        cache.Checkpoint();
+                    }
                     if (td->preparationProgress)
                     {
                         char line[128];
@@ -1143,10 +1152,14 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         if (!candidate.surface && candidate.domain == target.domain)
                             gather.receivers.push_back(candidate.light->emitterContainer);
                     workers.Step(step + " volume");
-                    cache.Record("moments", [&]()
+                    const auto nodeCounts = target.domain->NodeCounts();
+                    const std::size_t momentsRead = cache.GridBricks("moment nodes", *moments, nodeCounts,
+                        LatticeBounds(target.domain->Low(), target.domain->CellSize(), true),
+                        [&](const std::array<std::size_t, 3>& first, const std::array<std::size_t, 3>& end)
                     {
-                        workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
+                        workers.For(BrickCells(first, end), cooperate, [&](size_t index, size_t worker)
                         {
+                            const size_t node = BrickCell(nodeCounts, first, end, index);
                             // Nodes no scattering reaches through the stencil hold no light, as every coefficient there is zero.
                             const Vector3d at = target.domain->Node(node);
                             bool scatters = false;
@@ -1162,10 +1175,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                             (*moments)[node] = GatherVolumeIncident(workers[worker].trace, at, cellSize, gather,
                                                                     BounceOrderSeed(0, order, groupIndex, node), ticket, draws, scratch);
                         });
-                    }, [](CacheArchive&) {});
-                    cache.Grid("moment nodes", *moments, target.domain->NodeCounts(),
-                               LatticeBounds(target.domain->Low(), target.domain->CellSize(), true));
-                    AdvanceLoaded(cache, td, target.domain->NodeCount());
+                    });
+                    AdvancePreparation(td->preparationProgress, momentsRead);
                     for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
                         prepared.fields.push_back(std::make_shared<const BounceMomentGrid>(
                             target.domain, moments, prepared.phases[phase].type, prepared.phases[phase].eccentricity, phase == 0));
@@ -1178,10 +1189,14 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                             contributing.push_back(&candidate);
                     std::vector<DBL> proposalMasses(target.domain->CellCount());
                     workers.Step(step + " proposal");
-                    cache.Record("proposal", [&]()
+                    const auto cellCounts = target.domain->Counts();
+                    const std::size_t proposalRead = cache.GridBricks("proposal cells", proposalMasses, cellCounts,
+                        LatticeBounds(target.domain->Low(), target.domain->CellSize(), false),
+                        [&](const std::array<std::size_t, 3>& first, const std::array<std::size_t, 3>& end)
                     {
-                        workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
+                        workers.For(BrickCells(first, end), cooperate, [&](size_t index, size_t worker)
                         {
+                            const size_t cell = BrickCell(cellCounts, first, end, index);
                             const auto point = target.domain->CellMidpoint(cell);
                             MathColour value;
                             for (const auto candidate : contributing)
@@ -1197,10 +1212,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                     }
                             proposalMasses[cell] = value.Weight() * target.domain->CellVolume(cell);
                         });
-                    }, [](CacheArchive&) {});
-                    cache.Grid("proposal cells", proposalMasses, target.domain->Counts(),
-                               LatticeBounds(target.domain->Low(), target.domain->CellSize(), false));
-                    AdvanceLoaded(cache, td, target.domain->CellCount());
+                    });
+                    AdvancePreparation(td->preparationProgress, proposalRead);
                     prepared.proposal =
                         std::make_shared<const PreparedSourceDistribution>(target.domain, proposalMasses);
                     if (td->mediaMessages)
@@ -1235,6 +1248,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 light->selfContainer = nullptr;
                 light->selfScale = MathColour(1.0);
                 light->emitter = MakeBouncedInteriorEmitter(*target.primary, field, td, false, target.proposal, &cache);
+                cache.Checkpoint();
                 light->colour = light->emitter->Intensity() / M_PI;
                 next.push_back(std::move(light));
                 nextOriginal.push_back(target.light);
@@ -1264,10 +1278,14 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             std::vector<DBL> masses(target.domain->CellCount());
             workers.Step("final proposal");
-            cache.Record("final proposal", [&]()
+            const auto cellCounts = target.domain->Counts();
+            const std::size_t finalRead = cache.GridBricks("final proposal cells", masses, cellCounts,
+                LatticeBounds(target.domain->Low(), target.domain->CellSize(), false),
+                [&](const std::array<std::size_t, 3>& first, const std::array<std::size_t, 3>& end)
             {
-                workers.For(masses.size(), cooperate, [&](size_t cell, size_t worker)
+                workers.For(BrickCells(first, end), cooperate, [&](size_t index, size_t worker)
                 {
+                    const size_t cell = BrickCell(cellCounts, first, end, index);
                     const auto point = target.domain->CellMidpoint(cell);
                     MathColour value;
                     for (const auto& candidate : targets)
@@ -1281,10 +1299,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         }
                     masses[cell] = value.Weight() * target.domain->CellVolume(cell);
                 });
-            }, [](CacheArchive&) {});
-            cache.Grid("final proposal cells", masses, target.domain->Counts(),
-                       LatticeBounds(target.domain->Low(), target.domain->CellSize(), false));
-            AdvanceLoaded(cache, td, target.domain->CellCount());
+            });
+            AdvancePreparation(td->preparationProgress, finalRead);
             finalProposals.push_back(
                 {target.domain, std::make_shared<const PreparedSourceDistribution>(target.domain, masses)});
         }
@@ -1295,6 +1311,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         target.proposal = std::find_if(finalProposals.begin(), finalProposals.end(),
             [&](const FinalProposal& candidate) { return candidate.domain == target.domain; })->proposal;
         FeedVolume(target, td, cache);
+        cache.Checkpoint();
         target.light->bounceFed = false;
     }
     cache.Finish();
