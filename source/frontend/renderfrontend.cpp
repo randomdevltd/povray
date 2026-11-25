@@ -38,6 +38,7 @@
 
 // C++ variants of C standard header files
 #include <climits>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -692,6 +693,7 @@ void RenderFrontendBase::NewBackup(POVMS_Object& ropts, ViewData& vd, const Path
         hdr.reserved[1] = levels & 0xff;
         hdr.reserved[2] = (levels >> 8) & 0xff;
         memcpy(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver));
+        vd.imageBackupScheduled = false;
         if(vd.imageBackup->write(&hdr, sizeof(hdr)) == false)
             throw POV_EXCEPTION(kFileDataErr, "Cannot write header to render state output file.");
         vd.imageBackup->flush();
@@ -762,8 +764,10 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
                 throw POV_EXCEPTION(kFileDataErr, "Cannot read header from render state file.");
             if (memcmp (hdr.sig, RENDER_STATE_SIG, sizeof (hdr.sig)) != 0)
                 throw POV_EXCEPTION(kFileDataErr, "Render state file header appears to be invalid.");
-            if ((memcmp (hdr.ver, RENDER_STATE_VER, sizeof (hdr.ver)) != 0) && (memcmp (hdr.ver, RENDER_STATE_VER_0002, sizeof (hdr.ver)) != 0))
+            const bool scheduled = (memcmp(hdr.ver, RENDER_STATE_VER_SCHEDULED, sizeof(hdr.ver)) == 0);
+            if (!scheduled && (memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0))
                 throw POV_EXCEPTION(kFileDataErr, "Render state file was written by another version of POV-Ray.");
+            vd.imageBackupScheduled = scheduled;
             if (hdr.reserved[0] != ProgressiveLattice(ropts))
                 throw POV_EXCEPTION(kFileDataErr, "Render state file was written with other progressive render or anti-aliasing settings.");
 
@@ -880,6 +884,20 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
         else
             throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot create state output file stream.");
     }
+}
+
+void MarkRenderStateScheduled(const ViewData& vd)
+{
+    if (vd.imageBackupScheduled || (vd.imageBackup == nullptr))
+        return;
+    // the version is rewritten in place, then writing carries on where it was
+    OStream& out = *vd.imageBackup;
+    const POV_OFF_T at = out.tellg();
+    if ((at < POV_OFF_T(sizeof(Backup_File_Header))) || !out.seekg(offsetof(Backup_File_Header, ver), IOBase::seek_set) ||
+        !out.write(RENDER_STATE_VER_SCHEDULED, sizeof(Backup_File_Header::ver)) || !out.seekg(at, IOBase::seek_set))
+        throw POV_EXCEPTION(kFileDataErr, "Cannot mark the render state file as holding a region schedule.");
+    out.flush();
+    vd.imageBackupScheduled = true;
 }
 
 namespace
@@ -1053,7 +1071,7 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
         in.seekg(0, IOBase::seek_set);
 
         Backup_File_Header hdr;
-        if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || ((memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0) && (memcmp(hdr.ver, RENDER_STATE_VER_0002, sizeof(hdr.ver)) != 0)))
+        if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || ((memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0) && (memcmp(hdr.ver, RENDER_STATE_VER_SCHEDULED, sizeof(hdr.ver)) != 0)))
             throw POV_EXCEPTION(kFileDataErr, "Not a render state file of this version of POV-Ray.");
         if (!fill)
         {

@@ -1,8 +1,9 @@
 #!/bin/sh
 # region_schedule.sh <povray> <srcdir>: under a Max_Cache_Memory the subsurface clouds do not fit, the coarse progressive
 # levels record each tile's cells and the finer levels run cluster by cluster. The image is byte for byte the one line
-# order renders, on 1, 4, 8 and 16 threads and in other block sizes and orders, with far fewer cells read back; a render
-# stopped part way through the schedule continues to the same image, and so does one from a state file of format 0002.
+# order renders, on 1, 4, 8 and 16 threads, in other block sizes and orders and anti-aliased, with far fewer cells read back.
+# A render stopped part way through the schedule continues to the same image with the schedule or without it, and the
+# state file is 0003 only once a schedule is written to it.
 set -e
 trap 'rm -f regionschedule_*' EXIT
 POVRAY=$1; SRCDIR=$2
@@ -60,15 +61,55 @@ head -c $(($(size regionschedule_whole.pov-state) * 7 / 10)) regionschedule_whol
 render resumed +wt4 $BUDGET +c
 same plain resumed
 logged resumed "Region schedule: continued in the saved order"
-# a state file of the previous format, levels whole, still continues
+# the state file's version: 0002 while levels run whole, 0003 once a schedule is written to it
+version() { dd if="$1" bs=1 skip=28 count=4 2> /dev/null; }
+[ "$(version regionschedule_whole.pov-state)" = 0003 ] || fail "a scheduled render's state file is not 0003"
+: > regionschedule_cut13.pov-state
+ln regionschedule_cut13.pov-state regionschedule_whole13.pov-state
+render cut13 +wt4 +bs13 $BUDGET
+for name in offresumed nobudget; do
+    head -c $(($(size regionschedule_whole13.pov-state) * 7 / 10)) regionschedule_whole13.pov-state > "regionschedule_$name.pov-state"
+done
+# continued with the schedule off or no budget, off the 16-pixel lattice, the levels run whole and keep finished tiles' pixels
+render offresumed +wt4 +bs13 $BUDGET Region_Schedule=off +c
+same plain offresumed
+render nobudget +wt4 +bs13 +c
+same plain nobudget
+# a render without a schedule keeps 0002, which older builds read; continued past the coarse levels it stays so
 : > regionschedule_old.pov-state
 ln regionschedule_old.pov-state regionschedule_oldwhole.pov-state
 render old +wt4 $BUDGET Region_Schedule=off
+[ "$(version regionschedule_oldwhole.pov-state)" = 0002 ] || fail "a render without a schedule did not write 0002"
 head -c $(($(size regionschedule_oldwhole.pov-state) * 6 / 10)) regionschedule_oldwhole.pov-state > regionschedule_older.pov-state
-printf '0002' | dd of=regionschedule_older.pov-state bs=1 seek=28 conv=notrunc 2> /dev/null
+ln regionschedule_older.pov-state regionschedule_olderkept.pov-state
 render older +wt4 $BUDGET +c
 same plain older
+[ "$(version regionschedule_olderkept.pov-state)" = 0002 ] || fail "a 0002 file continued without a schedule became $(version regionschedule_olderkept.pov-state)"
+# continued inside the coarse levels, the footprints would be partial, so it is not scheduled
+head -c 20000 regionschedule_oldwhole.pov-state > regionschedule_coarse.pov-state
+ln regionschedule_coarse.pov-state regionschedule_coarsekept.pov-state
+render coarse +wt4 $BUDGET +c
+same plain coarse
+logged coarse "continued inside the coarse passes"
+[ "$(version regionschedule_coarsekept.pov-state)" = 0002 ] || fail "a render continued inside the coarse levels marked its file 0003"
+# a 0002 file holding only its header is continued from the start, scheduled, and marked 0003 before the schedule
+head -c 512 regionschedule_oldwhole.pov-state > regionschedule_fresh.pov-state
+ln regionschedule_fresh.pov-state regionschedule_freshkept.pov-state
+render fresh +wt4 $BUDGET +c
+same plain fresh
+logged fresh "Region schedule: [0-9]* tiles of"
+[ "$(version regionschedule_freshkept.pov-state)" = 0003 ] || fail "a 0002 file given a schedule stayed $(version regionschedule_freshkept.pov-state)"
+# anti-aliasing passes run in the schedule's order: the same image as line order, method 4 and method 1
+for aa in "m4 +a0.1 +am4" "m1 +a0.1 +am1"; do
+    set -- $aa; method=$1; shift
+    render "aa$method" +wt4 "$@"
+    render "aaline$method" +wt4 $BUDGET Region_Schedule=off "$@"
+    render "aasched$method" +wt4 $BUDGET "$@"
+    same "aa$method" "aaline$method"
+    same "aa$method" "aasched$method"
+    logged "aasched$method" "Region schedule: [0-9]* tiles of"
+done
 if "$POVRAY" +i"$SRCDIR/tests/render/region_schedule.pov" +w16 +h16 -d -p -v -f Region_Schedule=maybe 2> /dev/null; then
     fail "Region_Schedule=maybe should be refused"
 fi
-echo "region_schedule: line order reads back $lineMiB MiB of cells, the schedule $autoMiB MiB, same image on 1, 4, 8 and 16 threads, continued from a cut state file and from format 0002"
+echo "region_schedule: line order reads back $lineMiB MiB of cells, the schedule $autoMiB MiB, same image on 1, 4, 8 and 16 threads and anti-aliased by methods 1 and 4; continued from a cut state file, with the schedule off or no budget at +bs13, inside the coarse levels and from format 0002, which stays 0002 unless a schedule is written"

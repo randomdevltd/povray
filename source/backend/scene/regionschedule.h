@@ -213,6 +213,32 @@ inline RegionPlan PlanRegions(const std::vector<RegionTile>& tiles, const std::v
     return plan;
 }
 
+/// Whether a schedule read back from a render state file can be followed over `count` blocks: format 1, cluster starts
+/// rising from 0 inside the order, and the order every block serial exactly once.
+inline bool RegionScheduleValid(const std::vector<int>& saved, unsigned int count)
+{
+    if ((count == 0) || (saved.size() < 2) || (saved[0] != 1) || (saved[1] <= 0))
+        return false;
+    const size_t clusters = size_t(saved[1]);
+    if ((clusters > count) || (saved.size() != 2 + clusters + size_t(count)))
+        return false;
+    for (size_t k = 0; k < clusters; k++)
+    {
+        const int start = saved[2 + k];
+        if ((k == 0) ? (start != 0) : ((start <= saved[1 + k]) || (unsigned(start) >= count)))
+            return false;
+    }
+    std::vector<char> seen(count, 0);
+    for (size_t i = 2 + clusters; i < saved.size(); i++)
+    {
+        const int serial = saved[i];
+        if ((serial < 0) || (unsigned(serial) >= count) || seen[serial])
+            return false;
+        seen[serial] = 1;
+    }
+    return true;
+}
+
 /// For each section, the clusters that use it, ascending: the known future that eviction ranks sections by.
 inline std::vector<std::vector<std::uint32_t>> RegionUses(const RegionPlan& plan, size_t sections)
 {

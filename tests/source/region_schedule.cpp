@@ -144,6 +144,23 @@ int main()
         }
     }
 
+    // a saved schedule is followed only when it is a permutation of the blocks with cluster starts rising from 0
+    {
+        const std::vector<int> good = { 1, 2, 0, 2, 3, 1, 0, 2 };
+        CHECK(RegionScheduleValid(good, 4), "a valid schedule refused");
+        CHECK(!RegionScheduleValid(good, 5), "a schedule of another block count accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 0, 2, 3, 1, 1, 2 }, 4), "a duplicate serial accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 0, 2, 3, 1, 4, 2 }, 4), "a serial past the blocks accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 0, 2, 3, 1, -1, 2 }, 4), "a negative serial accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 1, 2, 3, 1, 0, 2 }, 4), "a first cluster not at 0 accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 0, 0, 3, 1, 0, 2 }, 4), "an empty cluster accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 0, 4, 3, 1, 0, 2 }, 4), "a cluster start past the order accepted");
+        CHECK(!RegionScheduleValid({ 2, 2, 0, 2, 3, 1, 0, 2 }, 4), "another format accepted");
+        CHECK(!RegionScheduleValid({ 1, 0, 3, 1, 0, 2 }, 4), "no clusters accepted");
+        CHECK(!RegionScheduleValid({ 1, 2, 0, 2, 3, 1, 0 }, 4), "a short order accepted");
+        CHECK(!RegionScheduleValid({}, 4), "an empty schedule accepted");
+    }
+
     if (failures)
     {
         std::printf("region_schedule: %d failures\n", failures);

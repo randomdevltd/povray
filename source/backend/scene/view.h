@@ -539,19 +539,35 @@ class ViewData final
             std::vector<unsigned int> order;        ///< serials in schedule order, for passes after the lattice levels
             std::vector<unsigned int> hilbert;      ///< serials along a Hilbert curve, for the coarse levels once the budget spills
             std::vector<std::uint32_t> clusterStart;
+            std::vector<std::uint32_t> clusterOf;   ///< by serial: its cluster
+            std::vector<unsigned int> running;      ///< the serials of scheduled units taken and not yet finished
             std::vector<std::vector<std::uint32_t>> clustersOf; ///< per cell, the clusters that need it, ascending
             std::vector<size_t> cursor;             ///< per cell, the first of those not yet passed
             std::int64_t advisedCluster = -1;
+            std::vector<std::uint32_t> ranks;       ///< per cell, the advice being given
+            std::uint32_t adviceGeneration = 0;     ///< the budget's generation the advice is given under
             int firstLevel = -1, lastLevel = -1;    ///< the scheduled lattice levels
+            int latticeLevels = 0;                  ///< the lattice levels of the render, scheduled or not
             unsigned int maxStep = 0;
+            bool partial = false;                   ///< continued inside the coarse levels, so their footprints are incomplete
+            bool clipBlocks = false;                ///< tiles stand at different levels, so a block's cells stay inside it
             std::vector<int> persisted;             ///< a schedule read back from the render state file
             std::vector<POVMSInt> unsent;           ///< the schedule, until a sample set carries it to the render state file
+            std::mutex sendMutex;                   ///< holds back the scheduled levels' sample sets until the schedule is sent
+            std::atomic<bool> orderSent{false};
             std::string report;
             std::uint64_t readAtPlan = 0;           ///< cell bytes read back from the spill file before the schedule
+
+            /// Back to a render not yet queued, dropping any cell pointers of an earlier one.
+            void Reset();
+            /// Each serial's cluster from the order and cluster starts.
+            void MapClusters(unsigned int count);
         };
         RegionState region;
-        /// Advises the budget's eviction for the cluster now starting; under nextBlockMutex.
+        /// Advises the budget's eviction for the cluster now starting, keeping the cells of clusters still running; under nextBlockMutex.
         void AdviseCluster(std::uint32_t cluster);
+        /// Stops the schedule's recording, checking and advice once the render's passes are done.
+        void EndRegions();
         /// Queues the schedule for the render state file, so a continued render follows it.
         void SendRegionOrder();
 

@@ -179,6 +179,9 @@ void ImageMessageHandler::DrawPixelSet(const SceneData& sd, const ViewData& vd, 
 
     if (final && (vd.imageBackup != nullptr))
     {
+        // a build that reads only 0002 must refuse the file from the schedule on, not resume it at the wrong level
+        if (msg.Exist(kPOVAttrib_RegionOrder))
+            MarkRenderStateScheduled(vd);
         msg.Write(*vd.imageBackup);
         vd.imageBackup->flush();
     }
