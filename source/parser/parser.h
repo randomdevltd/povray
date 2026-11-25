@@ -980,6 +980,8 @@ class Parser final
         std::unordered_set<ConstObjectPtr> mFilteredPlacements;
         /// Whether Post_Process is inside a placement Filter_Tags will cut, whose light blocks get their emitters after it has.
         bool mDeferLightFits = false;
+        /// Objects whose interface crossing Post_Process counted only because of the #version in force at their placement.
+        std::unordered_set<ConstObjectPtr> mVersionCrossings;
         /// The light blocks of cut placements, by container, waiting for their emitters: each light and whether it is a surface light.
         std::unordered_map<ConstObjectPtr, std::vector<std::pair<LightSource *, bool>>> mDeferredLights;
         /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.

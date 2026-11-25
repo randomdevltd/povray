@@ -11027,8 +11027,7 @@ void Parser::Recompute_Placed_State(const std::unordered_set<const Interior *>& 
         }
         if (Test_Flag(object, OPAQUE_FLAG))
             sceneData->anyOpaque = true;
-        else if ((interior != nullptr) && ((interior->iorMix != kIorMixSurface) ||
-                                           ((interior->iorState == kIorOff) && (sceneData->EffectiveLanguageVersion() >= 400))))
+        else if ((interior != nullptr) && ((interior->iorMix != kIorMixSurface) || (mVersionCrossings.count(object) != 0)))
             sceneData->crossedNonSurface = true;
     };
     for (ObjectPtr object : sceneData->objects)
@@ -11135,6 +11134,7 @@ void Parser::Apply_Filter_Tags()
             QueuePlacedMeshes(object);
     }
     mFilteredPlacements.clear();
+    mVersionCrossings.clear();
 }
 
 // Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter, bounce
@@ -11637,7 +11637,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     }
     else if ((Object->interior != nullptr) && ((Object->interior->iorMix != kIorMixSurface) ||
                                                ((Object->interior->iorState == kIorOff) && (sceneData->EffectiveLanguageVersion() >= 400))))
+    {
         sceneData->crossedNonSurface = true;
+        // the #version in force here decided it, so a recount after Filter_Tags reads it from this note
+        if (sceneData->parseFilterTags.specified && (Object->interior->iorMix == kIorMixSurface))
+            mVersionCrossings.insert(Object);
+    }
 }
 
 namespace
