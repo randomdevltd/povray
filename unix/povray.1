@@ -120,6 +120,11 @@ Rebuild every prepared cache that has a saved file and stop if they differ.
 \fBCache_Max_Size\fP=\fIGiB\fP
 Keep the prepared cache directory within this size, removing the least recently
 used files first. 20 by default; 0 for no limit.
+.TP
+\fBCache_Checkpoint\fP=\fIseconds\fP
+Save the progress of a prepared cache still building as checkpoint files at most
+this often, so a stopped render resumes from them. 30 by default; 0 at every
+chance; negative for never.
 .SS Output options:
 .TP
 \fBH\fP\fIn\fP or \fBHeight\fP=\fIinteger\fP

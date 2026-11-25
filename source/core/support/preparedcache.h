@@ -218,7 +218,7 @@ bool WriteSceneManifest(const std::string& directory, std::uint64_t preKey, std:
 /// The scene key and inputs recorded under `preKey`; false when there is none or it is damaged.
 bool ReadSceneManifest(const std::string& directory, std::uint64_t preKey, std::uint64_t& sceneKey, std::vector<CacheInput>& inputs);
 
-/// Whether the directory holds a saved cache of `kind` built under `sceneKey`.
+/// Whether the directory holds a saved cache of `kind` built under `sceneKey`; checkpoints of unfinished ones do not count.
 bool HasSavedCaches(const std::string& directory, const std::string& kind, std::uint64_t sceneKey);
 
 /// Where a section lies: a brick's cells and world-space bounds, so a region reads only the bricks it touches; none for a whole record.
@@ -353,6 +353,33 @@ class CacheSpillFile final
 template<class Values>
 void ReadBrick(const std::string& bytes, const CacheSection& section, const std::array<std::size_t, 3>& counts, Values& values);
 
+/// Writes a cache file through a temporary file beside it and a rename, so the file is complete or absent.
+class CacheFileWriter final
+{
+    public:
+        CacheFileWriter() = default;
+        CacheFileWriter(const CacheFileWriter&) = delete;
+        CacheFileWriter& operator=(const CacheFileWriter&) = delete;
+        ~CacheFileWriter() { Discard(); }
+        /// Appends a section, creating the temporary file for `path` on the first; false, with `problem` set, when writing fails.
+        bool Append(const std::string& path, const char *label, const std::string& bytes, const CacheSection *section, std::string& problem);
+        /// Writes the index and header naming `key` and `name`, then renames the file into place at `path`.
+        bool Publish(const std::string& path, std::uint64_t key, const std::string& name, std::string& problem);
+        /// Reads back a section already appended.
+        bool ReadBack(std::size_t index, std::string& bytes);
+        /// Removes an unpublished temporary file.
+        void Discard();
+        bool Empty() const { return out == nullptr; }
+        std::size_t Sections() const { return entries.size(); }
+        std::uint64_t Bytes() const { return written; }
+        const std::vector<PreparedCacheFile::Entry>& Entries() const { return entries; }
+    private:
+        std::FILE *out = nullptr;
+        std::string temp;
+        std::uint64_t written = 0;
+        std::vector<PreparedCacheFile::Entry> entries;
+};
+
 class PreparedCacheUnit;
 
 /// A step of `unit`, or just `build` where there is no unit.
@@ -364,11 +391,15 @@ class PreparedCaches final
 {
     public:
         /// `sceneKey` covers every input the preparation reads; `verify` rebuilds every loaded cache and compares the two;
-        /// `maxBytes` caps the directory, least recently used files going first (0 for no cap). Removes stale temporary files.
-        PreparedCaches(const std::string& directory, std::uint64_t sceneKey, bool verify, std::uint64_t maxBytes = kDefaultMaxBytes);
+        /// `maxBytes` caps the directory, least recently used files going first (0 for no cap); a cache still building saves
+        /// what it has as a checkpoint at most every `checkpointSeconds` (0 at every chance, negative never). Removes stale
+        /// temporary files.
+        PreparedCaches(const std::string& directory, std::uint64_t sceneKey, bool verify, std::uint64_t maxBytes = kDefaultMaxBytes,
+                       double checkpointSeconds = kDefaultCheckpointSeconds);
         const std::string& Directory() const { return directory; }
         std::uint64_t SceneKey() const { return sceneKey; }
         bool Verify() const { return verify; }
+        double CheckpointSeconds() const { return checkpointSeconds; }
         void SetMessenger(pov_base::GenericMessenger *messenger) { messages = messenger; }
         /// One line totalling what every cache did.
         void Summarise();
@@ -378,6 +409,8 @@ class PreparedCaches final
         void Trim();
         /// Cache_Max_Size's default, 20 GiB.
         static constexpr std::uint64_t kDefaultMaxBytes = std::uint64_t(20) << 30;
+        /// Cache_Checkpoint's default: a cache building longer than this saves its progress, at most this often.
+        static constexpr double kDefaultCheckpointSeconds = 30.0;
         /// A temporary file older than this is left from a render that stopped, and is removed.
         static constexpr int kStaleTempSeconds = 24 * 60 * 60;
     private:
@@ -386,12 +419,13 @@ class PreparedCaches final
         std::uint64_t sceneKey;
         bool verify;
         std::uint64_t maxBytes;
+        double checkpointSeconds;
         pov_base::GenericMessenger *messages = nullptr;
         std::mutex lock;
         std::map<std::string, unsigned int> ordinals;
         /// the files this render loaded or saved, which Trim keeps
         std::set<std::string> used;
-        unsigned int loaded = 0, built = 0, verified = 0, trimmed = 0;
+        unsigned int loaded = 0, built = 0, verified = 0, trimmed = 0, resumed = 0, checkpoints = 0;
         std::uint64_t loadedBytes = 0, builtBytes = 0, trimmedBytes = 0;
         unsigned int Next(const std::string& kind, int ordinal);
         void Use(const std::string& path);
@@ -401,6 +435,9 @@ class PreparedCaches final
 };
 
 /// One saved cache: sections read from its file when the key matches, else built and saved, in the same order either way.
+/// While it builds, the sections since the last checkpoint are saved as a checkpoint file of their own whenever the
+/// preparation reaches a step from which it can resume and enough time has passed; a later render of the same key reads
+/// the checkpoints back in order and builds only what follows them. The finished cache replaces its checkpoints.
 class PreparedCacheUnit final
 {
     public:
@@ -411,10 +448,16 @@ class PreparedCacheUnit final
         PreparedCacheUnit& operator=(const PreparedCacheUnit&) = delete;
         ~PreparedCacheUnit();
 
-        /// Whether records come from the saved file, so `build` is not run.
-        bool Loading() const { return mode == Mode::Load; }
+        /// Whether the last record came from a saved file (before any record, whether the first will), so its build did not run.
+        bool Loading() const { return (mode == Mode::Load) || ((mode == Mode::Resume) && lastLoaded); }
+        /// Whether records are saved or read at all.
+        bool Saving() const { return mode != Mode::Off; }
+        /// Whether the next record comes from a saved file or checkpoint, so its build will not run.
+        bool Replays() const { return (mode == Mode::Load) || ((mode == Mode::Resume) && (next < loadable.size())); }
         /// The file it reads or writes.
         const std::string& Path() const { return path; }
+        /// The file of checkpoint `piece`.
+        std::string PiecePath(unsigned int piece) const;
 
         /// One step: `build` computes it unless the file holds it; `fields` writes the result or reads it back.
         template<class Build, class Fields>
@@ -425,7 +468,7 @@ class PreparedCacheUnit final
                 build();
                 return;
             }
-            if (mode == Mode::Load)
+            if (Replays())
             {
                 Load(label, [&](CacheArchive& archive) { fields(archive); }, section);
                 return;
@@ -437,6 +480,10 @@ class PreparedCacheUnit final
             Store(label, std::move(bytes), section);
         }
 
+        /// Marks a step the preparation can resume from: everything a later step reads is in the records so far. Saves the
+        /// records since the last checkpoint as a checkpoint file when Cache_Checkpoint's time has passed since it.
+        void Checkpoint();
+
         /// Statistics text: saved and loaded, but not compared by Cache_Verify, as it may vary with the thread count.
         void Note(const char *label, std::string& text);
 
@@ -444,31 +491,45 @@ class PreparedCacheUnit final
         template<class Values>
         void Grid(const char *label, Values& values, const std::array<std::size_t, 3>& counts, const CacheGridBounds& bounds);
 
+        /// A grid built a brick at a time, as Grid saves it: `build(first, end)` fills the cells in [first, end) along each axis
+        /// unless they are read back, and the unit may checkpoint after each brick. `values` holds every cell. Returns the cells
+        /// read back rather than built.
+        template<class Values, class Build>
+        std::size_t GridBricks(const char *label, Values& values, const std::array<std::size_t, 3>& counts, const CacheGridBounds& bounds,
+                              Build&& build);
+
         /// Saves a built cache, checks a loaded one was read to its end, and logs what was done.
         void Finish();
     private:
-        enum class Mode { Off, Build, Load, Verify };
+        /// Resume reads the checkpoints' records, then builds on as Build does.
+        enum class Mode { Off, Build, Load, Verify, Resume };
         PreparedCaches *caches;
         Mode mode = Mode::Off;
         std::string name, path, reason;
         std::uint64_t key = 0;
-        /// a loaded file, whose sections are read one at a time as the preparation asks for them
-        std::unique_ptr<PreparedCacheFile> file;
-        std::vector<PreparedCacheFile::Entry> saved;
+        /// the loaded file, or checkpoints, whose sections are read one at a time as the preparation asks for them
+        std::vector<std::unique_ptr<PreparedCacheFile>> files;
+        struct Loadable final { std::size_t file, index; PreparedCacheFile::Entry entry; };
+        std::vector<Loadable> loadable;
         std::uint64_t fileBytes = 0;
-        std::size_t next = 0;
+        std::size_t next = 0, records = 0, pieceFrom = 0;
         std::uint32_t grids = 0;
-        std::chrono::steady_clock::time_point start;
-        bool finished = false, failed = false;
-        /// a build writes each section to `temp` as it comes, then renames it into place
-        std::FILE *out = nullptr;
-        std::string temp;
-        std::uint64_t written = 0;
+        std::chrono::steady_clock::time_point start, lastPiece;
+        bool finished = false, failed = false, lastLoaded = false;
+        /// a build writes each section to the whole cache's temporary file as it comes, then renames it into place
+        CacheFileWriter whole;
+        /// checkpoint `pieces`, the whole cache's sections from `pieceFrom` on, written when the preparation reaches a resumable step
+        CacheFileWriter piece;
+        unsigned int pieces = 0, resumedPieces = 0;
+        bool pieceFailed = false;
 
         void Open();
         bool Read(std::string& problem);
+        void ReadPieces();
+        void RemovePieces(unsigned int from);
         void Load(const char *label, const std::function<void(CacheArchive&)>& fields, const CacheSection *section);
         void Store(const char *label, std::string&& bytes, const CacheSection *section);
+        void Keep(const char *label, const std::string& bytes, const CacheSection *section);
         bool Write();
         [[noreturn]] void Mismatch(const std::string& what);
 };
@@ -511,7 +572,7 @@ void PreparedCacheUnit::Grid(const char *label, Values& values, const std::array
     if (mode == Mode::Off)
         return;
     const std::size_t total = counts[0] * counts[1] * counts[2];
-    if (mode == Mode::Load)
+    if (Replays())
         values.resize(total);
     else if (values.size() != total)
         throw std::logic_error(std::string("a cache grid's values do not match its cells: ") + label);
@@ -538,6 +599,49 @@ void PreparedCacheUnit::Grid(const char *label, Values& values, const std::array
                 bounds(first, end, section.low, section.high);
                 Record(label, []() {}, [&](CacheArchive& archive) { SerializeBrick(archive, section, counts, values); }, &section);
             }
+}
+
+template<class Values, class Build>
+std::size_t PreparedCacheUnit::GridBricks(const char *label, Values& values, const std::array<std::size_t, 3>& counts,
+                                          const CacheGridBounds& bounds, Build&& build)
+{
+    const std::size_t total = counts[0] * counts[1] * counts[2];
+    if (values.size() != total)
+        values.resize(total);
+    if (mode == Mode::Off)
+    {
+        build(std::array<std::size_t, 3>{{ 0, 0, 0 }}, counts);
+        return 0;
+    }
+    const std::uint64_t grid = grids++;
+    std::array<std::size_t, 3> bricks;
+    for (int axis = 0; axis < 3; ++axis)
+        bricks[axis] = (counts[axis] + kCacheBrick - 1) / kCacheBrick;
+    std::size_t replayed = 0;
+    std::uint64_t brick = 0;
+    for (std::size_t bz = 0; bz < bricks[2]; ++bz)
+        for (std::size_t by = 0; by < bricks[1]; ++by)
+            for (std::size_t bx = 0; bx < bricks[0]; ++bx, ++brick)
+            {
+                CacheSection section;
+                section.id = (grid << 32) | brick;
+                const std::array<std::size_t, 3> at = {{ bx, by, bz }};
+                std::array<std::size_t, 3> first, end;
+                for (int axis = 0; axis < 3; ++axis)
+                {
+                    first[axis] = at[axis] * kCacheBrick;
+                    end[axis] = std::min(counts[axis], first[axis] + kCacheBrick);
+                    section.first[axis] = std::uint32_t(first[axis]);
+                    section.cells[axis] = std::uint32_t(end[axis] - first[axis]);
+                }
+                bounds(first, end, section.low, section.high);
+                const std::size_t cells = section.cells[0] * section.cells[1] * section.cells[2];
+                Record(label, [&]() { build(first, end); }, [&](CacheArchive& archive) { SerializeBrick(archive, section, counts, values); }, &section);
+                if (Loading())
+                    replayed += cells;
+                Checkpoint();
+            }
+    return replayed;
 }
 
 template<class Build, class Fields>

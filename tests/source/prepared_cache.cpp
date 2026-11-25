@@ -208,9 +208,112 @@ int main()
         for (const std::string& file : { oldest, idle, newest })
             std::remove(file.c_str());
     }
+    // a build stopped part way leaves checkpoints; the next render reads them back and builds only what follows them
+    {
+        // four steps, each a value the step computes; `stop` ends the build after that many, as a killed render would
+        int ran = 0;
+        const auto steps = [&](PreparedCaches& caches, int stop, std::vector<std::uint32_t>& got, bool& replayed) {
+            PreparedCacheUnit unit(&caches, "steps", 9);
+            replayed = unit.Replays();
+            got.assign(4, 0);
+            for (int step = 0; step < 4; ++step)
+            {
+                if (step == stop)
+                    return unit.Path();
+                unit.Record("step", [&]() { got[step] = 100 + step; ++ran; }, [&](CacheArchive& archive) { Serialize(archive, got[step]); });
+                // steps 0 and 2 end where the build can resume; step 1 does not
+                if (step != 1)
+                    unit.Checkpoint();
+            }
+            unit.Grid("cells", built, counts, LatticeBounds(low, cell, false));
+            unit.Checkpoint();
+            unit.Finish();
+            return unit.Path();
+        };
+        const std::vector<std::uint32_t> expected = { 100, 101, 102, 103 };
+        // flips a byte of a file's first section
+        const auto damage = [](const std::string& file) {
+            const std::uint64_t at = PreparedCacheFile(file).Entries()[0].offset;
+            std::FILE *f = std::fopen(file.c_str(), "r+b");
+            std::fseek(f, long(at), SEEK_SET);
+            const int byte = std::fgetc(f);
+            std::fseek(f, long(at), SEEK_SET);
+            std::fputc(byte ^ 0xff, f);
+            std::fclose(f);
+        };
+        std::vector<std::uint32_t> got;
+        bool replayed = false;
+        PreparedCaches first(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        const std::string whole = steps(first, 3, got, replayed);
+        PreparedCaches names(dir, 31, false, PreparedCaches::kDefaultMaxBytes, -1.0);
+        PreparedCacheUnit probe(&names, "steps", 9);
+        const std::string piece0 = probe.PiecePath(0), piece1 = probe.PiecePath(1), piece2 = probe.PiecePath(2);
+        Check(!exists(whole), "a stopped build saved its whole cache");
+        Check(exists(piece0) && exists(piece1) && !exists(piece2), "a stopped build did not leave one checkpoint per resumable step");
+        PreparedCacheFile second(piece1);
+        Check(second.Entries().size() == 2, "the second checkpoint does not hold the two steps since the first");
+
+        ran = 0;
+        PreparedCaches resumed(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(resumed, 4, got, replayed);
+        Check(replayed && (ran == 1) && (got == expected), "a resume did not read the three checkpointed steps and build the fourth");
+        Check(exists(whole) && !exists(piece0) && !exists(piece1), "the finished cache did not replace its checkpoints");
+        {
+            PreparedCaches loaded(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+            ran = 0;
+            steps(loaded, 4, got, replayed);
+            Check(replayed && (ran == 0) && (got == expected) && (loaded.Loaded() == 1), "the cache finished after a resume does not load whole");
+        }
+        std::remove(whole.c_str());
+
+        // a damaged checkpoint is dropped with every later one, and building resumes before it
+        PreparedCaches again(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(again, 3, got, replayed);
+        damage(piece1);
+        ran = 0;
+        PreparedCaches past(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(past, 4, got, replayed);
+        Check(replayed && (ran == 3) && (got == expected), "a damaged checkpoint was read, or the one before it was not");
+        std::remove(whole.c_str());
+
+        // a checkpoint out of its place in the sequence is refused
+        PreparedCaches gap(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(gap, 3, got, replayed);
+        std::remove(piece0.c_str());
+        std::rename(piece1.c_str(), piece0.c_str());
+        ran = 0;
+        PreparedCaches moved(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(moved, 4, got, replayed);
+        Check(!replayed && (ran == 4) && (got == expected), "a checkpoint moved out of its place was read");
+        Check(!exists(piece0), "a refused checkpoint was kept");
+
+        // a whole cache supersedes stray checkpoints of its key; Cache_Checkpoint below 0 writes none
+        PreparedCaches stray(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(stray, 3, got, replayed);
+        const std::string aside = piece0 + ".aside";
+        std::rename(piece0.c_str(), aside.c_str());
+        PreparedCaches rebuilt(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        steps(rebuilt, 4, got, replayed);
+        Check(exists(whole) && !exists(piece1), "a build did not save its whole cache, or left a later checkpoint of its key");
+        std::rename(aside.c_str(), piece0.c_str());
+        PreparedCaches finished(dir, 31, false, PreparedCaches::kDefaultMaxBytes, 0.0);
+        ran = 0;
+        steps(finished, 4, got, replayed);
+        Check((ran == 0) && !exists(piece0), "a loaded whole cache left its key's checkpoints");
+        std::remove(whole.c_str());
+        PreparedCaches never(dir, 31, false, PreparedCaches::kDefaultMaxBytes, -1.0);
+        steps(never, 3, got, replayed);
+        Check(!exists(piece0) && !exists(whole), "Cache_Checkpoint=-1 saved a checkpoint");
+        // the default interval saves none for a build shorter than it
+        PreparedCaches quick(dir, 31, false);
+        steps(quick, 3, got, replayed);
+        Check(!exists(piece0), "a build shorter than Cache_Checkpoint saved a checkpoint");
+    }
+
     std::remove(dir.c_str());
     if (failures == 0)
         std::cout << "prepared cache: a brick reads alone and matches the build; a load matches; damage and key changes rebuild; "
-                     "other keys stay; concurrent writers, stale temporary files and the size cap are handled" << std::endl;
+                     "other keys stay; concurrent writers, stale temporary files and the size cap are handled; a stopped build "
+                     "resumes from its checkpoints, which the finished cache replaces" << std::endl;
     return failures == 0 ? 0 : 1;
 }

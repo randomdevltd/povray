@@ -7,6 +7,7 @@
 #include "core/lighting/surfacemap.h"
 #include "core/render/trace.h"
 #include "core/support/preparationprogress.h"
+#include "core/support/preparedcache.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -46,9 +47,122 @@ struct Layout final
     std::vector<Vector3d> points, normals;
     std::vector<double> spacings, areas;
     std::vector<MathColour> front, back;
-    std::vector<Intersection> hits;              // kept only for later passes
+    std::vector<Intersection> hits;              // kept only for later passes; empty until Relocate when placement was read back
     std::vector<std::uint64_t> ids;
+    /// For later passes: the cube read that found each point, so its hit can be found again.
+    struct Source final
+    {
+        std::uint32_t piece = 0;
+        int level = 0, read = 0;
+        Coords at{};
+        bool operator<(const Source& o) const
+        {
+            if (piece != o.piece) return piece < o.piece;
+            if (level != o.level) return level < o.level;
+            if (read != o.read) return read < o.read;
+            return at < o.at;
+        }
+    };
+    std::vector<Source> sources;
 };
+
+/// A shaded point, stored once: where it is in the map's frame (to give it to a child), where on this copy, its light.
+struct RefinePoint final
+{
+    Vector3d frame, at, normal;
+    double jacobian = 1.0;                   // this copy's area change at the point
+    MathColour front, back;
+    std::uint64_t id = 0;
+    std::uint32_t cell = 0;                  // the cell whose read found it
+    Intersection hit;                        // not saved: Relocate finds it again
+    double Value() const { return (front + back).Greyscale(); }
+};
+
+/// A cell: one piece's surface in one lattice cube, read at line level `read`; its points are its own read's, then those
+/// its ancestors read inside it.
+struct RefineCell final
+{
+    std::uint32_t piece = 0;
+    int level = 0, read = 0;
+    Coords at{};
+    double area = 0.0;                       // its own read's estimate of the piece's area in its cube
+    double weight = 0.0;                     // the area a point of its read stands for, found or not
+    double inclusion = 1.0;                  // inverse probability of selecting this piece
+    std::vector<std::uint32_t> points;
+    std::size_t own = 0;
+    double rank = 0.0, power = 0.0, local = 0.0; // from its parent's points (local: those in it); a start cell's own
+    bool ranked = false;                     // its parent held points
+    std::uint64_t key = 0;
+    bool split = false;
+    std::uint32_t index = 0;                 // its place in the committed sequence; not saved, as the order gives it
+    double Share() const { return points.empty() ? 0.0 : area / double(points.size()); }
+};
+
+inline void Serialize(CacheArchive& a, RefinePoint& p)
+{
+    Serialize(a, p.frame);
+    Serialize(a, p.at);
+    Serialize(a, p.normal);
+    Serialize(a, p.jacobian);
+    Serialize(a, p.front);
+    Serialize(a, p.back);
+    Serialize(a, p.id);
+    Serialize(a, p.cell);
+}
+
+inline void Serialize(CacheArchive& a, RefineCell& c)
+{
+    Serialize(a, c.piece);
+    Serialize(a, c.level);
+    Serialize(a, c.read);
+    Serialize(a, c.at);
+    Serialize(a, c.area);
+    Serialize(a, c.weight);
+    Serialize(a, c.inclusion);
+    Serialize(a, c.points);
+    std::uint64_t own = c.own;
+    Serialize(a, own);
+    c.own = std::size_t(own);
+    Serialize(a, c.rank);
+    Serialize(a, c.power);
+    Serialize(a, c.local);
+    Serialize(a, c.ranked);
+    Serialize(a, c.key);
+    Serialize(a, c.split);
+}
+
+/// What placement committed since the last record: the points and cells added, which new cells joined the queue, which
+/// cells were split, and the totals after; resuming from it gives the state the committed sequence had there.
+struct RefineBatch final
+{
+    std::vector<RefinePoint> points;
+    std::vector<RefineCell> cells;
+    std::vector<std::uint8_t> queued;
+    std::vector<std::uint64_t> split;
+    std::uint64_t splits = 0, finished = 0, traced = 0, shaded = 0, missing = 0;
+    std::vector<std::int32_t> starts;
+    bool last = false;
+};
+
+inline void Serialize(CacheArchive& a, RefineBatch& b)
+{
+    Serialize(a, b.points);
+    Serialize(a, b.cells);
+    Serialize(a, b.queued);
+    Serialize(a, b.split);
+    Serialize(a, b.splits);
+    Serialize(a, b.finished);
+    Serialize(a, b.traced);
+    Serialize(a, b.shaded);
+    Serialize(a, b.missing);
+    Serialize(a, b.starts);
+    Serialize(a, b.last);
+    if (a.Reading() && (b.queued.size() != b.cells.size()))
+        throw CacheFormatError("a placement record's queue flags do not match its cells");
+}
+
+/// Splits committed between placement records, so a long placement saves its progress as it goes.
+constexpr std::size_t kSplitsPerRecord = 16;
 
 /// The light's field over its points, and what placing them did; no points when its map found none.
 struct Result final
@@ -100,41 +214,20 @@ inline std::uint64_t Bits(double value)
 /// unbiased by Cauchy-Crofton whatever was split, and every point in it, its own or kept from above, takes an equal share.
 /// The children of a cell holding no points are not split, nor is a cell where the map's coordinates no longer resolve
 /// the next level, so the splitting ends with the budget, or with the surface found.
+/// With a `cache`, the start and every kSplitsPerRecord committed splits are records of it, labelled `label` " start" and
+/// `label` " splits", each a step the preparation can resume from: a placement read back in part goes on with the same
+/// committed sequence. A placement read back keeps no hits; Relocate finds them again for later passes.
 template<class Workers>
 Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shaders, const std::function<void()>& cooperate,
-             std::size_t units)
+             std::size_t units, PreparedCacheUnit* cache = nullptr, const std::string& label = "o1")
 {
     Map& map = *part.map;
     const surface_map::Instance& view = part.map;
+    if (cache != nullptr && !cache->Saving())
+        cache = nullptr;
 
-    // A shaded point, stored once: where it is in the map's frame (to give it to a child), where on this copy, its light.
-    struct Point final
-    {
-        Vector3d frame, at, normal;
-        double jacobian = 1.0;                   // this copy's area change at the point
-        MathColour front, back;
-        std::uint64_t id = 0;
-        Intersection hit;
-        double Value() const { return (front + back).Greyscale(); }
-    };
-    // A cell: one piece's surface in one lattice cube, read at line level `read`; its points are its own read's, then those
-    // its ancestors read inside it.
-    struct Cell final
-    {
-        std::uint32_t piece = 0;
-        int level = 0, read = 0;
-        Coords at{};
-        double area = 0.0;                       // its own read's estimate of the piece's area in its cube
-        double weight = 0.0;                     // the area a point of its read stands for, found or not
-        double inclusion = 1.0;                  // inverse probability of selecting this piece
-        std::vector<std::uint32_t> points;
-        std::size_t own = 0;
-        double rank = 0.0, power = 0.0, local = 0.0; // from its parent's points (local: those in it); a start cell's own
-        bool ranked = false;                     // its parent held points
-        std::uint64_t key = 0;
-        bool split = false;
-        double Share() const { return points.empty() ? 0.0 : area / double(points.size()); }
-    };
+    using Point = RefinePoint;
+    using Cell = RefineCell;
     // A split's outcome before it is committed: its children, each with its own new points and the parent's it holds.
     struct Child final
     {
@@ -363,22 +456,103 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
     };
     std::set<Entry> queue;
     std::size_t splits = 0, finished = 0, traced = 0;
+    std::vector<std::uint8_t> queuedOf;          // per committed cell: whether it joined the queue
     // A committed cell joins the queue while it can be split: its parent held points and the next level resolves in it.
     auto offer = [&](Cell* c)
     {
-        if (c->ranked && map.Resolves(c->level, c->at, c->read + 1))
+        const bool queued = c->ranked && map.Resolves(c->level, c->at, c->read + 1);
+        queuedOf.resize(cells.size(), 0);
+        queuedOf[cells.size() - 1] = queued;
+        if (queued)
             queue.insert(Entry{c->rank, c->power, c->local, c->key, c});
         else
             ++finished;
+    };
+    auto entryOf = [](Cell* c) { return Entry{c->rank, c->power, c->local, c->key, c}; };
+    // Records: what was committed since the last one, written by a build and applied by a resume.
+    std::size_t markedPoints = 0, markedCells = 0, missing = 0;
+    std::vector<int> starts;
+    std::vector<std::uint64_t> splitSince;
+    bool replayed = false;
+    auto take = [&](bool last)
+    {
+        RefineBatch batch;
+        batch.points.assign(store.begin() + std::ptrdiff_t(markedPoints), store.end());
+        batch.cells.assign(cells.begin() + std::ptrdiff_t(markedCells), cells.end());
+        queuedOf.resize(cells.size(), 0);
+        batch.queued.assign(queuedOf.begin() + std::ptrdiff_t(markedCells), queuedOf.end());
+        batch.split.swap(splitSince);
+        batch.splits = splits;
+        batch.finished = finished;
+        batch.traced = traced;
+        batch.shaded = shaded;
+        batch.missing = missing;
+        if (markedCells == 0)
+            batch.starts.assign(starts.begin(), starts.end());
+        batch.last = last;
+        markedPoints = store.size();
+        markedCells = cells.size();
+        return batch;
+    };
+    auto apply = [&](RefineBatch& batch)
+    {
+        replayed = true;
+        for (RefinePoint& point : batch.points) store.push_back(std::move(point));
+        for (std::size_t i = 0; i < batch.cells.size(); ++i)
+        {
+            for (std::uint32_t k : batch.cells[i].points)
+                if (k >= store.size()) throw CacheFormatError("a placement record's cell names a point not yet placed");
+            batch.cells[i].index = std::uint32_t(cells.size());
+            cells.push_back(std::move(batch.cells[i]));
+            queuedOf.push_back(batch.queued[i]);
+            if (batch.queued[i]) queue.insert(entryOf(&cells.back()));
+        }
+        for (std::uint64_t index : batch.split)
+        {
+            if (index >= cells.size() || queue.erase(entryOf(&cells[std::size_t(index)])) != 1)
+                throw CacheFormatError("a placement record splits a cell that is not queued");
+            cells[std::size_t(index)].split = true;
+        }
+        splits = std::size_t(batch.splits);
+        finished = std::size_t(batch.finished);
+        traced = std::size_t(batch.traced);
+        shaded = std::size_t(batch.shaded);
+        missing = std::size_t(batch.missing);
+        if (markedCells == 0)
+            starts.assign(batch.starts.begin(), batch.starts.end());
+        markedPoints = store.size();
+        markedCells = cells.size();
+    };
+    const std::string startLabel = label + " start", splitsLabel = label + " splits";
+    auto record = [&](const std::string& what, RefineBatch& batch)
+    {
+        cache->Record(what.c_str(), []() {}, [&](CacheArchive& archive) { Serialize(archive, batch); });
+    };
+    // a record read back is applied as it is read, so a damaged one is reported as its cache's
+    auto replay = [&](const std::string& what)
+    {
+        RefineBatch batch;
+        cache->Record(what.c_str(), []() {}, [&](CacheArchive& archive)
+        {
+            Serialize(archive, batch);
+            if (archive.Reading()) apply(batch);
+        });
+        return batch.last;
     };
     auto commit = [&](Child& child) -> Cell*
     {
         Cell c = std::move(child.cell);
         std::vector<std::uint32_t> points;
-        for (Point& p : child.fresh) { points.push_back(std::uint32_t(store.size())); store.push_back(std::move(p)); }
+        for (Point& p : child.fresh)
+        {
+            p.cell = std::uint32_t(cells.size());
+            points.push_back(std::uint32_t(store.size()));
+            store.push_back(std::move(p));
+        }
         shaded += child.fresh.size();
         points.insert(points.end(), c.points.begin(), c.points.end());
         c.points = std::move(points);
+        c.index = std::uint32_t(cells.size());
         cells.push_back(std::move(c));
         return &cells.back();
     };
@@ -386,8 +560,9 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
     // The start: selected pieces share the light's budget, searching their own cubes until a read finds points,
     // its lines reach the piece's quota, or coordinates stop resolving; retained records preserve the read's area.
     workers.Step("start");
-    std::vector<int> starts;
-    std::size_t missing = 0;
+    if (cache != nullptr && cache->Replays())
+        replay(startLabel);
+    else
     {
         struct Piece final { std::uint32_t piece; int level; std::vector<Coords> cubes; std::size_t budget = 0; double inclusion = 1.0; };
         std::vector<Piece> pieces;
@@ -566,8 +741,19 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
                 offer(c);
             }
         }
+        if (cache != nullptr)
+        {
+            RefineBatch batch = take(false);
+            record(startLabel, batch);
+        }
     }
     const std::size_t looked = shaded;
+    if (cache != nullptr)
+        cache->Checkpoint();
+    // a resume reads the committed splits back, record by record, then goes on splitting where they end
+    bool placed = false;
+    while (cache != nullptr && !placed && cache->Replays())
+        placed = replay(splitsLabel);
     progress();
 
     // The loop: the highest ranked cell is split and committed, its children ranked from their points and queued. The next
@@ -576,7 +762,7 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
     workers.Step("splits");
     std::map<const Cell*, Split> held;
     std::size_t discarded = 0, wasted = 0;
-    bool full = false;
+    bool full = placed;
     while (!full && shaded < part.budget && !queue.empty())
     {
         // Splits run ahead only while the ones before them may leave budget: a split reads its cube at four times its
@@ -613,10 +799,23 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
             ++splits;
             traced += ready->second.traced;
             const_cast<Cell*>(ready->first)->split = true;
+            splitSince.push_back(ready->first->index);
             for (Child& child : ready->second.children) offer(commit(child));
             held.erase(ready);
+            if (cache != nullptr && splits % kSplitsPerRecord == 0)
+            {
+                RefineBatch batch = take(false);
+                record(splitsLabel, batch);
+                cache->Checkpoint();
+            }
         }
         progress();
+    }
+    if (cache != nullptr && !placed)
+    {
+        RefineBatch batch = take(true);
+        record(splitsLabel, batch);
+        cache->Checkpoint();
     }
     for (const auto& h : held)
     {
@@ -655,7 +854,12 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
             layout.front.push_back(p.front);
             layout.back.push_back(p.back);
             layout.ids.push_back(p.id);
-            if (part.keepHits) layout.hits.push_back(p.hit);
+            if (part.keepHits)
+            {
+                const Cell& from = cells[p.cell];
+                layout.sources.push_back(Layout::Source{from.piece, from.level, from.read, from.at});
+                if (!replayed) layout.hits.push_back(p.hit);
+            }
             power += p.Value() * a;
             area += a;
             for (int ax = X; ax <= Z; ++ax) digest = BounceOrderMix(digest ^ Bits(p.at[ax]));
@@ -686,6 +890,55 @@ Result Place(Workers& workers, const Part& part, const std::vector<Trace*>& shad
         return result;
     result.index = std::make_shared<const SurfaceNodeIndex>(layout.points, layout.normals, layout.spacings);
     return result;
+}
+
+/// Finds again the hits of a placement read back, for passes that shade its points again: each cube read that found points
+/// is read once more and its records' roots fired again, and each point takes the root of its own record.
+template<class Workers>
+void Relocate(Workers& workers, const Part& part, Layout& layout, const std::function<void()>& cooperate)
+{
+    const std::size_t count = layout.points.size();
+    if (layout.hits.size() == count)
+        return;
+    if (layout.sources.size() != count)
+        throw std::logic_error("Surface bounce cannot find a placement's hits again without its reads");
+    Map& map = *part.map;
+    std::map<Layout::Source, std::vector<std::size_t>> reads;
+    for (std::size_t i = 0; i < count; ++i)
+        reads[layout.sources[i]].push_back(i);
+    std::vector<std::pair<Layout::Source, std::vector<std::size_t>>> work(reads.begin(), reads.end());
+    layout.hits.assign(count, Intersection());
+    std::vector<std::uint8_t> found(count, 0);
+    workers.Uncounted(work.size(), cooperate, [&](std::size_t index, std::size_t worker)
+    {
+        workers[worker].Watch(part.owner);
+        const Layout::Source& source = work[index].first;
+        TraceThreadData* const td = workers.Thread(worker);
+        const Map::Points points = map.Read(source.level, source.at, source.read, td);
+        for (const Map::Part& p : points.parts)
+        {
+            if (p.region->Piece() != source.piece) continue;
+            std::vector<Intersection> hits;
+            part.map.Hits(p, td, hits);
+            std::size_t n = 0;
+            for (const Map::Chunk* chunk : p.chunks)
+                for (std::size_t r = 0; r < chunk->records.size(); ++r, ++n)
+                {
+                    const std::uint64_t id = Map::Id(p, *chunk, r);
+                    for (std::size_t i : work[index].second)
+                        if (layout.ids[i] == id)
+                        {
+                            layout.hits[i] = hits[n];
+                            found[i] = 1;
+                        }
+                }
+        }
+    });
+    for (std::size_t i = 0; i < count; ++i)
+        if (!found[i] || layout.hits[i].Object == nullptr)
+            throw std::runtime_error("Surface bounce could not find a saved placement's point again on " +
+                                     std::string(part.owner->source ? *part.owner->source : "an unnamed object") +
+                                     "; delete its saved caches to rebuild them");
 }
 
 } // namespace surface_refine
