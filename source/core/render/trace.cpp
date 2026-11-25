@@ -8969,7 +8969,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.ambient.assign(count * MathColour::channels, std::numeric_limits<float>::quiet_NaN());
             // the lighting stage's arrays are counted while they fill, before the cell is ready and can be spilled
             threadData->subsurfaceCache->Stage(cell, cell.visibility.capacity() * sizeof(float) + cell.entry.capacity() * sizeof(float) +
-                                                     cell.internal.capacity() * sizeof(float) + cell.internalPart.capacity() * sizeof(cell.internalPart[0]) +
+                                                     cell.internal.capacity() * sizeof(float) + cell.internalClass.capacity() * sizeof(cell.internalClass[0]) +
                                                      cell.photonEntry.capacity() * sizeof(float) + cell.ambient.capacity() * sizeof(float));
             {
                 std::lock_guard<std::mutex> lock(cell.mutex);

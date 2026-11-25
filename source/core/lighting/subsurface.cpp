@@ -1146,7 +1146,7 @@ namespace
 // the arrays a ready cell spills, in the order they are written
 template<class F> void ForEachSpilled(SubsurfaceCell& cell, F&& f)
 {
-    f(cell.points); f(cell.nodes); f(cell.visibility); f(cell.ambient); f(cell.photonEntry); f(cell.entry); f(cell.internal); f(cell.internalPart);
+    f(cell.points); f(cell.nodes); f(cell.visibility); f(cell.ambient); f(cell.photonEntry); f(cell.entry); f(cell.internal); f(cell.internalClass);
 }
 }
 
