@@ -2271,14 +2271,22 @@ share and the refraction at the rest, bent about the mean of the taps that trans
 normal dropped the transmitting taps' light, and inside a bumpy glass ball its path kept the smooth sphere's angle at
 every bounce, so it never escaped and returned black. The hit reflects totally only where no tap transmits; where the
 light left to transmit is under the ADC bailout the refraction is not traced at all, as without `+TF`. A totally
-reflected ray is added unfiltered, so under `+TF` it is traced at the hit's weight, not the transmitted share's, which
-cut it short at the bailout. On that ball at 320×240, ball pixels under 60/255 go from 25 with total reflection to 2 at
+reflected ray is added unfiltered, so it is traced at the hit's weight, not the transmitted share's, which cut it short
+at the bailout. On that ball at 320×240, ball pixels under 60/255 go from 25 with total reflection to 2 at
 one sample a pixel, and from 5 to 0 at four; mean absolute error over the ball against a sixteen-sample render without
 `+TF` goes from 50.1 to 43.5 at one sample and from 40.1 to 38.0 at four (×1000 of full scale), and the mean is 4 and 6
 above the reference's. The two pixels left are paths that reach `max_trace_level` 8 inside the ball; at 64 they are 68
 and 183. Tracing both rays at those hits adds 5.7% rays (shadow tests included) at one and four samples, 6.3% and 6.2%
-more than the same renders without `+TF`. Glass without Fresnel reflection refracts at its full filter there, as its
+more than the same renders without `+TF` (measured before `-TF` traced total reflection at the hit's weight too). Glass without Fresnel reflection refracts at its full filter there, as its
 reflection does not take the totally reflecting taps' share.
+
+The hit's weight for a total reflection first applied under `+TF` only, so switching the filter on also lengthened every
+chain of total reflections inside filtering glass, wherever the filter's share of the light was what the bailout cut.
+Total reflection is now traced at the hit's weight with or without `+TF`, and glass with plain pigments and smooth normals
+renders the same either way. Without `+TF` such glass costs more: on tinted blocks (filter 0.6, ior 1.31, 800×600, one
+sample a pixel) rays go from 3,753,397 to 4,217,194 and instructions from 29.4 to 32.3 billion, and the image moves towards
+a render with a bailout of 0.00001 (mean absolute error 2.43 to 1.09, largest 26 to 13 of 255, at 320×240). With `+TF`
+nothing changes; the filter's own cost on that scene, a checker floor, is 21.4 billion instructions, not 24.3.
 
 Degenerate footprints fall back without error: a tap whose perturbed normal has zero length takes the raw normal, taps whose mean normal has zero length light the layer by the centre's normal, taps of no total opacity keep their plain mean colour, a ray within 1e-12 of grazing or a footprint under 1e-9 of the hit's distance from the origin plus the ray's length is not filtered, and a grazing footprint is capped at 64 pixel widths.
 
