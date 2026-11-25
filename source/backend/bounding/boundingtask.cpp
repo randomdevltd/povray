@@ -897,7 +897,7 @@ static std::shared_ptr<PreparedCaches> OpenPreparedCaches(BackendSceneData& scen
     for (const auto& name : names)
         key.Add(name.first).Add(name.second);
     std::shared_ptr<PreparedCaches> caches = std::make_shared<PreparedCaches>(scene.preparedCacheDirectory, key.Value(), scene.preparedCacheVerify,
-                                                                              scene.preparedCacheMaxBytes);
+                                                                              scene.preparedCacheMaxBytes, scene.preparedCacheCheckpointSeconds);
     caches->SetMessenger(&messages);
     std::vector<CacheInput> inputs;
     for (const auto& file : files)

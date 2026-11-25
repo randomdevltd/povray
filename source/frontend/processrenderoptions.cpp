@@ -160,6 +160,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Buffer_Output",       0,                             0 },
     { "Buffer_Size",         0,                             0 },
 
+    { "Cache_Checkpoint",    kPOVAttrib_CacheCheckpoint,    kPOVMSType_Float },
     { "Cache_Max_Size",      kPOVAttrib_CacheMaxSize,       kPOVMSType_Float },
     { "Cache_Path",          kPOVAttrib_CachePath,          kPOVMSType_UCS2String },
     { "Cache_Verify",        kPOVAttrib_CacheVerify,        kPOVMSType_Bool },
