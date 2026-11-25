@@ -965,6 +965,25 @@ class Parser final
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
         void Make_Surface_Light(ObjectPtr container);
         void Make_Interior_Light(Interior& interior, ObjectPtr container);
+        /// Registers a light block's light without its emitter, in the place its container gives it among the lights.
+        LightSource *Add_Media_Light(ObjectPtr container, const MediaLight& settings, bool surface);
+        /// Builds a light's emitter on its container; false, with a warning, for an interior light that gives no light.
+        bool Fit_Media_Light(LightSource *light, bool surface);
+        /// Takes a light block's light out of the scene's lists and destroys it.
+        void Drop_Media_Light(LightSource *light);
+        /// Builds the emitters deferred in a cut placement on what the filter left; true if a mesh was built below.
+        bool Fit_Deferred_Lights(ObjectPtr object, std::unordered_set<const LightSource *>& dark);
+        /// Sets the scene-wide flags and interior bounds Post_Process gathers again, from the objects the filter kept.
+        void Recompute_Placed_State(const std::unordered_set<const Interior *>& cutInteriors);
+        void Apply_Filter_Tags();
+        /// Placed objects Filter_Tags will cut: their media and meshes are recorded once it has.
+        std::unordered_set<ConstObjectPtr> mFilteredPlacements;
+        /// Whether Post_Process is inside a placement Filter_Tags will cut, whose light blocks get their emitters after it has.
+        bool mDeferLightFits = false;
+        /// Objects whose interface crossing Post_Process counted only because of the #version in force at their placement.
+        std::unordered_set<ConstObjectPtr> mVersionCrossings;
+        /// The light blocks of cut placements, by container, waiting for their emitters: each light and whether it is a surface light.
+        std::unordered_map<ConstObjectPtr, std::vector<std::pair<LightSource *, bool>>> mDeferredLights;
         /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.
         bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.

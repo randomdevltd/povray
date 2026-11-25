@@ -99,8 +99,14 @@ const std::vector<std::string>& EffectiveTags(ConstObjectPtr object, const std::
                                               std::vector<std::string>& merged);
 /// Writes the effective tags into each object below `object`, once nothing will copy them as written.
 void ResolveInheritedTags(ObjectPtr object, const std::vector<std::string> *inherited = nullptr);
+/// What pruning took out: every object of a dropped part, recorded before it is destroyed, and each container that lost parts.
+struct TagPruning final
+{
+    std::vector<ObjectPtr> removed;
+    std::vector<ObjectPtr> reshaped;
+};
 /// Destroys the descendants of a parsed root that the filter removes; the root itself is left to the caller.
-TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights);
+TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, TagPruning& pruning);
 
 /// A photon light of a prepared set and where its method 2 photons are aimed.
 struct ProgressiveAiming final

@@ -544,7 +544,8 @@ void Parser::Run()
                 Parse_Frame();
             }
 
-            // the scene is complete: settle inherited tags and lit_by_tags, give out group lights, then dissolve the unions split for bounding
+            // the scene is complete: apply Filter_Tags, settle inherited tags and lit_by_tags, give out group lights, then dissolve the unions split for bounding
+            Apply_Filter_Tags();
             for (ObjectPtr object : sceneData->objects)
                 ResolveInheritedTags(object);
             Resolve_Lit_By_Tags();
@@ -1029,7 +1030,7 @@ void Parser::Destroy_Frame()
     if(!sceneData->lightGroupLightSources.empty())
     {
         for(vector<LightSource *>::iterator i = sceneData->lightGroupLightSources.begin(); i != sceneData->lightGroupLightSources.end(); i++)
-            if ((*i)->emitter == nullptr)
+            if ((*i)->emitterContainer == nullptr)
                 Destroy_Object(*i);
         sceneData->lightGroupLightSources.clear();
     }
@@ -8139,24 +8140,23 @@ void Parser::Parse_Frame_Items ()
             Object = Parse_Object();
             if (Object == nullptr)
                 Expectation_Error ("object or directive");
-            if (sceneData->parseFilterTags.specified)
-            {
-                std::vector<LightSource *> removedLights;
-                const TagSelection kept = PruneTagged(Object, sceneData->parseFilterTags, removedLights);
-                if ((kept == TagSelection::Empty) || (kept == TagSelection::Everything))
-                {
-                    Destroy_Object(Object);
-                    break;
-                }
-            }
+            // Filter_Tags prunes once the parse is over, so an object it will cut records its media, meshes and light emitters then
+            const bool cut = (SelectTagged(Object, sceneData->parseFilterTags) != TagSelection::Whole);
+            mDeferLightFits = cut;
             Post_Process (Object, nullptr);
+            mDeferLightFits = false;
             if (!DropShutPortal(Object))
             {
                 Remove_Subsurface_Without_Inside (Object);
                 Link_To_Frame (Object);
-                RecordMediaFields(Object, nullptr);
-                if ((sceneData->meshPool != nullptr) && sceneData->parseFilterTags.specified)
-                    QueuePlacedMeshes(Object);
+                if (cut)
+                    mFilteredPlacements.insert(Object);
+                else
+                {
+                    RecordMediaFields(Object, nullptr);
+                    if ((sceneData->meshPool != nullptr) && sceneData->parseFilterTags.specified)
+                        QueuePlacedMeshes(Object);
+                }
             }
             for (Portal *image : mPortalImages)
                 Link_To_Frame(image);
@@ -10729,75 +10729,22 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
             Add_Local_Light(child, light);
 }
 
-void Parser::Make_Surface_Light(ObjectPtr container)
+LightSource *Parser::Add_Media_Light(ObjectPtr container, const MediaLight& settings, bool surface)
 {
-    const MediaLight& settings = *container->surfaceLight;
     LightSource *light = new LightSource();
-    try
-    {
-        light->emitter = std::make_shared<GeometrySurfaceEmitter>(container, container->surfaceLight);
-    }
-    catch (const std::exception& failure)
-    {
-        delete light;
-        Error("%s", failure.what());
-    }
     light->emitterContainer = container;
-    light->Center = light->emitter->Centre();
     light->Area_Light = true;
     light->Use_Full_Area_Lighting = true;
     light->Jitter = true;
     light->Area_Size1 = settings.samples;
     light->Area_Size2 = 1;
-    light->lawRadius = light->emitter->Radius();
+    if (!surface)
+    {
+        light->attenuationScale = settings.attenuationScale;
+        light->attenuationPower = settings.attenuationPower;
+    }
     light->cutoff = settings.cutoff;
     light->sourceDomainCells = settings.domainCells;
-    light->Media_Interaction = settings.mediaInteraction;
-    light->Media_Attenuation = settings.mediaAttenuation;
-    if (settings.shadowless) light->Light_Type = FILL_LIGHT_SOURCE;
-    light->mediaPhotonOptions = settings.photonOptions;
-    if (settings.photonRefraction >= 0)
-        Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
-    if (settings.photonReflection >= 0)
-        Set_Flag(light, settings.photonReflection ? PH_RFL_ON_FLAG : PH_RFL_OFF_FLAG);
-    sceneData->mediaLights.push_back(light);
-    if (mLightGroups.empty()) sceneData->lightSources.push_back(light);
-    else
-    {
-        light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
-        light->photonGroupEnabled = mLightGroups.back()->photonGroupEnabled;
-        sceneData->lightGroupLightSources.push_back(light);
-        mGroupMediaLights.emplace_back(mLightGroups.back(), light);
-    }
-}
-
-void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
-{
-    MediaLight& settings = *interior.light;
-    std::string failure;
-    std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(interior, container, &mThreadData, failure);
-    if (!emitter)
-    {
-        Warning("An interior light gives no light because %s.", failure.c_str());
-        return;
-    }
-    LightSource *light = new LightSource();
-    light->emitter = emitter;
-    light->emitterContainer = container;
-    // POV's diffuse reflects E without the Lambertian 1/pi, so a light of radiant intensity I renders a white
-    // surface facing it I/d^2 bright; dividing by pi makes that L, the radiance the light was stated as.
-    light->colour = emitter->Intensity() / M_PI;
-    light->Center = emitter->Centre();
-    light->Area_Light = true;
-    light->Use_Full_Area_Lighting = true;
-    light->Jitter = true;
-    light->Area_Size1 = settings.samples;
-    light->Area_Size2 = 1;
-    light->attenuationScale = settings.attenuationScale;
-    light->attenuationPower = settings.attenuationPower;
-    light->cutoff = settings.cutoff;
-    light->sourceDomainCells = settings.domainCells;
-    light->lawRadius = emitter->Radius();
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
@@ -10817,6 +10764,81 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
         sceneData->lightGroupLightSources.push_back(light);
         mGroupMediaLights.emplace_back(mLightGroups.back(), light);
     }
+    return light;
+}
+
+bool Parser::Fit_Media_Light(LightSource *light, bool surface)
+{
+    // the light records its container read-only; the parser owns it and builds the emitter on it
+    const ObjectPtr container = const_cast<ObjectPtr>(light->emitterContainer);
+    if (surface)
+    {
+        try
+        {
+            light->emitter = std::make_shared<GeometrySurfaceEmitter>(container, container->surfaceLight);
+        }
+        catch (const std::exception& failure)
+        {
+            Error("%s", failure.what());
+        }
+    }
+    else
+    {
+        std::string failure;
+        std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(*container->interior, container, &mThreadData, failure);
+        if (!emitter)
+        {
+            Warning("An interior light gives no light because %s.", failure.c_str());
+            return false;
+        }
+        light->emitter = emitter;
+        // POV's diffuse reflects E without the Lambertian 1/pi, so a light of radiant intensity I renders a white
+        // surface facing it I/d^2 bright; dividing by pi makes that L, the radiance the light was stated as.
+        light->colour = emitter->Intensity() / M_PI;
+    }
+    light->Center = light->emitter->Centre();
+    light->lawRadius = light->emitter->Radius();
+    return true;
+}
+
+void Parser::Drop_Media_Light(LightSource *light)
+{
+    for (std::vector<LightSource *> *lights : { &sceneData->mediaLights, &sceneData->lightSources, &sceneData->lightGroupLightSources })
+        lights->erase(std::remove(lights->begin(), lights->end(), light), lights->end());
+    mGroupMediaLights.erase(std::remove_if(mGroupMediaLights.begin(), mGroupMediaLights.end(),
+        [light](const std::pair<ObjectPtr, LightSource *>& added) { return added.second == light; }), mGroupMediaLights.end());
+    Destroy_Object(light);
+}
+
+static bool Holds_Pending_Mesh(ConstObjectPtr object)
+{
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        return mesh->Pending();
+    if (object->Type & IS_COMPOUND_OBJECT)
+        for (ConstObjectPtr child : static_cast<const CompoundObject *>(object)->children)
+            if (Holds_Pending_Mesh(child))
+                return true;
+    return false;
+}
+
+// A light block in a placement Filter_Tags will cut takes its place among the lights now and its emitter after the cut.
+void Parser::Make_Surface_Light(ObjectPtr container)
+{
+    LightSource *light = Add_Media_Light(container, *container->surfaceLight, true);
+    // a container without an unbuilt mesh is checked now, as without the filter; one with a mesh waits so an excluded mesh is never built
+    if (!mDeferLightFits || !Holds_Pending_Mesh(container))
+        Fit_Media_Light(light, true);
+    if (mDeferLightFits)
+        mDeferredLights[container].emplace_back(light, true);
+}
+
+void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
+{
+    LightSource *light = Add_Media_Light(container, *interior.light, false);
+    if (mDeferLightFits)
+        mDeferredLights[container].emplace_back(light, false);
+    else if (!Fit_Media_Light(light, false))
+        Drop_Media_Light(light);
 }
 
 // Gives an object without a lit_by_tags query its parent's, and its interior's media without one of their own its query.
@@ -10902,6 +10924,217 @@ static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& obje
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
             Collect_Scene_Objects(child, objects);
+}
+
+bool Parser::Fit_Deferred_Lights(ObjectPtr object, std::unordered_set<const LightSource *>& dark)
+{
+    // as in Post_Process: the container's mesh first, its own lights, then its children, then the box above a built mesh
+    bool resolved = false;
+    const auto deferred = mDeferredLights.find(object);
+    if (deferred != mDeferredLights.end())
+    {
+        resolved = Resolve_Mesh_Geometry(object);
+        for (const std::pair<LightSource *, bool>& entry : deferred->second)
+            if (!Fit_Media_Light(entry.first, entry.second))
+                dark.insert(entry.first);
+    }
+    if ((object->Type & IS_COMPOUND_OBJECT) == 0)
+        return resolved;
+    CompoundObject *compound = static_cast<CompoundObject *>(object);
+    bool below = false;
+    for (ObjectPtr child : compound->children)
+        below = Fit_Deferred_Lights(child, dark) || below;
+    if (below)
+    {
+        if (CSG *csg = dynamic_cast<CSG *>(object))
+            csg->Drop_Child_Tree();
+        if (compound->Bound.empty())
+        {
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
+            compound->Compute_BBox();
+            Update_Infinite_Flag(compound);
+        }
+    }
+    return resolved || below;
+}
+
+void Parser::Recompute_Placed_State(const std::unordered_set<const Interior *>& cutInteriors)
+{
+    sceneData->anyOpaque = false;
+    sceneData->crossedNonSurface = false;
+    sceneData->dielectrics = false;
+    sceneData->fieldRefraction = false;
+    sceneData->interiorMedia = false;
+    sceneData->firstMediaPrecedence = UINT_MAX;
+    sceneData->iorMixModes = false;
+    sceneData->mediaBlendModes = false;
+    solidMediaSeen = false;
+    std::unordered_set<const Interior *> seen;
+    // the same walk and the same tests as Post_Process, on the objects left
+    std::function<void(ObjectPtr, ObjectPtr)> visit = [&](ObjectPtr object, ObjectPtr parent) {
+        const bool compound = ((object->Type & IS_COMPOUND_OBJECT) != 0);
+        if (object->Type & LT_SRC_UNION_OBJECT)
+        {
+            for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
+                visit(child, object);
+            return;
+        }
+        if (Test_Flag(object, PORTAL_FLAG))
+            return;
+        Interior *interior = object->interior.get();
+        const bool own = (interior != nullptr) && ((parent == nullptr) || (object->interior != parent->interior));
+        if ((interior != nullptr) && seen.insert(interior).second)
+        {
+            // an interior's own modes count once, and bounds the cut changed are gathered again from what is left
+            if (cutInteriors.count(interior) != 0)
+            {
+                interior->boundsLow = Vector3d(HUGE_VAL);
+                interior->boundsHigh = Vector3d(-HUGE_VAL);
+            }
+            if (!(object->Type & LIGHT_SOURCE_OBJECT))
+            {
+                sceneData->iorMixModes = sceneData->iorMixModes || (interior->iorMix != kIorMixMean);
+                bool blends = interior->clears;
+                for (const Media& medium : interior->media)
+                    blends = blends || (medium.mix != kMediaBlendAdd) || (medium.priority != 0);
+                sceneData->mediaBlendModes = sceneData->mediaBlendModes || blends;
+            }
+        }
+        if ((interior != nullptr) && !(object->Type & LIGHT_SOURCE_OBJECT))
+        {
+            interior->hollow = Test_Flag(object, HOLLOW_FLAG);
+            sceneData->fieldRefraction = sceneData->fieldRefraction || interior->refracting;
+            const bool visibleMedia = std::any_of(interior->media.begin(), interior->media.end(), [](const Media& medium) {
+                return !medium.Absorption.IsZero() || !medium.Emission.IsZero() || !medium.Scattering.IsZero(); });
+            if (visibleMedia)
+            {
+                sceneData->interiorMedia = true;
+                sceneData->firstMediaPrecedence = std::min(sceneData->firstMediaPrecedence, interior->precedence);
+                solidMediaSeen = solidMediaSeen || !interior->hollow;
+            }
+            sceneData->dielectrics = sceneData->dielectrics || interior->refracting || (interior->iorState != kIorOff) ||
+                                     (interior->Dispersion != SNGL(sceneData->atmosphereDispersion));
+        }
+        if (compound)
+            for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
+                visit(child, object);
+        if (own && (cutInteriors.count(interior) != 0))
+        {
+            Vector3d low, high;
+            Make_min_max_from_BBox(low, high, object->BBox);
+            interior->boundsLow = min(interior->boundsLow, low);
+            interior->boundsHigh = max(interior->boundsHigh, high);
+        }
+        if (Test_Flag(object, OPAQUE_FLAG))
+            sceneData->anyOpaque = true;
+        else if ((interior != nullptr) && ((interior->iorMix != kIorMixSurface) || (mVersionCrossings.count(object) != 0)))
+            sceneData->crossedNonSurface = true;
+    };
+    for (ObjectPtr object : sceneData->objects)
+        visit(object, nullptr);
+}
+
+// Filter_Tags takes out what the render leaves out only now the scene is complete, so no parse-time query saw it gone.
+void Parser::Apply_Filter_Tags()
+{
+    const TagFilter& filter = sceneData->parseFilterTags;
+    if (!filter.specified)
+        return;
+    std::vector<ObjectPtr> before;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, before);
+    std::vector<Portal *> mouths;
+    // removed objects are compared by address only, never read, so their interiors are noted while they exist
+    std::unordered_map<ConstObjectPtr, const Interior *> interiorOf;
+    for (ObjectPtr object : before)
+    {
+        if (Test_Flag(object, PORTAL_FLAG))
+            mouths.push_back(static_cast<Portal *>(object));
+        if (object->interior != nullptr)
+            interiorOf.emplace(object, object->interior.get());
+    }
+    TagPruning pruning;
+    std::vector<ObjectPtr> kept;
+    for (ObjectPtr object : sceneData->objects)
+    {
+        const TagSelection selection = PruneTagged(object, filter, pruning);
+        if ((selection == TagSelection::Empty) || (selection == TagSelection::Everything))
+        {
+            Collect_Scene_Objects(object, pruning.removed);
+            Destroy_Object(object);
+        }
+        else
+            kept.push_back(object);
+    }
+    std::unordered_set<ConstObjectPtr> gone(pruning.removed.begin(), pruning.removed.end());
+    for (Portal *mouth : mouths)
+    {
+        if ((gone.count(mouth) != 0) || (mouth->partner == nullptr) || (gone.count(mouth->partner) == 0))
+            continue;
+        // a mouth whose partner went has no far side; a far mouth goes with its near mouth
+        mouth->partner = nullptr;
+        if (!mouth->farMouth)
+        {
+            kept.erase(std::remove(kept.begin(), kept.end(), mouth), kept.end());
+            gone.insert(mouth);
+            Destroy_Object(mouth);
+        }
+    }
+    sceneData->objects.swap(kept);
+    // the light blocks of cut placements get their emitters on what is left of their containers
+    std::unordered_set<const LightSource *> dark;
+    for (ObjectPtr object : sceneData->objects)
+        if (mFilteredPlacements.count(object) != 0)
+            Fit_Deferred_Lights(object, dark);
+    mDeferredLights.clear();
+    auto lost = [&](const LightSource *light) {
+        // a light block left without an emitter has no placed container to emit from
+        return (gone.count(light) != 0) || (dark.count(light) != 0) ||
+               ((light->emitterContainer != nullptr) && ((gone.count(light->emitterContainer) != 0) || (light->emitter == nullptr)));
+    };
+    for (std::vector<LightSource *> *lights : { &sceneData->lightSources, &sceneData->lightGroupLightSources })
+        lights->erase(std::remove_if(lights->begin(), lights->end(), lost), lights->end());
+    mGroupMediaLights.erase(std::remove_if(mGroupMediaLights.begin(), mGroupMediaLights.end(),
+        [&](const std::pair<ObjectPtr, LightSource *>& added) { return (gone.count(added.first) != 0) || lost(added.second); }),
+        mGroupMediaLights.end());
+    std::vector<LightSource *> mediaLights;
+    for (LightSource *light : sceneData->mediaLights)
+    {
+        if (lost(light))
+            Destroy_Object(light);
+        else
+            mediaLights.push_back(light);
+    }
+    sceneData->mediaLights.swap(mediaLights);
+    if (!gone.empty() || !pruning.reshaped.empty())
+    {
+        std::unordered_set<const Interior *> cutInteriors;
+        for (ConstObjectPtr object : gone)
+        {
+            const auto found = interiorOf.find(object);
+            if (found != interiorOf.end())
+                cutInteriors.insert(found->second);
+        }
+        // a cut placement's boxes changed with the cut and with the meshes its light blocks built after it
+        std::vector<ObjectPtr> cut;
+        for (ObjectPtr object : sceneData->objects)
+            if (mFilteredPlacements.count(object) != 0)
+                Collect_Scene_Objects(object, cut);
+        for (ConstObjectPtr object : cut)
+            if (object->interior != nullptr)
+                cutInteriors.insert(object->interior.get());
+        Recompute_Placed_State(cutInteriors);
+    }
+    for (ObjectPtr object : sceneData->objects)
+    {
+        if (mFilteredPlacements.count(object) == 0)
+            continue;
+        RecordMediaFields(object, nullptr);
+        if (sceneData->meshPool != nullptr)
+            QueuePlacedMeshes(object);
+    }
+    mFilteredPlacements.clear();
+    mVersionCrossings.clear();
 }
 
 // Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter, bounce
@@ -11142,7 +11375,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
     {
         // an interior light's table needs the container's geometry, so a deferred mesh is built now and boxes above it redone
-        if (Object->interior->light)
+        if (Object->interior->light && !mDeferLightFits)
             mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
@@ -11181,7 +11414,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 
     if (Object->surfaceLight)
     {
-        mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
+        if (!mDeferLightFits)
+            mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         Make_Surface_Light(Object);
     }
 
@@ -11403,7 +11637,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     }
     else if ((Object->interior != nullptr) && ((Object->interior->iorMix != kIorMixSurface) ||
                                                ((Object->interior->iorState == kIorOff) && (sceneData->EffectiveLanguageVersion() >= 400))))
+    {
         sceneData->crossedNonSurface = true;
+        // the #version in force here decided it, so a recount after Filter_Tags reads it from this note
+        if (sceneData->parseFilterTags.specified && (Object->interior->iorMix == kIorMixSurface))
+            mVersionCrossings.insert(Object);
+    }
 }
 
 namespace
