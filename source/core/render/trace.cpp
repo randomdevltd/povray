@@ -8967,6 +8967,10 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.photonEntry.assign(count * MathColour::channels, 0.0f);
             if (key.radiosity)
                 cell.ambient.assign(count * MathColour::channels, std::numeric_limits<float>::quiet_NaN());
+            // the lighting stage's arrays are counted while they fill, before the cell is ready and can be spilled
+            threadData->subsurfaceCache->Stage(cell, cell.visibility.capacity() * sizeof(float) + cell.entry.capacity() * sizeof(float) +
+                                                     cell.internal.capacity() * sizeof(float) + cell.internalClass.capacity() * sizeof(cell.internalClass[0]) +
+                                                     cell.photonEntry.capacity() * sizeof(float) + cell.ambient.capacity() * sizeof(float));
             {
                 std::lock_guard<std::mutex> lock(cell.mutex);
                 cell.stage = SubsurfaceCell::kLighting;
@@ -9020,6 +9024,9 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
             threadData->subsurfaceCache->Refund(cell);
     }
     cell.changed.notify_all();
+    // a reader pins it before it reads, so the budget may spill it from now on
+    if (usable)
+        threadData->subsurfaceCache->Ready(cell);
 }
 
 // Cell jobs run at the quality subsurface needs, whichever trace runs them (a radiosity gather's has no area lights).
@@ -10233,6 +10240,11 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
 {
     cloud.cells.clear();
     cloud.coords.clear();
+    // a regather of the same point replaces its last gather's pins, which are on top of the stack
+    if (cloud.pinMark <= ssltPins.size())
+        UnpinSubsurfaceCells(std::max(cloud.pinMark, ssltPinFloor));
+    cloud.pinMark = ssltPins.size();
+    CacheBudget *budget = threadData->subsurfaceCache->Budget();
     // on the map, cells are cubes of its frame: the sphere taken there, its radius by the copy's least stretch
     const BoundingBox& box = cloud.map ? (*cloud.map)->Object()->BBox : cloud.object->BBox;
     const Vector3d at = cloud.map ? cloud.map->ToMap(centre) : centre;
@@ -10304,6 +10316,16 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
         {
             threadData->subsurfaceCache->CheckCap();
             throw POV_EXCEPTION_STRING("A subsurface point cloud cell could not be built.");
+        }
+        // under a budget the cell is pinned until the point that gathered it is shaded, read back first if it was spilled
+        if (budget != nullptr)
+        {
+            SubsurfaceCell *pinned = const_cast<SubsurfaceCell*>(known);
+            budget->Pin(*pinned);
+            ssltPins.emplace_back(pinned, pinned->PinnedBytes());
+            ssltPinnedBytes += ssltPins.back().second;
+            // a ring wider than a cell pins more than 27 cells, so the ceiling takes the most any thread held
+            budget->NotePins(ssltPins.size(), ssltPinnedBytes);
         }
         if (!known->nodes.empty())
         {
@@ -11956,6 +11978,13 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // Method 2's light enters through the perturbed surface, averaged over the area each estimate of it stands for; it
     // leaves by the surface's own normal (see doc/PERF.md), and the paths inside keep that normal too.
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
+    // the cells its gathers pin are let go once this point is shaded, those of points nested in it already let go
+    struct Unpin final
+    {
+        Trace& t; size_t mark, floor;
+        ~Unpin() { t.UnpinSubsurfaceCells(mark); t.ssltPinFloor = floor; }
+    } unpin{*this, ssltPins.size(), ssltPinFloor};
+    ssltPinFloor = ssltPins.size();
     std::vector<Vector3d>& bumped = cloudData.bumped;
     std::vector<double>& shares = cloudData.bumpedShare;
     bumped.clear();

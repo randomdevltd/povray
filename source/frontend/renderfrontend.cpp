@@ -388,15 +388,16 @@ void RenderFrontendBase::StartParser(SceneData& shd, SceneId sid, POVMS_Object& 
     POVMS_Message msg(obj, kPOVMsgClass_SceneControl, kPOVMsgIdent_StartParser);
 
     // saved prepared caches go beside the render state file unless Cache_Path names a directory
+    Path caches(obj.TryGetUCS2String(kPOVAttrib_OutputPath, ""));
+    caches.SetFile((Path(obj.TryGetUCS2String(kPOVAttrib_OutputFile, ""))).GetFile());
+    if (caches.GetFile().empty() == true)
+        caches.SetFile(obj.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov"));
+    caches.SetFile(GetFileName(Path(caches.GetFile())) + u".pov-state.caches");
     if (!obj.Exist(kPOVAttrib_CachePath) && obj.TryGetBool(kPOVAttrib_SaveCaches, false))
-    {
-        Path caches(obj.TryGetUCS2String(kPOVAttrib_OutputPath, ""));
-        caches.SetFile((Path(obj.TryGetUCS2String(kPOVAttrib_OutputFile, ""))).GetFile());
-        if (caches.GetFile().empty() == true)
-            caches.SetFile(obj.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov"));
-        caches.SetFile(GetFileName(Path(caches.GetFile())) + u".pov-state.caches");
         msg.SetUCS2String(kPOVAttrib_CachePath, caches().c_str());
-    }
+    // caches spilled past Max_Cache_Memory go to a folder in the cache directory, which is beside the state file by default
+    msg.SetUCS2String(kPOVAttrib_SpillPath, obj.Exist(kPOVAttrib_CachePath) ? (obj.GetUCS2String(kPOVAttrib_CachePath) + u"/spill").c_str()
+                                                                            : (caches() + u"/spill").c_str());
 
     msg.SetDestinationAddress(sid.GetAddress());
     msg.SetInt(kPOVAttrib_SceneId, sid.GetIdentifier());

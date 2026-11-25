@@ -120,6 +120,7 @@ bool RadiosityTask::NextBlock(POVRect& rect, unsigned int& serial, ViewData::Blo
 
 void RadiosityTask::Run()
 {
+    GetViewData()->CheckCacheBudget();
     DBL width = screen ? screen->width : GetViewData()->GetWidth();
     DBL height = screen ? screen->height : GetViewData()->GetHeight();
 

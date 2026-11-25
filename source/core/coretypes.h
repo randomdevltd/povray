@@ -107,6 +107,7 @@ inline T Sqr(T a)
     return a * a;
 }
 
+class CacheBudget;
 struct Transform_Struct;
 using TRANSFORM = Transform_Struct; ///< @deprecated
 
@@ -219,7 +220,8 @@ class Media final
         FastCache *SinglePreparedBinding() const;
         /// Plans building its prepared density grid ahead of the render from `copy`, a copy whose functions other threads
         /// may run; null when it has no prepared grid or the grid cannot be sized now.
-        std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const;
+        /// Under a cache `budget`, the eager grid is built in the budget's pages, so taking it copies nothing.
+        std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit, const std::shared_ptr<CacheBudget>& budget = nullptr) const;
         /// Whether its prepared grid was fitted to this container.
         bool PreparedFor(ConstObjectPtr object) const;
         /// Whether it may scatter anywhere within `reach` along each axis of `point` in `container`; true where it has no grid to tell.

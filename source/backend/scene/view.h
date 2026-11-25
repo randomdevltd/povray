@@ -215,6 +215,10 @@ class ViewData final
         std::shared_ptr<SharedBlock> BlockToHelp();
         /// Workers of the running pass not yet out of blocks to work on.
         std::atomic<int> passWorking{0};
+        /// Under Max_Cache_Memory, counts the pinned caches the preparation built and fails before the first pixel if they
+        /// alone pass the budget; every render task calls it, and it runs once a view.
+        void CheckCacheBudget();
+        std::once_flag cacheBudgetChecked;
 
         /**
          *  Get the next sub-rectangle of the view to render (if any).

@@ -67,6 +67,7 @@
 
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
+#include "core/support/cachebudget.h"
 
 namespace pov
 {
@@ -209,8 +210,9 @@ struct SubsurfaceNode final
 /// The distance between points with these steps along the axes on a surface with this unit normal.
 double SubsurfaceSpacing(const double step[3], const Vector3d& normal);
 
-/// The irradiance cloud of one object in one cube of space, with its point hierarchy; see doc/PERF.md.
-struct SubsurfaceCell final
+/// The irradiance cloud of one object in one cube of space, with its point hierarchy; see doc/PERF.md. Under a memory
+/// budget a ready cell is a block of the budget: a gather pins it, and an unpinned one may be spilled and read back.
+struct SubsurfaceCell final : public SpillBlock
 {
     std::vector<SubsurfacePoint> points;
     std::vector<SubsurfaceNode> nodes;
@@ -234,6 +236,9 @@ struct SubsurfaceCell final
     void Release(); ///< frees its arrays, for a cell that cannot be used
     void MarkRead(int node) const;
     size_t PointsRead() const; ///< points under a node a gather has used
+    std::uint64_t Digest() const; ///< its points and their light, for the statistics
+    /// What the statistics read of a cell the budget spilled, kept when it was admitted and when it was dropped.
+    struct Figures final { size_t points = 0, nodes = 0, read = 0; std::uint64_t digest = 0; bool kept = false; } figures;
 
     /// Building goes in stages, each split into jobs that every thread needing the cell meanwhile takes a share of.
     /// A cell whose build throws ends ready but unusable, and the render stops.
@@ -256,6 +261,11 @@ struct SubsurfaceCell final
     std::shared_ptr<const void> mapRead;
     struct MapRef final { std::uint32_t part, chunk, record; };
     std::vector<MapRef> mapRefs;
+protected:
+    size_t HeldBytes() const override;
+    std::string SpillBytes() const override;
+    void Drop() override;
+    void Restore(const std::string& bytes) override;
 };
 
 /// Where a cell sits: the object, the cell size level (its side is 2^level scene units) and the cell's integer position.
@@ -327,6 +337,7 @@ class SubsurfaceStore final
         /// capMB in MB caps the clouds when at least 1; below it (kSubsurfaceUncappedMB, the scene's default) they are
         /// uncapped.
         explicit SubsurfaceStore(double capMB = kSubsurfaceUncappedMB);
+        ~SubsurfaceStore();
         /// The cell for key, and whether the caller, of the view numbered view, is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build, std::uint64_t view);
         /// Readies the cells for a new view and returns its number, from 1: drops those a stopped view left unusable and
@@ -346,6 +357,11 @@ class SubsurfaceStore final
         bool ClosedMesh(const void *mesh, const std::function<bool()>& compute);
         std::shared_ptr<const float> Layer(const SubsurfaceBoundary& boundary, int step, int k);
         std::shared_ptr<const SubsurfaceBoundary> Boundary(double eta);
+        /// Counts the clouds against a memory budget, spilling ready cells beyond it; a null budget leaves them in memory.
+        void SetBudget(const std::shared_ptr<CacheBudget>& budget);
+        const std::shared_ptr<CacheBudget>& Budget() const { return budget; }
+        /// A cell just made ready: under a budget it can now be spilled.
+        void Ready(SubsurfaceCell& cell);
         /// The same number for views whose cameras space points alike, from 1.
         std::uint64_t CameraId(const Vector3d& location, double pixelSize, double pixelAngle);
         /// The number of the scene's photon maps, from 1: a new one when they are shot afresh, else the last one's. A fresh
@@ -381,6 +397,9 @@ class SubsurfaceStore final
         std::unordered_map<const void*, size_t> mapBytes; ///< what each map read by the clouds held when last counted
         std::vector<std::array<double, 5>> cameras; ///< each camera spacing given an id, at its id less one
         std::uint64_t views = 0, photonShots = 0;
+        std::shared_ptr<CacheBudget> budget;
+        CacheAccount *cloudAccount = nullptr, *mapAccount = nullptr;
+        void Budgeted(std::int64_t staging);
 };
 
 /// One view's use of its scene's clouds: its camera, its photon shooting, its share of the statistics and its progress
@@ -408,6 +427,9 @@ class SubsurfaceCache final
         void ChargeMap(const void *map, size_t bytes) { store->ChargeMap(map, bytes); }
         /// Throws the fatal error once any cell has passed the cap.
         void CheckCap() const { store->CheckCap(); }
+        /// The memory budget the clouds are counted against, or null.
+        CacheBudget *Budget() const { return store->Budget().get(); }
+        void Ready(SubsurfaceCell& cell) { store->Ready(cell); }
         /// The share of the image done; once past half, whether cells built at the second quarter's rate would pass the cap.
         bool Progress(double fraction, double& heldMB, double& projectedMB, double& capMB);
         /// The clouds' memory for all views so far, and the cells and points this view used.

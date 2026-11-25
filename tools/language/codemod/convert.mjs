@@ -25,6 +25,65 @@ const isComparison = (node) => node.type === 'conditional_expression' ||
   (node.type === 'binary_expression' && PRECEDENCE_CLASSIC[operator(node)] <= 3);
 const isMacroCall = (node) => node.type === 'call_expression' && node.childForFieldName('function').type === 'identifier';
 
+// Words the engine matches by text in a photons block, each taking the next item as its value.
+const PHOTON_VALUE_WORDS = new Set(['quality', 'photon_memory', 'memory']);
+const NOT_ITEMS = new Set(['{', '}', ';', 'comment', 'line_comment', 'block_comment']);
+const blockName = (node) => node?.childForFieldName('name')?.text;
+const enclosingBlock = (node) => { for (let p = node.parent; p; p = p.parent) if (p.type === 'block') return p; return null; };
+// The items between a block's or a 4.0 body's braces; a classic #if branch has none.
+const listItems = (children) => children.slice(children.findIndex((c) => c.type === '{') + 1);
+
+// Item lists of each branch: classic #if/#elseif/#else, or 4.0 if { } else if { } else { }.
+function branchItems(node) {
+  if (node.type === 'if_directive')
+    return [node.childrenForFieldName('consequence'), ...node.childrenForFieldName('alternative').map((c) => c.childrenForFieldName('body'))];
+  const out = [];
+  for (let n = node; n;) {
+    out.push(listItems(n.childForFieldName('consequence').children));
+    const alt = n.childForFieldName('alternative');
+    if (alt && alt.type !== 'if_statement') out.push(listItems(alt.children));
+    n = alt?.type === 'if_statement' ? alt : null;
+  }
+  return out;
+}
+
+// The word that heads an item: `memory 4`, `memory (4)` or `memory - 1` all start with it.
+function itemWord(node) {
+  while (node.type === 'binary_expression' && ['+', '-'].includes(node.childForFieldName('operator').type)) node = node.childForFieldName('left');
+  if (node.type === 'call_expression') node = node.childForFieldName('function');
+  return node.type === 'identifier' ? node : null;
+}
+
+// Pairs items with their values left to right; collects each `memory` that starts an item, and returns whether a value is still owed.
+function photonItems(items, expecting, found) {
+  for (const item of items) {
+    if (NOT_ITEMS.has(item.type)) continue;
+    if (item.type === ',' || item.type === 'keyword') { expecting = true; continue; }
+    if (item.type === 'if_directive' || item.type === 'if_statement') {
+      // a conditional where a value is owed is that value; otherwise its branches hold items
+      const owed = branchItems(item).map((b) => photonItems(b, expecting, found));
+      expecting = !expecting && owed.some(Boolean);
+      continue;
+    }
+    if (expecting) { expecting = false; continue; }
+    const word = itemWord(item);
+    if (!word || !PHOTON_VALUE_WORDS.has(word.text)) continue;
+    if (word.text === 'memory') found.add(word.startIndex);
+    expecting = item.type === 'identifier';
+  }
+  return expecting;
+}
+
+// The photon cap's old spelling: `memory` in item position of the global_settings photons block; 4.0 spells it photon_memory.
+export function isPhotonMemory(node) {
+  if (node.type !== 'identifier' || node.text !== 'memory') return false;
+  const block = enclosingBlock(node);
+  if (blockName(block) !== 'photons' || blockName(enclosingBlock(block)) !== 'global_settings') return false;
+  const found = new Set();
+  photonItems(listItems(block.children), false, found);
+  return found.has(node.startIndex);
+}
+
 function lvalueRoot(node) {
   while (node.type === 'index_expression' || node.type === 'member_expression') node = node.childForFieldName('object');
   return node.type === 'identifier' ? node : null;
@@ -725,7 +784,8 @@ function convertUnit(unit, context) {
     switch (node.type) {
       case 'ERROR': return;
       case 'identifier':
-        if (context.renames.has(node.text)) replace(node, renamed(node.text));
+        if (isPhotonMemory(node)) replace(node, 'photon_memory');
+        else if (context.renames.has(node.text)) replace(node, renamed(node.text));
         return;
       case 'string':
         if (/[\r\n]/.test(node.text)) replace(node, node.text.replace(/\r?\n/g, '\\n'));

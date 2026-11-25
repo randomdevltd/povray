@@ -74,6 +74,7 @@
 #include "core/shape/plane.h"
 #include "core/shape/portal.h"
 #include "core/shape/sphere.h"
+#include "core/support/cachebudget.h"
 #include "core/support/octree.h"
 
 // POV-Ray header files (POVMS module)
@@ -134,7 +135,65 @@ ViewData::ViewData(shared_ptr<BackendSceneData> sd) :
     qualityFlags(9)
 {
     for (size_t id = 0; id < sd->preparedSets.size(); ++id)
+    {
         radiosityCaches.push_back(std::make_shared<RadiosityCache>(sd->radiositySettings));
+        if (sd->cacheBudget != nullptr)
+            radiosityCaches.back()->SetBudget(sd->cacheBudget.get(), &sd->cacheBudget->Account("radiosity tree", true));
+    }
+}
+
+namespace
+{
+// the bytes of a bounding tree's nodes, each with its child pointers
+std::size_t BoundingTreeBytes(const BBOX_TREE *node)
+{
+    if (node == nullptr)
+        return 0;
+    std::size_t bytes = sizeof(BBOX_TREE);
+    if (node->Entries > 0)
+    {
+        bytes += std::size_t(node->Entries) * sizeof(BBOX_TREE *);
+        for (short i = 0; i < node->Entries; ++i)
+            bytes += BoundingTreeBytes(node->Node[i]);
+    }
+    return bytes;
+}
+
+std::size_t FlatTreeBytes(const FlatBBoxTree *tree)
+{
+    return (tree == nullptr) ? 0 : tree->blocks.capacity() * sizeof(tree->blocks[0]) + tree->leaves.capacity() * sizeof(tree->leaves[0]);
+}
+
+// sets an account to what a cache holds now, rather than adding to it
+void Hold(CacheBudget& budget, const char *name, std::size_t bytes)
+{
+    CacheAccount& account = budget.Account(name, true);
+    budget.Charge(account, std::int64_t(bytes) - account.resident.load(std::memory_order_relaxed));
+}
+}
+
+void ViewData::CheckCacheBudget()
+{
+    CacheBudget *budget = sceneData->cacheBudget.get();
+    if (budget == nullptr)
+        return;
+    // every render task waits here, so a render whose pinned caches pass the budget traces no pixel
+    std::call_once(cacheBudgetChecked, [this, budget]()
+    {
+        const BackendSceneData& scene = *sceneData;
+        std::size_t tree = BoundingTreeBytes(scene.boundingSlabs) + FlatTreeBytes(scene.flatSlabs), photons = 0;
+        constexpr std::size_t segmentBytes = sizeof(ProgressiveVolumePhoton) + sizeof(ProgressiveVolumePhotonMap::Bounds);
+        for (const auto& set : scene.preparedSets)
+        {
+            if (set->boundingSlabs != scene.boundingSlabs)
+                tree += BoundingTreeBytes(set->boundingSlabs) + FlatTreeBytes(set->flatSlabs);
+            photons += std::size_t(std::max(set->surfacePhotonMap.numPhotons, 0) + std::max(set->mediaPhotonMap.numPhotons, 0)) * sizeof(Photon) +
+                       set->progressiveSurface.photons.size() * sizeof(MappedPhoton) + set->progressiveMedia.photons.size() * segmentBytes;
+        }
+        Hold(*budget, "scene bounding tree", tree);
+        Hold(*budget, "photon maps", photons);
+        budget->CheckPinned();
+    });
 }
 
 ViewData::~ViewData()
@@ -915,7 +974,10 @@ void View::StartRender(POVMS_Object& renderOptions)
 
     // every view of the scene shares its subsurface clouds, keeping apart only what depends on the view
     if (!viewData.sceneData->subsurfaceStore)
+    {
         viewData.sceneData->subsurfaceStore = std::make_shared<SubsurfaceStore>(viewData.sceneData->subsurfaceMemory);
+        viewData.sceneData->subsurfaceStore->SetBudget(viewData.sceneData->cacheBudget);
+    }
     viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceStore);
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
     {
@@ -1650,6 +1712,14 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       double(stats[Emitter_Own_Shadow_Blocked]), double(stats[Emitter_Own_Nanoseconds]) * 1e-9);
     }
 
+    if (viewData.sceneData->cacheBudget != nullptr)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Caches", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        for (const std::string& line : viewData.sceneData->cacheBudget->Report())
+            messages.Info("%s", line.c_str());
+    }
+
     if ((stats[Subsurface_Cloud_Attempts] > 0) || (stats[Subsurface_Cloud_Estimated] > 0))
     {
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
@@ -2037,7 +2107,7 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     if (sceneBytes > 0.0 && std::fabs(progressivePhotonCeiling.bytes - sceneBytes) > 1.0e-6 * sceneBytes)
         MessageFactory(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
                        viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId)
-            .Info("Photon memory ceiling %g GB (%s) overrides the scene's photons memory %g GB.",
+            .Info("Photon memory ceiling %g GB (%s) overrides the scene's photon_memory %g GB.",
                   progressivePhotonCeiling.bytes / 1.0e9, progressivePhotonCeiling.rule, sceneBytes / 1.0e9);
     viewData.photonPrepareCPU = 0;
     viewData.photonMapCPU = 0;

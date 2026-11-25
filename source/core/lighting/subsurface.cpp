@@ -52,6 +52,7 @@
 #include "core/lighting/bounceorders.h"
 #include "core/lighting/photons.h"
 #include "core/math/simd.h"
+#include "core/support/preparedcache.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -519,6 +520,38 @@ SubsurfaceStore::SubsurfaceStore(double capMB) :
     cap(capMB >= 1.0 ? size_t(capMB * 1048576.0) : std::numeric_limits<size_t>::max())
 {}
 
+SubsurfaceStore::~SubsurfaceStore()
+{
+    // the budget's clock holds the cells by address, so they leave it before they go
+    if (budget != nullptr)
+        for (const auto& slot : cells)
+            budget->Forget(*slot.second);
+}
+
+void SubsurfaceStore::SetBudget(const std::shared_ptr<CacheBudget>& owner)
+{
+    budget = owner;
+    cloudAccount = budget ? &budget->Account("subsurface clouds", false) : nullptr;
+    mapAccount = budget ? &budget->Account("subsurface surface maps", true) : nullptr;
+}
+
+void SubsurfaceStore::Budgeted(std::int64_t staging)
+{
+    if ((budget != nullptr) && (staging != 0))
+        budget->Charge(*cloudAccount, staging);
+}
+
+void SubsurfaceStore::Ready(SubsurfaceCell& cell)
+{
+    if ((budget == nullptr) || !cell.usable || cell.points.empty())
+        return;
+    cell.figures.points = cell.points.size();
+    cell.figures.nodes = cell.nodes.size();
+    cell.figures.digest = cell.Digest();
+    cell.figures.kept = true;
+    budget->Admit(cell, *cloudAccount);
+}
+
 void SubsurfaceStore::Drop(const std::function<bool(const SubsurfaceCellKey&, const SubsurfaceCell&)>& drop)
 {
     // views of a scene render one after another, so no thread works on a cell here
@@ -535,19 +568,33 @@ void SubsurfaceStore::Drop(const std::function<bool(const SubsurfaceCellKey&, co
         if (drop(slot.first, cell))
             dropped.push_back(slot);
         else if (cell.read)
-            for (size_t i = 0; i < (cell.nodes.size() + 31) / 32; i++)
+        {
+            // a spilled cell's nodes are on disk, but its read marks stay in memory
+            const size_t nodes = cell.Resident() ? cell.nodes.size() : cell.figures.nodes;
+            for (size_t i = 0; i < (nodes + 31) / 32; i++)
                 cell.read[i].store(0, std::memory_order_relaxed);
+            cell.figures.read = 0;
+        }
     }
-    std::lock_guard<std::mutex> lock(mutex);
-    for (const auto& slot : dropped)
+    std::int64_t unstaged = 0;
     {
-        SubsurfaceCell& cell = *slot.second;
-        charged -= std::min(charged, cell.charged);
-        staged -= std::min(staged, cell.staged);
-        cell.charged = cell.staged = 0;
-        cell.settled = true;
-        cells.erase(slot.first);
+        std::lock_guard<std::mutex> lock(mutex);
+        for (const auto& slot : dropped)
+        {
+            SubsurfaceCell& cell = *slot.second;
+            charged -= std::min(charged, cell.charged);
+            staged -= std::min(staged, cell.staged);
+            unstaged += std::int64_t(cell.staged);
+            cell.charged = cell.staged = 0;
+            cell.settled = true;
+            cells.erase(slot.first);
+        }
     }
+    if (budget != nullptr)
+        for (const auto& slot : dropped)
+            budget->Forget(*slot.second);
+    Budgeted(-unstaged);
+    std::lock_guard<std::mutex> lock(mutex);
     // with the dropped cells refunded, the view stops only if what it holds, or its own cells, pass the cap
     refused = (charged > cap) ? charged : 0;
     refusedAt = 0.0;
@@ -641,12 +688,14 @@ void SubsurfaceCache::PhotonsShot(bool fresh)
 
 void SubsurfaceStore::ChargeMap(const void *map, size_t bytes)
 {
+    std::int64_t grown = 0;
     {
         std::lock_guard<std::mutex> lock(mutex);
         size_t& known = mapBytes[map];
         if (bytes <= known)
             return;
         charged += bytes - known;
+        grown = std::int64_t(bytes - known);
         known = bytes;
         peak = std::max(peak, charged + staged);
         if ((charged > cap) && (refused == 0))
@@ -655,15 +704,25 @@ void SubsurfaceStore::ChargeMap(const void *map, size_t bytes)
             refusedAt = progress;
         }
     }
+    // surface maps are read anywhere along a gather, so they are pinned; counted outside the store's lock
+    if (budget != nullptr)
+        budget->Charge(*mapAccount, grown);
     CheckCap();
 }
 
 void SubsurfaceStore::Charge(SubsurfaceCell& cell)
 {
     size_t bytes = cell.Bytes();
+    std::int64_t unstaged = 0;
+    // the rows it cast into are freed; its arrays are counted when it is ready
+    struct Unstage final { SubsurfaceStore& store; std::int64_t& bytes; ~Unstage() { store.Budgeted(-bytes); } } unstage = { *this, unstaged };
     {
         std::lock_guard<std::mutex> lock(mutex);
+        // finished, it holds its arrays and what it cast into at once, until the cast rows are freed and it is ready
+        if (budget != nullptr)
+            budget->NoteCell(bytes + cell.staged);
         staged -= std::min(staged, cell.staged);
+        unstaged = std::int64_t(cell.staged);
         cell.staged = 0;
         cell.settled = true;
         if ((refused == 0) && (charged + bytes <= cap))
@@ -684,19 +743,31 @@ void SubsurfaceStore::Charge(SubsurfaceCell& cell)
 
 void SubsurfaceStore::Stage(SubsurfaceCell& cell, size_t bytes)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    if (cell.settled)
-        return;
-    staged += bytes;
-    cell.staged += bytes;
-    peak = std::max(peak, charged + staged);
+    size_t building;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (cell.settled)
+            return;
+        staged += bytes;
+        cell.staged += bytes;
+        building = cell.staged;
+        peak = std::max(peak, charged + staged);
+    }
+    // a cell being built bounds what a thread holds as much as a ready one
+    if (budget != nullptr)
+        budget->NoteCell(building);
+    // a cell being built is in use, so it is counted but cannot be spilled
+    Budgeted(std::int64_t(bytes));
 }
 
 void SubsurfaceStore::Refund(SubsurfaceCell& cell)
 {
+    std::int64_t unstaged = 0;
+    struct Unstage final { SubsurfaceStore& store; std::int64_t& bytes; ~Unstage() { store.Budgeted(-bytes); } } unstage = { *this, unstaged };
     std::lock_guard<std::mutex> lock(mutex);
     charged -= std::min(charged, cell.charged);
     staged -= std::min(staged, cell.staged);
+    unstaged = std::int64_t(cell.staged);
     cell.charged = cell.staged = 0;
     cell.settled = true;
 }
@@ -927,33 +998,22 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
     for (const std::shared_ptr<SubsurfaceCell>& cell : all)
     {
         std::lock_guard<std::mutex> cellLock(cell->mutex);
-        if (cell->usable && !cell->points.empty())
+        // no spill or read-back can run while it is inspected, whether or not render threads are still about; a cell the
+        // budget spilled is described by the figures kept when it went, without reading it back
+        cell->Inspect([&](bool resident)
         {
-            double points = double(cell->points.size());
+            const size_t count = resident ? cell->points.size() : cell->figures.points;
+            if (!cell->usable || (count == 0))
+                return;
+            double points = double(count);
             stats.cells += 1.0;
             stats.reused += (cell->view != view) ? 1.0 : 0.0;
             stats.points += points;
-            stats.read += double(cell->PointsRead());
+            stats.read += double(resident ? cell->PointsRead() : cell->figures.read);
             stats.termCells[cell->term] += 1.0;
             stats.termPoints[cell->term] += points;
-            std::uint64_t digest = 0;
-            for (const SubsurfacePoint& p : cell->points)
-            {
-                std::uint64_t bits[6] = {};
-                static_assert(sizeof(p.irradiance) <= 2 * sizeof(std::uint64_t), "a point's light fits two words");
-                std::memcpy(bits, &p.position, sizeof(p.position));
-                std::memcpy(&bits[3], &p.area, sizeof(p.area));
-                std::memcpy(&bits[4], p.irradiance, sizeof(p.irradiance));
-                for (std::uint64_t b : bits) digest = BounceOrderMix(digest ^ b);
-                if (!cell->internal.empty())
-                {
-                    std::uint64_t light[3] = {};
-                    std::memcpy(light, &cell->internal[p.id * kSubsurfaceInternalStride], kSubsurfaceInternalStride * sizeof(float));
-                    for (std::uint64_t b : light) digest = BounceOrderMix(digest ^ b);
-                }
-            }
-            stats.digest ^= digest;
-        }
+            stats.digest ^= resident ? cell->Digest() : cell->figures.digest;
+        });
     }
     return stats;
 }
@@ -1079,6 +1139,85 @@ size_t SubsurfaceCell::Bytes() const
     return sizeof(SubsurfaceCell) + points.capacity() * sizeof(SubsurfacePoint) + nodes.capacity() * sizeof(SubsurfaceNode) +
            (visibility.capacity() + ambient.capacity() + photonEntry.capacity() + entry.capacity() + internal.capacity()) * sizeof(float) + internalClass.capacity() * sizeof(std::uint64_t) +
            (read ? (nodes.size() + 31) / 32 * sizeof(std::uint32_t) : 0) + rows.capacity() * sizeof(std::vector<SubsurfacePoint>);
+}
+
+namespace
+{
+// the arrays a ready cell spills, in the order they are written
+template<class F> void ForEachSpilled(SubsurfaceCell& cell, F&& f)
+{
+    f(cell.points); f(cell.nodes); f(cell.visibility); f(cell.ambient); f(cell.photonEntry); f(cell.entry); f(cell.internal); f(cell.internalClass);
+}
+}
+
+size_t SubsurfaceCell::HeldBytes() const
+{
+    size_t bytes = 0;
+    ForEachSpilled(const_cast<SubsurfaceCell&>(*this), [&bytes](const auto& values) { bytes += values.capacity() * sizeof(values[0]); });
+    return bytes;
+}
+
+std::string SubsurfaceCell::SpillBytes() const
+{
+    std::string bytes;
+    bytes.reserve(HeldBytes() + 8 * sizeof(std::uint64_t));
+    ForEachSpilled(const_cast<SubsurfaceCell&>(*this), [&bytes](const auto& values)
+    {
+        const std::uint64_t count = values.size();
+        bytes.append(reinterpret_cast<const char *>(&count), sizeof(count));
+        bytes.append(reinterpret_cast<const char *>(values.data()), values.size() * sizeof(values[0]));
+    });
+    return bytes;
+}
+
+void SubsurfaceCell::Drop()
+{
+    // the read marks stay, so the points read so far are counted now, as no gather reads it until it is back
+    figures.read = PointsRead();
+    ForEachSpilled(*this, [](auto& values) { std::remove_reference_t<decltype(values)>().swap(values); });
+}
+
+void SubsurfaceCell::Restore(const std::string& bytes)
+{
+    const char *at = bytes.data(), *end = bytes.data() + bytes.size();
+    ForEachSpilled(*this, [&at, end](auto& values)
+    {
+        std::uint64_t count;
+        if (size_t(end - at) < sizeof(count))
+            throw CacheFormatError("a spilled subsurface cell ends early");
+        std::memcpy(&count, at, sizeof(count));
+        at += sizeof(count);
+        if (count > size_t(end - at) / sizeof(values[0]))
+            throw CacheFormatError("a spilled subsurface cell's array runs past its section");
+        values.resize(size_t(count));
+        std::memcpy(static_cast<void *>(values.data()), at, size_t(count) * sizeof(values[0]));
+        at += size_t(count) * sizeof(values[0]);
+    });
+    if (at != end)
+        throw CacheFormatError("a spilled subsurface cell is longer than its arrays");
+    if ((points.size() != figures.points) || (nodes.size() != figures.nodes))
+        throw CacheFormatError("a spilled subsurface cell came back with other points");
+}
+
+std::uint64_t SubsurfaceCell::Digest() const
+{
+    std::uint64_t digest = 0;
+    for (const SubsurfacePoint& p : points)
+    {
+        std::uint64_t bits[6] = {};
+        static_assert(sizeof(p.irradiance) <= 2 * sizeof(std::uint64_t), "a point's light fits two words");
+        std::memcpy(bits, &p.position, sizeof(p.position));
+        std::memcpy(&bits[3], &p.area, sizeof(p.area));
+        std::memcpy(&bits[4], p.irradiance, sizeof(p.irradiance));
+        for (std::uint64_t b : bits) digest = BounceOrderMix(digest ^ b);
+        if (!internal.empty())
+        {
+            std::uint64_t light[3] = {};
+            std::memcpy(light, &internal[p.id * kSubsurfaceInternalStride], kSubsurfaceInternalStride * sizeof(float));
+            for (std::uint64_t b : light) digest = BounceOrderMix(digest ^ b);
+        }
+    }
+    return digest;
 }
 
 void SubsurfaceCell::Release()

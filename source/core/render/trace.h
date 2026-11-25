@@ -1344,6 +1344,8 @@ class Trace
             mutable bool entryEtasKept = false; ///< within one exit point's bounce export, over its viewing directions
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
+            /// Under a memory budget, where its last gather's pins start on the thread's stack of pinned cells.
+            size_t pinMark = 0;
             bool internalServed = false; ///< whether the cloud gave the buried lights' radiance at the exit point, from points of its own class
             bool internalTried = false; ///< whether the cloud was read for it
             bool internalNearest = false; ///< whether it came from the nearest point of the class, none lying within the gather's reach
@@ -1353,6 +1355,18 @@ class Trace
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
+        /// The cells this thread's shading points have pinned with their bytes, innermost last: a nested point lets go of only its own.
+        std::vector<std::pair<SpillBlock*, size_t>> ssltPins;
+        size_t ssltPinnedBytes = 0; ///< what they hold
+        size_t ssltPinFloor = 0; ///< where the pins of the point being shaded start; a gather never lets go below it
+        void UnpinSubsurfaceCells(size_t mark)
+        {
+            for (; ssltPins.size() > mark; ssltPins.pop_back())
+            {
+                ssltPins.back().first->Unpin();
+                ssltPinnedBytes -= ssltPins.back().second;
+            }
+        }
         SubsurfaceCloud ssltHelpCloud; ///< another thread's cloud with this thread's lights, while helping with its cell
         void SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket);
         void SetThinTables(double depth, const SubsurfaceProfile& profile, bool gate);

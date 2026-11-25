@@ -417,7 +417,6 @@ static void quilted (const Vector3d& EPoint, const TNORMAL *Tnormal, Vector3d& n
 static void facets (const Vector3d& EPoint, const TNORMAL *Tnormal, Vector3d& normal, TraceThreadData *Thread)
 {
     int      i;
-    int      thisseed;
     DBL      sum, minsum;
     Vector3d sv, tv, dv, t1, add, newnormal, pert;
     DBL      scale;
@@ -461,9 +460,11 @@ static void facets (const Vector3d& EPoint, const TNORMAL *Tnormal, Vector3d& no
      * call to this function, to use cache of cubelets for speed.
      */
 
-    thisseed = PickInCube(tv, t1);
+    // the cube itself is the key: cubes sharing a hash seed have other nuclei, so a seed key reused another cube's
+    const Vector3d flo(floor(tv[X] - EPSILON), floor(tv[Y] - EPSILON), floor(tv[Z] - EPSILON));
 
-    if (thisseed != Thread->Facets_Last_Seed)
+    if (!Thread->Facets_Cube_Known || (flo[X] != Thread->Facets_Last_Cube[X]) || (flo[Y] != Thread->Facets_Last_Cube[Y]) ||
+        (flo[Z] != Thread->Facets_Last_Cube[Z]))
     {
         /*
          * No, not same unit cube.  Calculate the random points for this new
@@ -491,7 +492,8 @@ static void facets (const Vector3d& EPoint, const TNORMAL *Tnormal, Vector3d& no
                     {
                         /* Yes, it's within a 3d knight move away. */
 
-                        sv = tv + add;
+                        // from the cube's centre, so the nuclei depend on the cube alone, not where in it the first lookup fell
+                        sv = flo + add + Vector3d(0.5);
 
                         PickInCube(sv, t1);
 
@@ -502,7 +504,8 @@ static void facets (const Vector3d& EPoint, const TNORMAL *Tnormal, Vector3d& no
             }
         }
 
-        Thread->Facets_Last_Seed = thisseed;
+        Thread->Facets_Last_Cube = flo;
+        Thread->Facets_Cube_Known = true;
         Thread->Facets_CVC = cvc;
     }
 

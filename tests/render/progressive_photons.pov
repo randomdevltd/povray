@@ -29,7 +29,8 @@ global_settings {
     photons {
         #if (Method > 0) method Method #end
         #if (Method = 2) quality PhotonQuality #else count PhotonCount #end
-        #ifdef (PhotonMemory) memory PhotonMemory #end
+        #ifdef (PhotonMemory) photon_memory PhotonMemory #end
+        #ifdef (OldPhotonMemory) memory OldPhotonMemory #end
         #if (Mist) media 32 #end
         #if (PhotonFile = 1) save_file "progressive_photons.photons" #elseif (PhotonFile = 2) load_file "progressive_photons.photons" #end
     }

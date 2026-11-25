@@ -379,6 +379,8 @@ enum
     kPOVAttrib_CachePath             = 'CaPa',
     kPOVAttrib_CacheVerify           = 'CaVe',
     kPOVAttrib_CacheMaxSize          = 'CaMS',
+    kPOVAttrib_MaxCacheMemory        = 'CaMM',
+    kPOVAttrib_SpillPath             = 'CaSp',
     kPOVAttrib_Version               = 'Vers',
     kPOVAttrib_Pov4Version           = 'P4Ve',
     kPOVAttrib_Pov4LoweredFile       = 'P4Lo',

@@ -15,7 +15,7 @@ global_settings {
   subsurface { samples 12, 4 method 2 memory SubsurfaceMemory }
   #switch (Photons)
     #case (1) photons { count 200000 } #break
-    #case (2) photons { method 2 quality 0.25 memory PhotonMemory } #break
+    #case (2) photons { method 2 quality 0.25 photon_memory PhotonMemory } #break
   #end
 }
 
@@ -25,7 +25,8 @@ camera {
   right x * image_width / image_height
 }
 
-#declare Lamp = light_source { <0.8, 6, -1.4> rgb 1.5 fade_power 2 fade_distance 4 photon_only PhotonOnly photons { refraction on } }
+// The lamp keeps the caustic peak near 0.56 linear, so a full-scale channel can only be a runaway value.
+#declare Lamp = light_source { <0.8, 6, -1.4> rgb 0.75 fade_power 2 fade_distance 4 photon_only PhotonOnly photons { refraction on } }
 #declare Ball = sphere {
   <0, 1, 0>, 0.5
   pigment { rgbt 1 } finish { ambient 0 diffuse 0 reflection { 0, 1 fresnel } conserve_energy } interior { ior 1.5 }

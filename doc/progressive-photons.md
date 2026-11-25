@@ -412,10 +412,12 @@ projection and the batch it was made after, before more work is done. By default
 ceiling is 40% of the memory available after the first batch, at most 6 GB; it is read
 once per render, so the same scene can be refused on a busy machine and accepted on an
 idle one. Three settings replace it with a fixed ceiling in GB (10^9 bytes, any positive
-finite number such as `0.5` or `24`), with no reference to free memory:
+finite number such as `0.5` or `24`), with no reference to free memory. The scene's spelling is
+`photon_memory`; the older `memory` still works, in the same GB, with a deprecation warning, since the bare
+word read like a budget for all memory, which is `Max_Cache_Memory`, in MB of 1024 x 1024 bytes:
 
 ```pov
-global_settings { photons { method 2 quality 8 memory 12 } }
+global_settings { photons { method 2 quality 8 photon_memory 12 } }
 ```
 
 ```

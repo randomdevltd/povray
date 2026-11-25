@@ -41,6 +41,8 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
@@ -56,6 +58,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
 #include "core/shape/portal.h"
+#include "core/support/cachebudget.h"
 #include "core/support/preparedcache.h"
 
 // POV-Ray header files (POVMS module)
@@ -125,8 +128,33 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     sceneData->warningLevel = clip(parseOptions.TryGetInt(kPOVAttrib_WarningLevel, 9), 0, 9);
 
-    // the frontend has checked it is a positive number; it overrides POV_PHOTON_MEMORY and the scene's photons memory
+    // the frontend has checked it is a positive number; it overrides POV_PHOTON_MEMORY and the scene's photon_memory
     sceneData->machinePhotonMemory = parseOptions.TryGetFloat(kPOVAttrib_PhotonMemory, 0.0);
+
+    // Max_Cache_Memory, else POV_CACHE_MEMORY, in whole MB (MiB): one budget for every large cache, spilling past it; none by default
+    long long cacheMemory = parseOptions.TryGetInt(kPOVAttrib_MaxCacheMemory, 0);
+    if (cacheMemory <= 0)
+    {
+        const char *text = std::getenv("POV_CACHE_MEMORY");
+        if ((text != nullptr) && (*text != '\0'))
+        {
+            char *end = nullptr;
+            errno = 0;
+            cacheMemory = std::strtoll(text, &end, 10);
+            if ((end == text) || (*end != '\0') || (errno != 0) || (cacheMemory <= 0))
+                throw POV_EXCEPTION(kParamErr, "POV_CACHE_MEMORY must be a whole number of MB (MiB) greater than zero.");
+        }
+    }
+    if (cacheMemory > 0)
+    {
+        // the spill file's live sections are capped by Cache_Max_Size, as the saved caches are; 0 leaves both uncapped
+        const float spillGiB = parseOptions.TryGetFloat(kPOVAttrib_CacheMaxSize, float(PreparedCaches::kDefaultMaxBytes >> 30));
+        const std::uint64_t spillCap = (spillGiB > 0.0f) ? std::uint64_t(double(spillGiB) * double(std::uint64_t(1) << 30)) : 0;
+        sceneData->cacheBudget = std::make_shared<CacheBudget>(CacheBudget::FromMegabytes(cacheMemory),
+                                                               UCS2toSysString(parseOptions.TryGetUCS2String(kPOVAttrib_SpillPath, "spill")),
+                                                               false, spillCap,
+                                                               unsigned(clip<int>(parseOptions.TryGetInt(kPOVAttrib_MaxRenderThreads, 1), 1, SIGNED16_MAX)));
+    }
 
     sceneData->inputFile = parseOptions.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov");
     sceneData->headerFile = parseOptions.TryGetUCS2String(kPOVAttrib_IncludeHeader, "");

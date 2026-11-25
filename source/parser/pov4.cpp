@@ -1071,10 +1071,10 @@ void Pov4Evaluator::LowerTagExpression(Program& p, TSNode n, Node& into)
     into.kids.push_back(Lower(p, n));
 }
 
-// quality and memory are matched by text in a photon block and take one numeric operand
+// quality and photon_memory (memory before it, deprecated) are matched by text in a photon block and take one numeric operand
 static bool PhotonValueWord(const std::string& text)
 {
-    return (text == "quality") || (text == "memory");
+    return (text == "quality") || (text == "photon_memory") || (text == "memory");
 }
 
 // names a block the way the classic parser does: global_settings bare, otherwise with its article

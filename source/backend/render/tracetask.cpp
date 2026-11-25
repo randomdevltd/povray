@@ -351,6 +351,7 @@ TraceTask::~TraceTask()
 
 void TraceTask::Run()
 {
+    GetViewData()->CheckCacheBudget();
 #ifdef RTR_HACK
     bool forever = GetViewData()->GetRealTimeRaytracing();
     do

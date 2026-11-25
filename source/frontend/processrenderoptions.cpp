@@ -37,6 +37,7 @@
 #include "frontend/processrenderoptions.h"
 
 // C++ variants of C standard header files
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -216,6 +217,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Library_Path",        kPOVAttrib_LibraryPath,        kUseSpecialHandler },
     { "Light_Buffer",        kPOVAttrib_LightBuffer,        kPOVMSType_Bool },
 
+    { "Max_Cache_Memory",    kPOVAttrib_MaxCacheMemory,     kUseSpecialHandler },
     { "Max_Image_Buffer_Memory", kPOVAttrib_MaxImageBufferMem, kPOVMSType_Int },
 
     { "Odd_Field",           kPOVAttrib_OddField,           kPOVMSType_Bool },
@@ -626,6 +628,23 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                 err = POVMSUtil_SetInt(obj, typeKey, intval);
             break;
 
+        case kPOVAttrib_MaxCacheMemory:
+        {
+            // whole MB (MiB, 1024 x 1024 bytes), like Max_Image_Buffer_Memory
+            char* end = nullptr;
+            errno = 0;
+            const long long megabytes = std::strtoll(param, &end, 10);
+            while ((end != param) && isspace(*end))
+                end++;
+            if ((end == param) || (*end != '\0') || (errno != 0) || (megabytes <= 0) || (megabytes > 2147483647LL))
+            {
+                ParseError("Max_Cache_Memory must be a whole number of MB (MiB) greater than zero, found '%s'.", param);
+                err = kParamErr;
+            }
+            else
+                err = POVMSUtil_SetInt(obj, option->key, POVMSInt(megabytes));
+            break;
+        }
         case kPOVAttrib_PhotonMemory:
         {
             char* end = nullptr;
@@ -812,6 +831,12 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
 
         case kPOVAttrib_IncludeIni:
 
+            break;
+
+        case kPOVAttrib_MaxCacheMemory:
+
+            if(POVMSUtil_GetInt(obj, option->key, &intval) == 0)
+                file->printf("%s=%d\n", option->keyword, (int)intval);
             break;
 
         case kPOVAttrib_PhotonMemory:

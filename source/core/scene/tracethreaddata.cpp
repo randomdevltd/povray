@@ -84,8 +84,6 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed, boo
     BCyl_RInt.reserve(2*sceneData->Max_Bounding_Cylinders);
     BCyl_HInt.reserve(2*sceneData->Max_Bounding_Cylinders);
 
-    Facets_Last_Seed = 0x80000000;
-
     for (MeshTriangleDecode& d : meshDecodes)
         d.mesh = 0;
     for (MeshShadowHint& h : meshShadowHints)

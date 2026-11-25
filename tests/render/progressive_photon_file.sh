@@ -53,7 +53,7 @@ too_big() {
 }
 (POV_PHOTON_MEMORY=0.00001; too_big env 'POV_PHOTON_MEMORY environment variable')
 too_big option 'Photon_Memory option' Photon_Memory=0.00001
-(unset POV_PHOTON_MEMORY; too_big scene "scene's photons memory" Declare=PhotonMemory=0.00001)
+(unset POV_PHOTON_MEMORY; too_big scene "scene's photon_memory" Declare=PhotonMemory=0.00001)
 (unset POV_PHOTON_MEMORY; render budget_option_up Declare=Dispersion=1.03 Declare=PhotonFile=2 Declare=PhotonMemory=0.00001 Photon_Memory=64 +wt2)
 cmp progressive_photon_file_Dispersion-loaded.px progressive_photon_file_budget_option_up.px
 cp "$FILE" progressive_photon_file.whole

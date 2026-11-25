@@ -156,7 +156,9 @@ class TraceThreadData : public ThreadData
         /// Child indices a CSG's tree hands its ray loop, stacked for nested CSGs (see CSGChildTree).
         std::vector<unsigned int> csgCandidates;
         std::vector<GenericFunctionContextPtr> functionContextPool;
-        int Facets_Last_Seed;
+        /// The facets normal's nuclei about the last unit cube it was asked in, and that cube's corner.
+        bool Facets_Cube_Known = false;
+        Vector3d Facets_Last_Cube;
         int Facets_CVC;
         Vector3d Facets_Cube[81];
 

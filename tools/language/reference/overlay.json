@@ -314,7 +314,11 @@
   },
   "memory": {
    "kind": "item",
-   "text": "A memory ceiling, in two places with different units. global_settings { photons { method 2 memory GB } }: photon storage in gigabytes, method 2 only, default 40% of available memory up to 6 GB; Photon_Memory and POV_PHOTON_MEMORY override it. global_settings { subsurface { memory MB } }: an optional cap in megabytes on the method 2 subsurface clouds, none by default; a render that passes it stops with an error. Contextual: remains available as an identifier."
+   "text": "A memory ceiling, in two places with different units. global_settings { subsurface { memory MB } }: an optional cap in megabytes on the method 2 subsurface clouds' total size, none by default; a render that passes it stops with an error. In global_settings { photons { } } it is the deprecated spelling of photon_memory, in GB, and gives a warning. Contextual: remains available as an identifier."
+  },
+  "photon_memory": {
+   "kind": "item",
+   "text": "In global_settings { photons { method 2 photon_memory GB } }: the largest photon map allowed, in gigabytes of 10^9 bytes, method 2 only; default 40% of available memory up to 6 GB. Photon_Memory and POV_PHOTON_MEMORY override it. It caps photons only: Max_Cache_Memory is the memory budget for every render cache. Replaces the bare memory, which is deprecated and takes the same GB. Note the units: photon_memory is in GB of 10^9 bytes, Max_Cache_Memory and subsurface memory in MB of 1024 x 1024 bytes. Contextual: remains available as an identifier."
   },
   "target": {
    "kind": "item",
@@ -346,7 +350,7 @@
   },
   "Photon_Memory": {
    "kind": "option",
-   "text": "Render option: photon method 2 storage ceiling in GB, any positive finite number (Photon_Memory=24). The first given applies: this option, then POV_PHOTON_MEMORY, then the scene's photons { memory GB }, then 40% of available memory up to 6 GB."
+   "text": "Render option: photon method 2 storage ceiling in GB, any positive finite number (Photon_Memory=24). The first given applies: this option, then POV_PHOTON_MEMORY, then the scene's photons { photon_memory GB }, then 40% of available memory up to 6 GB."
   },
   "Texture_Filter": {
    "kind": "option",
@@ -375,6 +379,10 @@
   "Save_Caches": {
    "kind": "option",
    "text": "Render option, off by default: save the media, light and bounce caches prepared before the first pixel beside the render state file (scene.pov-state.caches), and load those a render of the same inputs saved before; the image is the same. Cache_Path=dir puts them elsewhere and turns saving on; Cache_Verify=on rebuilds each saved cache and stops if it differs; Cache_Max_Size=GiB (default 20) caps the directory, least recently used files going first."
+  },
+  "Max_Cache_Memory": {
+   "kind": "option",
+   "text": "Render option, unset by default: one memory budget for every large render cache, in whole MB of 1024 x 1024 bytes (Max_Cache_Memory=256), or POV_CACHE_MEMORY in the environment, in the same unit. Past it, complete subsurface cloud cells spill to a file in the cache directory and are read back when a gather needs them, and media and light grids move to read-only mappings of that file, whose pages the system drops instead of swapping; the image is the same. Caches that cannot be divided (the scene's bounding tree, the radiosity tree, photon maps, surface maps) stay in memory and are counted: when they alone pass the budget the render stops before its first pixel and names them. Unset, nothing spills."
   }
  }
 }

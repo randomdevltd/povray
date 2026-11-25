@@ -316,7 +316,7 @@ void Parser::RecordMediaField(Media& medium, bool allowEager)
             *slot.first = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(slot.second));
         }
     }
-    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, medium.PreparedCellLimit());
+    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, medium.PreparedCellLimit(), sceneData->cacheBudget);
     if (field == nullptr)
         return;
     // one job per eager thread, all claiming slabs of the same grid
@@ -8460,8 +8460,13 @@ void Parser::Parse_Global_Settings()
                         sceneData->photonSettings.quality = quality;
                         sceneData->photonSettings.qualitySpecified = true;
                     }
-                    else if (CurrentTokenText() == "memory")
+                    else if ((CurrentTokenText() == "photon_memory") || (CurrentTokenText() == "memory"))
                     {
+                        // the bare word read as a general budget; Max_Cache_Memory is that, and photon_memory names this cap
+                        if (CurrentTokenText() == "memory")
+                            Warning("'memory' in photons is deprecated: write photon_memory, which takes the same value in GB "
+                                    "(10^9 bytes) and caps method 2 photon storage only; Max_Cache_Memory, in MB, sets the memory "
+                                    "budget for every render cache.");
                         const double memory = Parse_Float();
                         const float stored = float(memory);
                         if (!std::isfinite(memory) || !std::isfinite(stored) || !(stored > 0.0f))
