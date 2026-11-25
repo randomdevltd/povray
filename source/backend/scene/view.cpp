@@ -92,6 +92,7 @@
 #include "backend/render/radiositytask.h"
 #include "backend/render/tracetask.h"
 #include "backend/scene/backendscenedata.h"
+#include "backend/scene/regionschedule.h"
 #include "backend/scene/viewthreaddata.h"
 
 // this must be the last file included
@@ -316,6 +317,27 @@ bool ViewData::GetNextRectangle(POVRect& rect, unsigned int& serial)
 {
     std::lock_guard<std::mutex> lock(nextBlockMutex);
 
+    if (region.arm == RegionState::kEmpty)
+        return false;
+    if (region.arm == RegionState::kOrder)
+    {
+        // after the scheduled levels, passes follow the schedule's tile order
+        while ((nextBlock < region.order.size()) && (blockSkipList.find(region.order[nextBlock]) != blockSkipList.end()))
+            nextBlock++;
+        if (nextBlock >= region.order.size())
+            return false;
+        serial = region.order[nextBlock++];
+        unsigned int blockX, blockY;
+        getBlockXY(serial, blockX, blockY);
+        rect.left = renderArea.left + (blockX * blockSize);
+        rect.right = min(renderArea.left + ((blockX + 1) * blockSize) - 1, renderArea.right);
+        rect.top = renderArea.top + (blockY * blockSize);
+        rect.bottom = min(renderArea.top + ((blockY + 1) * blockSize) - 1, renderArea.bottom);
+        pixelsPending += rect.GetArea();
+        blockBusyList.insert(serial);
+        return true;
+    }
+
     while(true)
     {
         if(nextBlock >= (blockWidth * blockHeight))
@@ -347,6 +369,227 @@ bool ViewData::GetNextRectangle(POVRect& rect, unsigned int& serial)
     blockBusyList.insert(serial);
 
     return true;
+}
+
+bool ViewData::GetNextPassRectangle(POVRect& rect, unsigned int& serial, int& level, unsigned int& step, bool& wait)
+{
+    level = -1;
+    step = 0;
+    wait = false;
+    {
+        std::lock_guard<std::mutex> lock(nextBlockMutex);
+        if (region.arm == RegionState::kUnits)
+        {
+            while ((region.nextUnit < region.units.size()) && region.taken[region.nextUnit])
+                region.nextUnit++;
+            if (region.nextUnit >= region.units.size())
+                return false;
+            // the first unit whose tile has finished the level before, within the cluster running now: the next cluster
+            // starts only once every unit of this one is taken, so its cells are not loaded early
+            const std::uint32_t cluster = region.units[region.nextUnit].cluster;
+            for (size_t i = region.nextUnit; (i < region.units.size()) && (region.units[i].cluster == cluster); i++)
+            {
+                const RegionState::Unit& unit = region.units[i];
+                if (region.taken[i] || (region.done[unit.serial] < unit.level - 1))
+                    continue;
+                region.taken[i] = 1;
+                region.running.push_back(unit.serial);
+                if (std::int64_t(unit.cluster) > region.advisedCluster)
+                    AdviseCluster(unit.cluster);
+                serial = unit.serial;
+                level = unit.level;
+                step = region.maxStep >> unit.level;
+                unsigned int blockX, blockY;
+                getBlockXY(serial, blockX, blockY);
+                rect.left = renderArea.left + (blockX * blockSize);
+                rect.right = min(renderArea.left + ((blockX + 1) * blockSize) - 1, renderArea.right);
+                rect.top = renderArea.top + (blockY * blockSize);
+                rect.bottom = min(renderArea.top + ((blockY + 1) * blockSize) - 1, renderArea.bottom);
+                pixelsPending += rect.GetArea();
+                blockBusyList.insert(serial);
+                return true;
+            }
+            wait = true;
+            return false;
+        }
+    }
+    return GetNextRectangle(rect, serial);
+}
+
+void ViewData::CompletedLevel(unsigned int serial, int level)
+{
+    std::lock_guard<std::mutex> lock(nextBlockMutex);
+    if (serial < region.done.size())
+        region.done[serial] = std::max(region.done[serial], level);
+    if ((region.arm != RegionState::kUnits) || (level < region.firstLevel) || (serial >= region.clusterOf.size()))
+        return;
+    auto at = std::find(region.running.begin(), region.running.end(), serial);
+    if (at != region.running.end())
+        region.running.erase(at);
+    // a unit of an earlier cluster finished: the cells only its tile still needed are now the first to go
+    if (std::int64_t(region.clusterOf[serial]) < region.advisedCluster)
+        AdviseCluster(std::uint32_t(region.advisedCluster));
+}
+
+void ViewData::RegionState::MapClusters(unsigned int count)
+{
+    clusterOf.assign(count, 0);
+    for (size_t k = 0; k < clusterStart.size(); k++)
+    {
+        const size_t end = (k + 1 < clusterStart.size()) ? clusterStart[k + 1] : order.size();
+        for (size_t i = clusterStart[k]; i < end; i++)
+            clusterOf[order[i]] = std::uint32_t(k);
+    }
+}
+
+void ViewData::RegionState::Reset()
+{
+    mode = 1;
+    recording = false;
+    checking = false;
+    {
+        std::lock_guard<std::mutex> lock(footprintMutex);
+        index.clear();
+        cells.clear();
+        bytes.clear();
+        tiles.clear();
+        unsent.clear();
+    }
+    group = 1;
+    groupsWide = groupsHigh = 0;
+    tileOf.clear();
+    uses = misses = 0;
+    active = armed = false;
+    arm = kNone;
+    units.clear();
+    taken.clear();
+    nextUnit = 0;
+    done.clear();
+    order.clear();
+    hilbert.clear();
+    clusterStart.clear();
+    clusterOf.clear();
+    running.clear();
+    ranks.clear();
+    clustersOf.clear();
+    cursor.clear();
+    advisedCluster = -1;
+    adviceGeneration = 0;
+    firstLevel = lastLevel = -1;
+    latticeLevels = 0;
+    maxStep = 0;
+    partial = clipBlocks = false;
+    persisted.clear();
+    orderSent = false;
+    report.clear();
+    readAtPlan = 0;
+}
+
+void ViewData::EndRegions()
+{
+    region.recording = false;
+    region.checking = false;
+    if ((sceneData->cacheBudget != nullptr) && (region.adviceGeneration != 0))
+        sceneData->cacheBudget->EndAdvice();
+    std::lock_guard<std::mutex> lock(nextBlockMutex);
+    region.arm = RegionState::kNone;
+    region.adviceGeneration = 0;
+    // the cells may go with the caches after the render; nothing here may point at them
+    std::lock_guard<std::mutex> footprints(region.footprintMutex);
+    region.index.clear();
+    region.cells.clear();
+    std::vector<std::vector<std::uint32_t>>().swap(region.clustersOf);
+    std::vector<size_t>().swap(region.cursor);
+}
+
+void ViewData::AdviseCluster(std::uint32_t cluster)
+{
+    region.advisedCluster = cluster;
+    if (region.adviceGeneration == 0)
+        return;
+    // Belady's choice for a known order: each cell ranked by the next cluster that needs it, never again ranked last
+    region.ranks.assign(std::min(region.cells.size(), region.clustersOf.size()), SpillBlock::kUnneeded);
+    for (size_t i = 0; i < region.ranks.size(); i++)
+    {
+        const std::vector<std::uint32_t>& uses = region.clustersOf[i];
+        size_t& at = region.cursor[i];
+        while ((at < uses.size()) && (uses[at] < cluster))
+            at++;
+        if (at < uses.size())
+            region.ranks[i] = std::uint32_t(std::min<std::uint64_t>(std::uint64_t(uses[at] - cluster) + 1, SpillBlock::kUnneeded - 1));
+    }
+    // a unit of an earlier cluster still running keeps its tile's cells needed now
+    for (unsigned int serial : region.running)
+        if ((region.clusterOf[serial] < cluster) && (region.tileOf[serial] < region.tiles.size()))
+            for (std::uint32_t cell : region.tiles[region.tileOf[serial]])
+                if (cell < region.ranks.size())
+                    region.ranks[cell] = 1;
+    for (size_t i = 0; i < region.ranks.size(); i++)
+        region.cells[i]->Advise(region.adviceGeneration, region.ranks[i]);
+    sceneData->cacheBudget->Readvised();
+}
+
+void ViewData::AddFootprint(unsigned int serial, std::vector<std::pair<SpillBlock*, size_t>>& used)
+{
+    std::sort(used.begin(), used.end());
+    // one entry per cell, with the most bytes it was pinned at
+    size_t kept = 0;
+    for (size_t i = 0; i < used.size(); i++)
+    {
+        if ((kept > 0) && (used[kept - 1].first == used[i].first))
+            used[kept - 1].second = std::max(used[kept - 1].second, used[i].second);
+        else
+            used[kept++] = used[i];
+    }
+    used.resize(kept);
+    std::lock_guard<std::mutex> lock(region.footprintMutex);
+    if ((serial >= region.tileOf.size()) || (region.tileOf[serial] >= region.tiles.size()))
+        return;
+    std::vector<std::uint32_t>& tile = region.tiles[region.tileOf[serial]];
+    if (region.recording.load(std::memory_order_relaxed))
+    {
+        std::vector<std::uint32_t> add;
+        for (const auto& cell : used)
+        {
+            auto found = region.index.emplace(cell.first, std::uint32_t(region.cells.size()));
+            if (found.second)
+            {
+                region.cells.push_back(cell.first);
+                region.bytes.push_back(cell.second);
+            }
+            else
+                region.bytes[found.first->second] = std::max<std::uint64_t>(region.bytes[found.first->second], cell.second);
+            add.push_back(found.first->second);
+        }
+        std::sort(add.begin(), add.end());
+        std::vector<std::uint32_t> merged;
+        std::set_union(tile.begin(), tile.end(), add.begin(), add.end(), std::back_inserter(merged));
+        tile.swap(merged);
+    }
+    else
+    {
+        for (const auto& cell : used)
+        {
+            auto found = region.index.find(cell.first);
+            region.uses++;
+            if ((found == region.index.end()) || !std::binary_search(tile.begin(), tile.end(), found->second))
+                region.misses++;
+        }
+    }
+}
+
+void ViewData::SendRegionOrder()
+{
+    // it rides on the first sample set the scheduled levels send, so the render state file holds it before any of them
+    std::vector<POVMSInt> schedule;
+    schedule.push_back(1);
+    schedule.push_back(POVMSInt(region.clusterStart.size()));
+    for (std::uint32_t start : region.clusterStart)
+        schedule.push_back(POVMSInt(start));
+    for (unsigned int serial : region.order)
+        schedule.push_back(POVMSInt(serial));
+    std::lock_guard<std::mutex> lock(region.footprintMutex);
+    region.unsent.swap(schedule);
 }
 
 bool ViewData::GetNextRectangle(POVRect& rect, unsigned int& serial, BlockInfo*& blockInfo, unsigned int stride)
@@ -600,14 +843,35 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
             // (used by continue-trace to identify blocks that do not need to be rendered again)
             pixelblockmsg.SetInt(kPOVAttrib_PixelId, serial);
         pixelblockmsg.SetInt(kPOVAttrib_PixelSize, size);
+        std::unique_lock<std::mutex> ordered;
         if (progressLevel >= 0)
         {
-            // samples fill cells that cross block borders, so they are clipped to the whole render area
+            const bool scheduled = region.active && (progressLevel >= region.firstLevel) && (progressLevel <= region.lastLevel);
+            if (scheduled && relevant && !region.orderSent.load(std::memory_order_acquire))
+            {
+                // the schedule reaches the render state file before any level it runs out of line, which marks the file 0003
+                ordered = std::unique_lock<std::mutex>(region.sendMutex);
+                if (region.orderSent.load(std::memory_order_relaxed))
+                    ordered.unlock();
+                else
+                {
+                    std::vector<POVMSInt> schedule;
+                    {
+                        std::lock_guard<std::mutex> lock(region.footprintMutex);
+                        schedule.swap(region.unsent);
+                    }
+                    if (!schedule.empty())
+                        pixelblockmsg.SetIntVector(kPOVAttrib_RegionOrder, schedule);
+                }
+            }
+            // cells cross block borders; when tiles stand at different levels a block's cells stay in it, or they cover finer ones
+            const bool clipped = scheduled || (region.clipBlocks && (progressLevel < region.latticeLevels));
+            const POVRect& clip = clipped ? rect : renderArea;
             pixelblockmsg.SetInt(kPOVAttrib_ProgressLevel, progressLevel);
-            pixelblockmsg.SetInt(kPOVAttrib_Left, renderArea.left);
-            pixelblockmsg.SetInt(kPOVAttrib_Top, renderArea.top);
-            pixelblockmsg.SetInt(kPOVAttrib_Right, renderArea.right);
-            pixelblockmsg.SetInt(kPOVAttrib_Bottom, renderArea.bottom);
+            pixelblockmsg.SetInt(kPOVAttrib_Left, clip.left);
+            pixelblockmsg.SetInt(kPOVAttrib_Top, clip.top);
+            pixelblockmsg.SetInt(kPOVAttrib_Right, clip.right);
+            pixelblockmsg.SetInt(kPOVAttrib_Bottom, clip.bottom);
         }
         if (blockTime > 0)
         {
@@ -621,6 +885,8 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
         pixelblockmsg.SetDestinationAddress(sceneData->frontendAddress);
 
         POVMS_SendMessage(pixelblockmsg);
+        if (ordered.owns_lock())
+            region.orderSent.store(true, std::memory_order_release);
     }
     catch(pov_base::Exception&)
     {
@@ -1718,6 +1984,20 @@ void View::GetStatistics(POVMS_Object& renderStats)
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
         for (const std::string& line : viewData.sceneData->cacheBudget->Report())
             messages.Info("%s", line.c_str());
+        if (!viewData.region.report.empty())
+            messages.Info("%s", viewData.region.report.c_str());
+        if (viewData.region.active && (viewData.region.uses > 0))
+            messages.Info("Region schedule: footprint misses %llu of %llu cells used per tile in the scheduled levels (%.2f%%); "
+                          "cells read back %.1f MiB before the schedule, %.1f MiB in the scheduled levels and after.",
+                          (unsigned long long)viewData.region.misses, (unsigned long long)viewData.region.uses,
+                          100.0 * double(viewData.region.misses) / double(viewData.region.uses), double(viewData.region.readAtPlan) / 1048576.0,
+                          double(viewData.sceneData->cacheBudget->Account("subsurface clouds", false).spillReadBytes.load() - viewData.region.readAtPlan) / 1048576.0);
+    }
+    else if (!viewData.region.report.empty())
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Caches", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Info("%s", viewData.region.report.c_str());
     }
 
     if ((stats[Subsurface_Cloud_Attempts] > 0) || (stats[Subsurface_Cloud_Estimated] > 0))
@@ -2390,7 +2670,105 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
     }
 
     shared_ptr<ViewData::BlockIdSet> noSkip(new ViewData::BlockIdSet());
+    const unsigned int blockCount = viewData.blockWidth * viewData.blockHeight;
+    ViewData::RegionState& region = viewData.region;
+    // a view rendered again starts its schedule afresh, holding nothing of the caches its last render used
+    if ((viewData.sceneData->cacheBudget != nullptr) && (region.adviceGeneration != 0))
+        viewData.sceneData->cacheBudget->EndAdvice();
+    region.Reset();
+    region.latticeLevels = levels;
+
+    // A continued render's tiles may stand at different lattice levels, as a region schedule runs them cluster by cluster:
+    // each lattice level then skips the tiles that finished it, from the first level some tile has not.
+    std::vector<int> tileLevels;
+    if (renderOptions.Exist(kPOVAttrib_ProgressTileLevels) && (resumeLevel < levels))
+    {
+        std::vector<POVMSInt> pairs(renderOptions.GetIntVector(kPOVAttrib_ProgressTileLevels));
+        tileLevels.assign(blockCount, -1);
+        for (size_t i = 0; i + 1 < pairs.size(); i += 2)
+            if ((pairs[i] >= 0) && (unsigned(pairs[i]) < blockCount))
+                tileLevels[pairs[i]] = std::max(tileLevels[pairs[i]], int(pairs[i + 1]));
+        if (!tileLevels.empty())
+        {
+            const auto range = std::minmax_element(tileLevels.begin(), tileLevels.end());
+            resumeLevel = std::min(resumeLevel, *range.first + 1);
+            // a tile two levels ahead of another would take a coarser cell of its neighbour over its own finer ones
+            region.clipBlocks = (*range.second - *range.first >= 2);
+        }
+    }
+    auto skipAt = [&](int level) -> shared_ptr<ViewData::BlockIdSet>
+    {
+        if (tileLevels.empty() || (level >= levels))
+            return (level == resumeLevel) ? resumeSkip : noSkip;
+        shared_ptr<ViewData::BlockIdSet> skip(new ViewData::BlockIdSet());
+        for (unsigned int serial = 0; serial < blockCount; serial++)
+            if (tileLevels[serial] >= level)
+                skip->insert(serial);
+        return skip;
+    };
+
+    // Region scheduling: under a cache budget, the coarse levels record the cells each tile pins, and the finer lattice
+    // levels may then run cluster by cluster. Each coarse level sweeps the whole image and reloads what does not fit, so
+    // recording stops early, at a step of 32. A tile is the render blocks of a square at least 32 pixels wide, so each
+    // holds a sample of its own.
+    region.mode = renderOptions.TryGetInt(kPOVAttrib_RegionSchedule, 1);
+    const unsigned int recordStep = 32;
+    region.group = std::max(1u, (recordStep + viewData.blockSize - 1) / viewData.blockSize);
+    region.groupsWide = (viewData.blockWidth + region.group - 1) / region.group;
+    region.groupsHigh = (viewData.blockHeight + region.group - 1) / region.group;
+    int recordLast = -1;
+    {
+        unsigned int at = maxStep;
+        for (int level = 0; level < levels; level++, at >>= 1)
+            if (at >= recordStep)
+                recordLast = level;
+    }
+    const bool schedulable = (viewData.sceneData->cacheBudget != nullptr) && (region.mode != 0) && (recordLast >= 0) && (recordLast + 1 < levels) &&
+                             !viewData.GetSceneData()->radiositySettings.radiosityEnabled && !viewData.realTimeRaytracing;
+    if (schedulable)
+    {
+        region.firstLevel = recordLast + 1;
+        region.lastLevel = levels - 1;
+        region.maxStep = maxStep;
+        region.done = tileLevels.empty() ? std::vector<int>(blockCount, -1) : tileLevels;
+        region.tiles.assign(size_t(region.groupsWide) * region.groupsHigh, std::vector<std::uint32_t>());
+        region.tileOf.assign(blockCount, 0);
+        for (unsigned int serial = 0; serial < blockCount; serial++)
+        {
+            unsigned int x, y;
+            viewData.getBlockXY(serial, x, y);
+            region.tileOf[serial] = (y / region.group) * region.groupsWide + (x / region.group);
+        }
+        std::uint32_t side = 1;
+        while ((side < viewData.blockWidth) || (side < viewData.blockHeight))
+            side <<= 1;
+        std::vector<std::pair<std::uint64_t, unsigned int>> curve;
+        for (unsigned int serial = 0; serial < blockCount; serial++)
+        {
+            unsigned int x, y;
+            viewData.getBlockXY(serial, x, y);
+            curve.emplace_back(RegionHilbert(side, x, y), serial);
+        }
+        std::sort(curve.begin(), curve.end());
+        for (const auto& c : curve)
+            region.hilbert.push_back(c.second);
+        if (renderOptions.Exist(kPOVAttrib_RegionOrder))
+        {
+            std::vector<POVMSInt> persisted(renderOptions.GetIntVector(kPOVAttrib_RegionOrder));
+            region.persisted.assign(persisted.begin(), persisted.end());
+        }
+        // footprints are whole only when the coarse levels run from the start; a render continued inside them is not scheduled
+        if ((resumeLevel == 0) && resumeSkip->empty() && tileLevels.empty())
+            renderTasks.AppendFunction([this](TaskQueue&) { viewData.region.recording = true; });
+        else if (resumeLevel <= recordLast)
+            region.partial = true;
+    }
+    else if (region.mode == 2)
+        region.report = "Region schedule: not used; it needs Max_Cache_Memory, progressive rendering without radiosity, and an image "
+                        "of 16 pixels or more.";
+
     bool firstPass = true;
+    bool planned = false;
     unsigned int step = maxStep;
     // method 4 has its own anti-aliasing passes after the lattice levels
     const int lastLevel = (tracingMethod == 4) ? (levels - 1) : levels;
@@ -2400,7 +2778,13 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         if ((level < resumeLevel) || (refine && (tracingMethod == 0)))
             continue;
 
-        renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, (level == resumeLevel) ? resumeSkip : noSkip, !firstPass && !refine));
+        if (schedulable && !planned && (level > recordLast))
+        {
+            renderTasks.AppendFunction(boost::bind(&View::PlanRegions, this, _1, recordLast));
+            renderTasks.AppendSync();
+            planned = true;
+        }
+        renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skipAt(level), !firstPass && !refine, level));
         renderTasks.AppendSync();
         firstPass = false;
 
@@ -2421,7 +2805,7 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
                 renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, pass, round));
                 renderTasks.AppendSync();
             }
-            renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skip, false));
+            renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skip, false, aaLevel));
             renderTasks.AppendSync();
             static const char* const names[] = { "", "AA fit", "AA probe", "AA noise", "AA resolve" };
             const int level = aaLevel;
@@ -2439,6 +2823,11 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         addPass(4, 0, false, (aaLevel == resumeLevel) ? resumeSkip : noSkip);
         renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 5, 0));
         renderTasks.AppendSync();
+    }
+    if (schedulable)
+    {
+        renderTasks.AppendSync();
+        renderTasks.AppendFunction([this](TaskQueue&) { viewData.EndRegions(); });
     }
 }
 
@@ -2604,9 +2993,198 @@ void View::PlanAntialias(TaskQueue&, int pass, int round)
     TraceTask::PlanM4(&viewData, pass, round);
 }
 
-void View::StartLevel(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress)
+void View::StartLevel(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress, int level)
 {
     viewData.SetNextRectangle(*bsl, 0, keepProgress);
+    ViewData::RegionState& region = viewData.region;
+    std::lock_guard<std::mutex> lock(viewData.nextBlockMutex);
+    if ((region.firstLevel >= 0) && (level < region.firstLevel) && !region.hilbert.empty())
+    {
+        // the coarse levels sweep the whole image too: once the budget has spilled, they follow the Hilbert curve, so
+        // neighbouring tiles share the cells held
+        const bool binds = (region.mode == 2) || viewData.sceneData->cacheBudget->Spilled();
+        region.arm = binds ? ViewData::RegionState::kOrder : ViewData::RegionState::kNone;
+        if (binds)
+            region.order = region.hilbert;
+        return;
+    }
+    if (!region.active || (level < region.firstLevel))
+    {
+        region.arm = ViewData::RegionState::kNone;
+        return;
+    }
+    if (level > region.lastLevel)
+    {
+        // passes after the lattice levels read neighbouring tiles' samples, so they run whole, in the schedule's order
+        if (region.arm != ViewData::RegionState::kOrder)
+        {
+            region.checking = false;
+            if ((viewData.sceneData->cacheBudget != nullptr) && (region.adviceGeneration != 0))
+                viewData.sceneData->cacheBudget->EndAdvice();
+            region.adviceGeneration = 0;
+        }
+        region.arm = ViewData::RegionState::kOrder;
+        return;
+    }
+    if (region.armed)
+    {
+        // the first scheduled level's pass ran every scheduled level
+        region.arm = ViewData::RegionState::kEmpty;
+        return;
+    }
+    region.armed = true;
+    // every tile finished the levels before this one; a continued render's tiles may be further on
+    for (int& done : region.done)
+        done = std::max(done, level - 1);
+    region.units.clear();
+    const size_t clusters = region.clusterStart.size();
+    for (size_t k = 0; k < clusters; k++)
+    {
+        const size_t begin = region.clusterStart[k], end = (k + 1 < clusters) ? region.clusterStart[k + 1] : region.order.size();
+        for (int at = level; at <= region.lastLevel; at++)
+            for (size_t i = begin; i < end; i++)
+                if (region.done[region.order[i]] < at)
+                    region.units.push_back(ViewData::RegionState::Unit{ region.order[i], at, std::uint32_t(k) });
+    }
+    region.taken.assign(region.units.size(), 0);
+    region.nextUnit = 0;
+    region.advisedCluster = -1;
+    region.arm = ViewData::RegionState::kUnits;
+}
+
+void View::PlanRegions(TaskQueue&, int recordedLevel)
+{
+    ViewData::RegionState& region = viewData.region;
+    region.recording = false;
+    CacheBudget *budget = viewData.sceneData->cacheBudget.get();
+    MessageFactory messages(viewData.sceneData->warningLevel, "Render", viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                            viewData.sceneData->sceneId, viewData.viewId);
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    const unsigned int count = viewData.blockWidth * viewData.blockHeight;
+    region.order.clear();
+    region.clusterStart.clear();
+
+    if (region.cells.empty())
+    {
+        // a continued render past the coarse passes follows the schedule it saved, if it saved one that holds every block once;
+        // otherwise its levels run whole, each skipping the tiles that finished it
+        const std::vector<int>& saved = region.persisted;
+        if (!RegionScheduleValid(saved, count))
+        {
+            region.report = std::string("Region schedule: not used; ") +
+                            (!saved.empty() ? "the saved schedule is not valid for this image, so the levels run whole." :
+                             region.partial ? "the render continued inside the coarse passes, so their footprints are incomplete." :
+                                              "no footprints were recorded.");
+            messages.Info("%s", region.report.c_str());
+            return;
+        }
+        region.clusterStart.assign(saved.begin() + 2, saved.begin() + 2 + saved[1]);
+        region.order.assign(saved.begin() + 2 + saved[1], saved.end());
+        region.MapClusters(count);
+        // the file holds the schedule already
+        region.orderSent = true;
+        region.active = true;
+        region.report = "Region schedule: continued in the saved order of " + std::to_string(region.clusterStart.size()) + " clusters.";
+        messages.Info("%s", region.report.c_str());
+        return;
+    }
+
+    // what the cells may hold: the budget less everything else it counts now
+    std::uint64_t cellsResident = 0, unionBytes = 0;
+    std::vector<char> resident(region.cells.size(), 0);
+    for (size_t i = 0; i < region.cells.size(); i++)
+    {
+        unionBytes += region.bytes[i];
+        if (region.cells[i]->Resident())
+        {
+            resident[i] = 1;
+            cellsResident += region.bytes[i];
+        }
+    }
+    // the caches that cannot spill may have been larger before now, and will be again
+    const std::uint64_t others = std::max<std::uint64_t>((budget->Resident() > cellsResident) ? (budget->Resident() - cellsResident) : 0,
+                                                         budget->UnspillablePeak());
+    const std::uint64_t capacity = (budget->Bytes() > others) ? (budget->Bytes() - others) : 0;
+    auto mib = [](std::uint64_t bytes) { return double(bytes) / 1048576.0; };
+    if ((region.mode == 1) && (unionBytes <= capacity))
+    {
+        char text[256];
+        std::snprintf(text, sizeof(text), "Region schedule: not needed; the %zu cells the coarse passes touched, %.1f MiB, fit the %.1f MiB "
+                      "the budget leaves them.", region.cells.size(), mib(unionBytes), mib(capacity));
+        region.report = text;
+        messages.Info("%s", text);
+        return;
+    }
+
+    const unsigned int wide = region.groupsWide, high = region.groupsHigh, tileCount = wide * high;
+    std::vector<RegionTile> tiles(tileCount);
+    std::uint32_t side = 1;
+    while ((side < wide) || (side < high))
+        side <<= 1;
+    // a gather's ring reaches past its tile's edge, and the coarse samples are sparse, so a tile's footprint takes in its
+    // eight neighbours' as well
+    size_t most = 0, total = 0;
+    for (unsigned int t = 0; t < tileCount; t++)
+    {
+        const unsigned int x = t % wide, y = t / wide;
+        tiles[t].hilbert = RegionHilbert(side, x, y);
+        std::vector<std::uint32_t>& blocks = tiles[t].blocks;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                const int nx = int(x) + dx, ny = int(y) + dy;
+                if ((nx < 0) || (ny < 0) || (nx >= int(wide)) || (ny >= int(high)))
+                    continue;
+                const std::vector<std::uint32_t>& other = region.tiles[size_t(ny) * wide + nx];
+                blocks.insert(blocks.end(), other.begin(), other.end());
+            }
+        std::sort(blocks.begin(), blocks.end());
+        blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
+        most = std::max(most, blocks.size());
+        total += blocks.size();
+    }
+    for (unsigned int t = 0; t < tileCount; t++)
+        region.tiles[t] = tiles[t].blocks;
+    // clusters keep a fifth of the room spare for the cells their footprints missed and the cells being read back
+    const std::uint64_t room = capacity - capacity / 5;
+    const RegionPlan plan = ::pov::PlanRegions(tiles, region.bytes, room, resident);
+    // the render blocks of each tile, in serial order, follow the tiles' order
+    std::vector<std::vector<unsigned int>> blocksOf(tileCount);
+    for (unsigned int serial = 0; serial < count; serial++)
+        blocksOf[region.tileOf[serial]].push_back(serial);
+    for (size_t k = 0; k < plan.clusterStart.size(); k++)
+    {
+        region.clusterStart.push_back(std::uint32_t(region.order.size()));
+        const size_t end = (k + 1 < plan.clusterStart.size()) ? plan.clusterStart[k + 1] : plan.order.size();
+        for (size_t i = plan.clusterStart[k]; i < end; i++)
+            region.order.insert(region.order.end(), blocksOf[plan.order[i]].begin(), blocksOf[plan.order[i]].end());
+    }
+    region.clustersOf = RegionUses(plan, region.cells.size());
+    region.cursor.assign(region.cells.size(), 0);
+    region.MapClusters(count);
+    region.active = true;
+    region.checking = true;
+    region.readAtPlan = budget->Account("subsurface clouds", false).spillReadBytes.load(std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(viewData.nextBlockMutex);
+        region.adviceGeneration = budget->BeginAdvice();
+    }
+    viewData.SendRegionOrder();
+
+    // the baseline it is reported against: a least-recently-used cache over line order, once per remaining level
+    std::vector<std::uint32_t> lineOrder(tileCount);
+    for (unsigned int t = 0; t < tileCount; t++)
+        lineOrder[t] = t;
+    const int remaining = region.lastLevel - recordedLevel;
+    const std::uint64_t lineLoads = RegionLruLoads(tiles, region.bytes, lineOrder, capacity, remaining);
+    char text[512];
+    std::snprintf(text, sizeof(text), "Region schedule: %u tiles of %u blocks in %zu clusters; footprints of %.1f cells per tile (at most %zu) "
+                  "from %zu cells of %.1f MiB against %.1f MiB of budget left for them; planned loads %.1f MiB, where line order would load about "
+                  "%.1f MiB over %d levels; planned in %.3f s.", tileCount, count, plan.clusterStart.size(), double(total) / std::max(1u, tileCount), most,
+                  region.cells.size(), mib(unionBytes), mib(capacity), mib(plan.plannedBytes), mib(lineLoads), remaining,
+                  std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+    region.report = text;
+    messages.Info("%s", text);
 }
 
 void View::EndRadiosityStateFile(TaskQueue&, Path file)

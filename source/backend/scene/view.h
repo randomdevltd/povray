@@ -80,6 +80,8 @@
 namespace pov
 {
 
+class SpillBlock;
+
 class TraceTask;
 
 using namespace pov_base;
@@ -230,6 +232,17 @@ class ViewData final
          *  @return                 True if there is another rectangle to be dispatched, false otherwise.
          */
         bool GetNextRectangle(POVRect& rect, unsigned int& serial);
+
+        /// A progressive pass's next block. Under a region schedule it is the next ready tile and level of the scheduled
+        /// lattice levels (`level` and `step` set; `wait` when the rest wait on a coarser level of their tile still running);
+        /// otherwise as GetNextRectangle, with `level` -1.
+        bool GetNextPassRectangle(POVRect& rect, unsigned int& serial, int& level, unsigned int& step, bool& wait);
+        /// A tile finished a lattice level: a scheduled finer level of it may start.
+        void CompletedLevel(unsigned int serial, int level);
+        /// Whether the blocks running now record the cache cells their rays pin.
+        bool RecordsFootprints() const { return region.recording.load(std::memory_order_relaxed) || region.checking.load(std::memory_order_relaxed); }
+        /// Adds the cells a worker pinned on a tile to its footprint (coarse passes), or counts those outside it (scheduled passes).
+        void AddFootprint(unsigned int serial, std::vector<std::pair<SpillBlock*, size_t>>& used);
 
         /**
          *  Get the next sub-rectangle of the view to render (if any).
@@ -501,6 +514,63 @@ class ViewData final
 
     private:
 
+        /// Region scheduling: under a cache budget the caches do not fit, the coarse passes record which cells each tile
+        /// pins, and the remaining lattice levels run cluster by cluster in an order that loads each cell as few times as it can.
+        struct RegionState final
+        {
+            int mode = 1;                           ///< Region_Schedule: 0 off, 1 when the budget binds, 2 always under a budget
+            std::atomic<bool> recording{false}, checking{false};
+            std::mutex footprintMutex;
+            std::unordered_map<SpillBlock*, std::uint32_t> index; ///< a cell's footprint number
+            std::vector<SpillBlock*> cells;
+            std::vector<std::uint64_t> bytes;
+            unsigned int group = 1, groupsWide = 0, groupsHigh = 0; ///< a tile is group x group render blocks, at least 32 pixels wide
+            std::vector<unsigned int> tileOf;       ///< by block serial: its tile
+            std::vector<std::vector<std::uint32_t>> tiles; ///< by tile: the cells its coarse samples pinned, sorted
+            std::uint64_t uses = 0, misses = 0;     ///< in the scheduled levels: distinct cells per tile, and those not in its footprint
+            bool active = false;
+            bool armed = false;                     ///< the scheduled levels' units have been laid out
+            enum Arm { kNone, kUnits, kEmpty, kOrder } arm = kNone;
+            struct Unit final { unsigned int serial; int level; std::uint32_t cluster; };
+            std::vector<Unit> units;
+            std::vector<char> taken;
+            size_t nextUnit = 0;
+            std::vector<int> done;                  ///< by serial: the finest lattice level finished
+            std::vector<unsigned int> order;        ///< serials in schedule order, for passes after the lattice levels
+            std::vector<unsigned int> hilbert;      ///< serials along a Hilbert curve, for the coarse levels once the budget spills
+            std::vector<std::uint32_t> clusterStart;
+            std::vector<std::uint32_t> clusterOf;   ///< by serial: its cluster
+            std::vector<unsigned int> running;      ///< the serials of scheduled units taken and not yet finished
+            std::vector<std::vector<std::uint32_t>> clustersOf; ///< per cell, the clusters that need it, ascending
+            std::vector<size_t> cursor;             ///< per cell, the first of those not yet passed
+            std::int64_t advisedCluster = -1;
+            std::vector<std::uint32_t> ranks;       ///< per cell, the advice being given
+            std::uint32_t adviceGeneration = 0;     ///< the budget's generation the advice is given under
+            int firstLevel = -1, lastLevel = -1;    ///< the scheduled lattice levels
+            int latticeLevels = 0;                  ///< the lattice levels of the render, scheduled or not
+            unsigned int maxStep = 0;
+            bool partial = false;                   ///< continued inside the coarse levels, so their footprints are incomplete
+            bool clipBlocks = false;                ///< tiles stand at different levels, so a block's cells stay inside it
+            std::vector<int> persisted;             ///< a schedule read back from the render state file
+            std::vector<POVMSInt> unsent;           ///< the schedule, until a sample set carries it to the render state file
+            std::mutex sendMutex;                   ///< holds back the scheduled levels' sample sets until the schedule is sent
+            std::atomic<bool> orderSent{false};
+            std::string report;
+            std::uint64_t readAtPlan = 0;           ///< cell bytes read back from the spill file before the schedule
+
+            /// Back to a render not yet queued, dropping any cell pointers of an earlier one.
+            void Reset();
+            /// Each serial's cluster from the order and cluster starts.
+            void MapClusters(unsigned int count);
+        };
+        RegionState region;
+        /// Advises the budget's eviction for the cluster now starting, keeping the cells of clusters still running; under nextBlockMutex.
+        void AdviseCluster(std::uint32_t cluster);
+        /// Stops the schedule's recording, checking and advice once the render's passes are done.
+        void EndRegions();
+        /// Queues the schedule for the render state file, so a continued render follows it.
+        void SendRegionOrder();
+
         struct BlockPostponedEntry final
         {
             unsigned int blockId;
@@ -737,7 +807,9 @@ class View final
                                     size_t seed, int maxRenderThreads, int resumeLevel, std::shared_ptr<ViewData::BlockIdSet> resumeSkip,
                                     DBL aaBudget = 0.0);
 
-        void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
+        void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress, int level = -1);
+        /// After the coarse passes: plans the region schedule, or leaves the order as it was when the caches fit.
+        void PlanRegions(TaskQueue& taskq, int recordedLevel);
         void QueueProgressivePhotons(size_t seed, int threads);
         void PreparePhotonBatch(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
                                       unsigned int batches, unsigned int neighbours);

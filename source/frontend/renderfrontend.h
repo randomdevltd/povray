@@ -160,6 +160,7 @@ struct ViewData final
     mutable std::shared_ptr<Image> image;
     mutable std::shared_ptr<Display> display;
     mutable std::shared_ptr<OStream> imageBackup;
+    mutable bool imageBackupScheduled = false; ///< its header says 0003: tiles may stand at different levels
     GammaCurvePtr displayGamma;
     bool greyscaleDisplay;
 
@@ -195,7 +196,9 @@ std::string GetProgressTime(POVMS_Object& obj, POVMSType key);
 // end of namespace Message2Console
 
 #define RENDER_STATE_SIG "POV-Ray Render State File\0\0"
+// 0002 levels run whole; 0003, set just before a region schedule is written, lets tiles stand at different levels
 #define RENDER_STATE_VER "0002"
+#define RENDER_STATE_VER_SCHEDULED "0003"
 
 struct Backup_File_Header final
 {
@@ -203,6 +206,9 @@ struct Backup_File_Header final
     unsigned char ver[4];
     unsigned char reserved[480];
 };
+
+/// Marks a render state file 0003 before the first region schedule is written to it.
+void MarkRenderStateScheduled(const ViewData& vd);
 
 /// Writes the pixels a render state file holds to a PNG, unrendered ones transparent; see doc/snapshot.md.
 void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshotFile, POVMS_Object& ropts);

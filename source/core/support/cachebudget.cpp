@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <sstream>
 
@@ -480,6 +481,8 @@ void CacheBudget::Forget(SpillBlock& block)
                 if (hand >= clock.size())
                     hand = 0;
             }
+            // an advised candidate must not outlive its block
+            std::replace(advisedBatch.begin(), advisedBatch.end(), &block, static_cast<SpillBlock *>(nullptr));
         }
         account = block.account;
         if (block.resident.load(std::memory_order_acquire))
@@ -496,13 +499,104 @@ void CacheBudget::Forget(SpillBlock& block)
         FreeSection(section);
 }
 
+std::uint32_t CacheBudget::BeginAdvice()
+{
+    std::lock_guard<std::mutex> guard(lock);
+    advisedBatch.clear();
+    advisedNext = advisedIdle = 0;
+    // 0 is never a generation, so a block never advised reads as having no advice
+    std::uint32_t generation = adviceGeneration.load(std::memory_order_relaxed) + 1;
+    if (generation == 0)
+        generation = 1;
+    adviceGeneration.store(generation, std::memory_order_relaxed);
+    advised.store(true, std::memory_order_relaxed);
+    return generation;
+}
+
+void CacheBudget::Readvised()
+{
+    std::lock_guard<std::mutex> guard(lock);
+    advisedBatch.clear();
+    advisedNext = advisedIdle = 0;
+}
+
+void CacheBudget::EndAdvice()
+{
+    std::lock_guard<std::mutex> guard(lock);
+    advised.store(false, std::memory_order_relaxed);
+    advisedBatch.clear();
+    advisedNext = advisedIdle = 0;
+}
+
 bool CacheBudget::EvictOne()
 {
     SpillBlock *victim = nullptr;
     {
         std::lock_guard<std::mutex> guard(lock);
+        if (advised.load(std::memory_order_relaxed) && (advisedIdle == 0))
+        {
+            // the region schedule knows each block's next cluster: the one needed latest goes first, if it can go now
+            const std::uint32_t generation = adviceGeneration.load(std::memory_order_relaxed);
+            auto rankOf = [generation](const SpillBlock *block)
+            {
+                const std::uint64_t advice = block->advice.load(std::memory_order_relaxed);
+                return (std::uint32_t(advice >> 32) == generation) ? std::uint32_t(advice) : std::uint32_t(0);
+            };
+            if (advisedNext >= advisedBatch.size())
+            {
+                // one scan of the clock keeps the blocks needed latest, so it is paid once per batch of evictions
+                typedef std::pair<std::uint32_t, SpillBlock *> Ranked;
+                std::vector<Ranked> heap;
+                heap.reserve(kAdvisedBatch + 1);
+                for (SpillBlock *block : clock)
+                {
+                    const std::uint32_t rank = rankOf(block);
+                    if ((rank <= 1) || (block->pins.load(std::memory_order_relaxed) != 0))
+                        continue;
+                    if ((heap.size() == kAdvisedBatch) && (rank <= heap.front().first))
+                        continue;
+                    heap.emplace_back(rank, block);
+                    std::push_heap(heap.begin(), heap.end(), std::greater<Ranked>());
+                    if (heap.size() > kAdvisedBatch)
+                    {
+                        std::pop_heap(heap.begin(), heap.end(), std::greater<Ranked>());
+                        heap.pop_back();
+                    }
+                }
+                std::sort(heap.begin(), heap.end(), std::greater<Ranked>());
+                advisedBatch.clear();
+                advisedNext = 0;
+                for (const Ranked& ranked : heap)
+                    advisedBatch.push_back(ranked.second);
+                if (advisedBatch.empty())
+                    advisedIdle = kAdvisedBatch;
+            }
+            // the candidates in turn: one evicted, forgotten, pinned or needed now since the scan is passed over
+            while ((victim == nullptr) && (advisedNext < advisedBatch.size()))
+            {
+                SpillBlock *block = advisedBatch[advisedNext++];
+                if ((block == nullptr) || (block->slot == ~std::size_t(0)) || (rankOf(block) <= 1) || !block->blockMutex.try_lock())
+                    continue;
+                int none = 0;
+                if (!block->pins.compare_exchange_strong(none, SpillBlock::kEvicting, std::memory_order_acquire))
+                {
+                    block->blockMutex.unlock();
+                    continue;
+                }
+                const std::size_t at = block->slot;
+                clock[at] = clock.back();
+                clock[at]->slot = at;
+                clock.pop_back();
+                block->slot = ~std::size_t(0);
+                if (hand >= clock.size())
+                    hand = 0;
+                victim = block;
+            }
+        }
+        else if (advisedIdle > 0)
+            advisedIdle--;
         // the clock: a block used since the hand last passed gets a second chance
-        for (std::size_t visited = 0, n = clock.size(); (visited < 2 * n) && !clock.empty(); ++visited)
+        for (std::size_t visited = 0, n = clock.size(); (victim == nullptr) && (visited < 2 * n) && !clock.empty(); ++visited)
         {
             if (hand >= clock.size())
                 hand = 0;

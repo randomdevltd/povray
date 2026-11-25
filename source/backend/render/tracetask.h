@@ -167,6 +167,8 @@ class TraceTask final : public RenderTask
         void StochasticSupersamplingM3();
 
         struct PassBlock;
+        /// The cache cells this worker pinned on its current block, while the view records footprints.
+        std::vector<std::pair<SpillBlock*, size_t>> footprint;
         typedef void (TraceTask::*PassStep)(PassBlock&);
         typedef void (TraceTask::*PassItem)(PassBlock&, size_t);
         /// Whether idle workers of a pass may trace items of another worker's block; radiosity draws per block, so not with it.

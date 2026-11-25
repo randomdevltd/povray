@@ -218,6 +218,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Light_Buffer",        kPOVAttrib_LightBuffer,        kPOVMSType_Bool },
 
     { "Max_Cache_Memory",    kPOVAttrib_MaxCacheMemory,     kUseSpecialHandler },
+    { "Region_Schedule",     kPOVAttrib_RegionSchedule,     kUseSpecialHandler },
     { "Max_Image_Buffer_Memory", kPOVAttrib_MaxImageBufferMem, kPOVMSType_Int },
 
     { "Odd_Field",           kPOVAttrib_OddField,           kPOVMSType_Bool },
@@ -645,6 +646,25 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                 err = POVMSUtil_SetInt(obj, option->key, POVMSInt(megabytes));
             break;
         }
+        case kPOVAttrib_RegionSchedule:
+        {
+            // off, auto (when the caches do not fit the budget) or on (whenever there is a budget)
+            std::string value(param);
+            while (!value.empty() && isspace((unsigned char)value.back()))
+                value.pop_back();
+            for (char& c : value)
+                c = char(tolower((unsigned char)c));
+            const int mode = (value == "off" || value == "false" || value == "0") ? 0 : (value == "auto") ? 1 :
+                             (value == "on" || value == "true" || value == "1") ? 2 : -1;
+            if (mode < 0)
+            {
+                ParseError("Region_Schedule must be off, auto or on, found '%s'.", param);
+                err = kParamErr;
+            }
+            else
+                err = POVMSUtil_SetInt(obj, option->key, POVMSInt(mode));
+            break;
+        }
         case kPOVAttrib_PhotonMemory:
         {
             char* end = nullptr;
@@ -837,6 +857,12 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
 
             if(POVMSUtil_GetInt(obj, option->key, &intval) == 0)
                 file->printf("%s=%d\n", option->keyword, (int)intval);
+            break;
+
+        case kPOVAttrib_RegionSchedule:
+
+            if(POVMSUtil_GetInt(obj, option->key, &intval) == 0)
+                file->printf("%s=%s\n", option->keyword, (intval == 0) ? "off" : (intval == 2) ? "on" : "auto");
             break;
 
         case kPOVAttrib_PhotonMemory:

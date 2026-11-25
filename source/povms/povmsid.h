@@ -380,6 +380,7 @@ enum
     kPOVAttrib_CacheVerify           = 'CaVe',
     kPOVAttrib_CacheMaxSize          = 'CaMS',
     kPOVAttrib_MaxCacheMemory        = 'CaMM',
+    kPOVAttrib_RegionSchedule        = 'RgSc',
     kPOVAttrib_SpillPath             = 'CaSp',
     kPOVAttrib_Version               = 'Vers',
     kPOVAttrib_Pov4Version           = 'P4Ve',
@@ -688,6 +689,8 @@ enum
     kPOVAttrib_PixelFinal            = 'PFin',  ///< (Void) Set if pixel data is relevant for final image.
     kPOVAttrib_ProgressLevel         = 'PgLv',  ///< (Int) Progressive render pass of a block, or the pass a continued render resumes at.
     kPOVAttrib_ProgressSamples       = 'PgSa',  ///< (FloatVector) Lattice samples from the render state file, RGBT per point in row order.
+    kPOVAttrib_ProgressTileLevels    = 'PgTL',  ///< (IntVector) From the render state file: block serial and the finest level it finished, in pairs.
+    kPOVAttrib_RegionOrder           = 'RgOr',  ///< (IntVector) A region schedule: format 1, cluster count, cluster starts, block serials in order.
 
     // scene/view error reporting and TBD
     kPOVAttrib_CurrentLine           = 'CurL',
